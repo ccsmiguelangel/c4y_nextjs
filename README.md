@@ -2,16 +2,30 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Install shadcn/ui Components
+
+This project uses [shadcn/ui](https://ui.shadcn.com/) components. The components are stored in `/components_shadcn/` and should be installed using the shadcn CLI:
+
+```bash
+pnpx shadcn@latest add button calendar card carousel checkbox context-menu dialog drawer form hover-card input label menubar navigation-menu pagination popover progress radio-group resizable scroll-area select separator sheet sidebar skeleton slider switch table tabs textarea toggle-group toggle tooltip
+```
+
+Or install them individually:
+
+```bash
+pnpx shadcn@latest add button
+pnpx shadcn@latest add card
+# ... etc
+```
+
+**Note:** The components in `/components_shadcn/` are ignored by git (see `.gitignore`). Make sure to install them after cloning the repository.
+
+### Run the Development Server
+
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

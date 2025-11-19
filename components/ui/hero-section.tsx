@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardFooter,CardTitle} from "@/components/ui/card";
+import { Button } from "@/components_shadcn/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardFooter,CardTitle} from "@/components_shadcn/ui/card";
 import Image from "next/image";
 import Link from "next/link";
 import type { HeroSectionData } from "@/lib/types";
@@ -15,7 +15,7 @@ export function HeroSection({ data }: { readonly data: Readonly<HeroSectionData>
           <CardDescription>{data.sub_heading}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Image src={data.image.url} alt={data.image.alternativeText} width={100} height={100} quality={90} />
+          <Image src={data.image.url} alt={data.image.alternativeText} width={100} height={100} quality={90}  />
         </CardContent>
         <CardFooter>
           <Button asChild variant="outline" size="lg">

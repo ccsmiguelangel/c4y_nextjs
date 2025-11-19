@@ -1,6 +1,6 @@
 import { getDashboard, getMetadata } from "@/lib/strapi";
-import { HeroSection } from "@/components 3/ui/hero-section"; 
-import { Nextjs404Page } from "@/components 3/ui/nextjs-404-page";
+import { HeroSection } from "@/components/ui/hero-section"; 
+import { Nextjs404Page } from "@/components/ui/nextjs-404-page";
 
 export async function generateMetadata() {
   const dashboard = await getDashboard();
@@ -9,7 +9,7 @@ export async function generateMetadata() {
 
 export default async function Home() {
   const dashboard = await getDashboard();
-  if (!dashboard) return <Nextjs404Page title="404 - Page Not Found" description="The page you are looking for does not exist." />;
+  if (!dashboard || !dashboard.sections[0]) return <Nextjs404Page title="404 - Page Not Found" description="The page you are looking for does not exist." />;
   
   return (
     <>

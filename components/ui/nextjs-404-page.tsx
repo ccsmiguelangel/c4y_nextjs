@@ -1,4 +1,4 @@
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription } from "@/components_shadcn/ui/card";
 
 export function Nextjs404Page({ title, description }: { readonly title: string, readonly  description: string }) {
   return (

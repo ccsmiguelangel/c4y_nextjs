@@ -19,3 +19,55 @@ export const QUERY_DASHBOARD = {
     },
   },
 };
+
+export const QUERY_SINGIN = {
+  populate: {
+    header: {
+      populate: {
+        favicon: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
+    sections: {
+      on: {
+        "layout.singin-form": {
+          populate: {
+            header: {
+              populate: true,
+            },
+            singup_link: {
+              populate: true,
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export const QUERY_SINGUP = {
+  populate: {
+    header: {
+      populate: {
+        favicon: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
+    sections: {
+      on: {
+        "layout.singup-form": {
+          populate: {
+            header: {
+              populate: true,
+            },
+            singin_link: {
+              populate: true,
+            },
+          },
+        },
+      },
+    },
+  },
+};

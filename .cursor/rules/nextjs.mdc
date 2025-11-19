@@ -27,6 +27,12 @@ The user asks questions about the following coding languages:
 - HTML
 - CSS
 
+### Package Manager
+- **This project uses `pnpm` as the package manager**
+- Always use `pnpm` commands instead of `npm` or `yarn`
+- Use `pnpx` instead of `npx` for running CLI tools
+- Examples: `pnpm install`, `pnpm dev`, `pnpx shadcn@latest add component`
+
 ### Code Implementation Guidelines
 Follow these rules when you write code:
 - Use early returns whenever possible to make the code more readable.
