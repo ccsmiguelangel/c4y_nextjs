@@ -12,11 +12,12 @@ export function LogoutButton() {
   return (
     <Button
       onClick={handleLogout}
-      variant="outline"
-      className="flex items-center gap-2"
+      variant="ghost"
+      size="sm"
+      className="flex items-center gap-2 h-9 px-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
     >
       <LogOut className="h-4 w-4" />
-      Cerrar sesión
+      <span className="hidden sm:inline">Cerrar sesión</span>
     </Button>
   );
 }

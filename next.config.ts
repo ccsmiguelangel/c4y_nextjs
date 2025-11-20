@@ -13,12 +13,19 @@ if (!STRAPI_BASE_URL) {
 const nextConfig: NextConfig = {
   // cacheComponents: true,
   images: {
-    remotePatterns: [{
-      protocol: STRAPI_BASE_URL_PROTOCOL as "http" | "https",
-      hostname: STRAPI_BASE_URL_HOSTNAME as URL["hostname"],
-      port: STRAPI_BASE_URL_PORT as URL["port"],
-      pathname: "/**" as URL["pathname"],
-    }],
+    remotePatterns: [
+      {
+        protocol: STRAPI_BASE_URL_PROTOCOL as "http" | "https",
+        hostname: STRAPI_BASE_URL_HOSTNAME as URL["hostname"],
+        port: STRAPI_BASE_URL_PORT as URL["port"],
+        pathname: "/**" as URL["pathname"],
+      },
+      {
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+        pathname: "/**",
+      },
+    ],
     unoptimized: true,
   },
 };

@@ -129,19 +129,118 @@
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     transition-duration: 200ms;
   }
-  
+
   /* Focus visible mejorado para accesibilidad */
   .focus-ring {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
   }
-  
+
   /* Animación suave para hover en elementos interactivos */
   .hover-lift {
     @apply transition-all duration-300 ease-in-out hover:scale-[1.02] active:scale-[0.98];
   }
-  
+
   /* Estilo de botón negro principal */
   .btn-black {
     @apply w-full h-14 text-lg font-semibold rounded-xl bg-black text-white hover:bg-gray-900 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] duration-300 ease-in-out;
+  }
+
+  /* Ocultar scrollbar */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ========================================================================
+     DESIGN SYSTEM UTILITIES - Estilos del Dashboard
+     ======================================================================== */
+
+  /* Card estándar con sombra y borde elegante */
+  .card-elegant {
+    @apply shadow-sm ring-1 ring-inset ring-border/50;
+  }
+
+  /* Contenedor principal con padding y max-width */
+  .container-main {
+    @apply flex flex-col gap-6 px-6 py-6 max-w-7xl mx-auto w-full;
+  }
+
+  /* Header sticky con backdrop blur */
+  .header-sticky {
+    @apply sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm;
+  }
+
+  /* Título de sección */
+  .section-title {
+    @apply text-base font-semibold;
+  }
+
+  /* Título grande (métricas) */
+  .metric-title {
+    @apply text-[32px] font-bold tracking-tight;
+  }
+
+  /* Título mediano */
+  .metric-subtitle {
+    @apply text-2xl font-bold tracking-tight;
+  }
+
+  /* Label de métrica */
+  .metric-label {
+    @apply text-sm font-medium text-muted-foreground;
+  }
+
+  /* Texto de descripción */
+  .text-description {
+    @apply text-sm text-muted-foreground;
+  }
+
+  /* Botón de período/filtro activo */
+  .period-button-active {
+    @apply h-9 shrink-0 rounded-full px-4 bg-primary text-primary-foreground;
+  }
+
+  /* Botón de período/filtro inactivo */
+  .period-button-inactive {
+    @apply h-9 shrink-0 rounded-full px-4 bg-card;
+  }
+
+  /* Grid de métricas (2 columnas) */
+  .metrics-grid {
+    @apply grid grid-cols-2 gap-5;
+  }
+
+  /* Padding de card estándar */
+  .card-padding {
+    @apply p-6;
+  }
+
+  /* Padding de card header */
+  .card-header-padding {
+    @apply px-6 pt-6 pb-4;
+  }
+
+  /* Padding de card content */
+  .card-content-padding {
+    @apply px-6 pb-6;
+  }
+
+  /* Gap estándar entre elementos */
+  .gap-standard {
+    @apply gap-6;
+  }
+
+  /* Gap pequeño entre elementos */
+  .gap-small {
+    @apply gap-3;
+  }
+
+  /* Separador con margen superior */
+  .separator-margin {
+    @apply mt-2 pt-2;
   }
 }

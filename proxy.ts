@@ -4,6 +4,7 @@ import { STRAPI_BASE_URL } from "./lib/config";
 
 const protectedRoutes = [
   "/dashboard",
+  "/dashboard_user",
 ];
 
 function checkIsProtectedRoute(path: string) {
@@ -52,6 +53,8 @@ export const config = {
     '/((?!api|_next/static|_next/image|favicon.ico).*)',
     '/dashboard',
     '/dashboard/:path*',
+    '/dashboard_user',
+    '/dashboard_user/:path*',
   ],
 };
 
