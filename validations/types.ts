@@ -69,8 +69,8 @@ export interface SinginDataProcessed {
 
 export interface SingupFormData {
   header: HeaderSection;
-  user_label: string;
-  user_placeholder: string;
+  username_label: string;
+  username_placeholder: string;
   email_label: string;
   email_placeholder: string;
   password_label: string;

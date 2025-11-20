@@ -1,5 +1,5 @@
 import { STRAPI_BASE_URL } from "./config";
-import type { StrapiImage } from "./types";
+import type { StrapiImage } from "@/validations/types";
 
 export const strapiImages = {
   getURL(url: string | undefined | null, fallback = "/favicon.ico"): string {

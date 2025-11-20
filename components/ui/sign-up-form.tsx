@@ -1,37 +1,45 @@
 "use client";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components_shadcn/ui/form";
 import { Input } from "@/components_shadcn/ui/input";
 import { Button } from "@/components_shadcn/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components_shadcn/ui/card";
-import { useForm } from "react-hook-form";
+import { Form } from "@/components_shadcn/ui/form";
+import { FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components_shadcn/ui/form";
 import Link from "next/link";
-
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useActionState, startTransition } from "react";
+import type { SingupFormData } from "@/validations/types";
+import { actions } from "@/actions";
+import { type FormState, SignUpFormSchema } from "@/validations/auth";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
-import type { SingupFormData } from "@/lib/types";
+import { FormError } from "./form-error";
+import { Loader2 } from "lucide-react";
 
-const formSchema = z.object({
-  user: z.string().min(3, "El nombre de usuario debe tener al menos 3 caracteres"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-}).refine((data) => {
-  return data.email.includes("@") && data.email.includes(".") && data.email.length > 5;
-}, {
-  path: ["email"],
-  message: "El correo electrónico debe contener un @ y un .",
-});
-
-interface SignUpFormProps {
-  data: SingupFormData;
-}
-
-export function SignUpForm({ data }: SignUpFormProps) {
+export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }) {
   if (!data) return null;
+
+
+  const INITIAL_STATE: FormState = {
+    data: {
+      username: "",
+      email: "",
+      password: "",
+    },
+    zodErrors: null,
+    strapiErrors: undefined,
+    success: false,
+    isLoading: false,
+    message: undefined,
+  };
+
+  const [formState, formAction] = useActionState(
+    actions.auth.registerUserAction,
+    INITIAL_STATE
+  );
 
   const { 
     header,
-    user_label,
-    user_placeholder,
+    username_label,
+    username_placeholder,
     email_label,
     email_placeholder,
     password_label,
@@ -44,17 +52,21 @@ export function SignUpForm({ data }: SignUpFormProps) {
   // singin_link es un array, tomar el primer elemento
   const singinLink = singin_link?.[0];
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      user: "",
-      email: "",
-      password: "",
-    },
-  }); 
+  const form = useForm<z.infer<typeof SignUpFormSchema>>({
+    defaultValues: INITIAL_STATE.data,
+  });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log(values);
+  function onSubmit(values: z.infer<typeof SignUpFormSchema>) {
+    // Convertir los valores a FormData para la Server Action
+    const formData = new FormData();
+    formData.append("username", values.username);
+    formData.append("email", values.email);
+    formData.append("password", values.password);
+    
+    // Llamar a la Server Action dentro de startTransition
+    startTransition(() => {
+      formAction(formData);
+    });
   }
 
   return (
@@ -68,72 +80,80 @@ export function SignUpForm({ data }: SignUpFormProps) {
         </CardHeader>
         <CardContent className="px-0">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField 
-                control={form.control} 
-                name="user" 
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormLabel className="text-base font-medium">{user_label}</FormLabel> 
-                    <FormControl> 
-                      <Input 
-                        placeholder={user_placeholder} 
-                        type="text" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} 
-              />
-              <FormField 
-                control={form.control} 
-                name="email" 
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormLabel className="text-base font-medium">{email_label}</FormLabel> 
-                    <FormControl> 
-                      <Input 
-                        placeholder={email_placeholder} 
-                        type="email" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} 
-              />
-              <FormField 
-                control={form.control} 
-                name="password" 
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormLabel className="text-base font-medium">{password_label}</FormLabel>
-                    <FormControl>
-                      <Input 
-                        placeholder={password_placeholder} 
-                        type="password" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
-                        {...field} 
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} 
-              />
-              <CardFooter className="flex justify-center pt-6 px-0">
-                <Button 
-                  type="submit" 
+            <div className="space-y-6">
+              <FormField control={form.control} name="username" render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel className="text-base font-medium">
+                    {username_label}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      placeholder={username_placeholder}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormError error={formState.zodErrors?.username} />
+                </FormItem>
+              )} /> 
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel className="text-base font-medium">
+                    {email_label}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      placeholder={email_placeholder}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormError error={formState.zodErrors?.email} />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="password" render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel className="text-base font-medium">
+                    {password_label}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      placeholder={password_placeholder}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormError error={formState.zodErrors?.password} />
+                </FormItem>
+              )} />
+              <CardFooter className="flex flex-col items-center pt-6 px-0 space-y-2">
+                <Button
+                  type="button"
                   variant="default"
                   className="btn-black"
-                  disabled={form.formState.isSubmitting}
+                  disabled={form.formState.isSubmitting || formState.success}
+                  onClick={form.handleSubmit(onSubmit)}
                 >
-                  {submit_buton}
+                  {form.formState.isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Cargando...
+                    </>
+                  ) : (
+                    submit_buton
+                  )}
                 </Button>
+
+                {formState.strapiErrors && (
+                  <FormMessage className="text-pink-500 text-sm text-center">
+                    {formState.strapiErrors.message}
+                  </FormMessage>
+                )}
               </CardFooter>
-            </form>
+            </div>
           </Form>
         </CardContent>
       </Card>

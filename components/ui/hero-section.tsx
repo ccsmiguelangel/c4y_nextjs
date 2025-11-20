@@ -2,7 +2,7 @@ import { Button } from "@/components_shadcn/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardFooter,CardTitle} from "@/components_shadcn/ui/card";
 import Image from "next/image";
 import Link from "next/link";
-import type { HeroSectionData } from "@/lib/types";
+import type { HeroSectionData } from "@/validations/types";
 
 export function HeroSection({ data }: { readonly data: Readonly<HeroSectionData> }) {
   if (!data) return null;

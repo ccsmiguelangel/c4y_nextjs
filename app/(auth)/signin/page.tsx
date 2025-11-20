@@ -14,6 +14,7 @@ export default async function SinginPage() {
     <>
       <title>{singin.title}</title>
       <meta name="description" content={singin.description} />
+      <link rel="icon" href={singin.header?.favicon?.url || "/favicon.ico"  } />
       <SignInForm data={singin.singinForm} />
     </>
   );

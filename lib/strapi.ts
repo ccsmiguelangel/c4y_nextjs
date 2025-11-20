@@ -1,8 +1,8 @@
 import qs from "qs";
 import { QUERY_DASHBOARD, QUERY_SINGIN, QUERY_SINGUP } from "./strapi-queries";
-import { STRAPI_BASE_URL } from "./config";
+import { STRAPI_BASE_URL, STRAPI_API_TOKEN } from "./config";
 import { strapiImages } from "./strapi-images";
-import type { StrapiPageMetadata, StrapiResponse, SinginData, SinginFormData, SinginDataProcessed, SingupData, SingupFormData, SingupDataProcessed, DashboardData, DashboardDataProcessed, HeroSectionData } from "./types";
+import type { StrapiPageMetadata, StrapiResponse, SinginData, SinginFormData, SinginDataProcessed, SingupData, SingupFormData, SingupDataProcessed, DashboardData, DashboardDataProcessed, HeroSectionData } from "@/validations/types";
 
 export async function getStrapiData(path: string): Promise<StrapiResponse | null> {
   // "use cache";
@@ -43,6 +43,90 @@ export async function getStrapiPage<T = any>(contentType: string, query?: Record
   
   return response?.data || null;
 } 
+
+export async function registerUserService (userData: object) {
+  const url = `${STRAPI_BASE_URL}/api/auth/local/register`
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(userData)
+    })
+
+    const data = await response.json()
+    
+    // Si el registro fue exitoso, actualizar el usuario para establecer confirmed: false
+    if (data.user && data.user.id && !data.error) {
+      await updateUserConfirmedStatus(data.user.id, false)
+    }
+    
+    console.log(data)
+    return data
+  } catch (error) {
+    console.error('Error registering user:', error)
+    throw error
+  }
+}
+
+export async function loginUserService(userData: { identifier: string; password: string }) {
+  const url = `${STRAPI_BASE_URL}/api/auth/local`
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(userData)
+    })
+
+    const data = await response.json()
+    return data
+  } catch (error) {
+    console.error('Error logging in user:', error)
+    throw error
+  }
+}
+
+/**
+ * Actualiza el estado de confirmed de un usuario usando el token de API de Strapi
+ * Esta función solo se ejecuta en el servidor y nunca expone el token al cliente
+ */
+async function updateUserConfirmedStatus(userId: number, confirmed: boolean) {
+  if (!STRAPI_API_TOKEN) {
+    console.error('STRAPI_API_TOKEN is not set, cannot update user confirmed status')
+    return
+  }
+
+  try {
+    const url = `${STRAPI_BASE_URL}/api/users/${userId}`
+    
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STRAPI_API_TOKEN}`
+      },
+      body: JSON.stringify({
+        confirmed
+      })
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      console.error('Error updating user confirmed status:', errorData)
+      return
+    }
+
+    const updatedUser = await response.json()
+    console.log('User confirmed status updated successfully:', updatedUser)
+  } catch (error) {
+    console.error('Error updating user confirmed status:', error)
+  }
+}
 
 export async function getDashboard(): Promise<DashboardDataProcessed | null> {
   const data = await getStrapiPage<DashboardData>("dashboard", QUERY_DASHBOARD.populate);

@@ -5,20 +5,14 @@ import { Button } from "@/components_shadcn/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components_shadcn/ui/card";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
-
+import { useActionState, startTransition } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import type { SinginFormData } from "@/lib/types";
-
-const formSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-}).refine((data) => {
-  return data.email.includes("@") && data.email.includes(".") && data.email.length > 5;
-}, {
-  path: ["email"],
-  message: "El correo electrónico debe contener un @ y un .",
-});
+import type { SinginFormData } from "@/validations/types";
+import { actions } from "@/actions";
+import { type FormState, SignInFormSchema } from "@/validations/auth";
+import { FormError } from "./form-error";
+import { Loader2 } from "lucide-react";
 
 interface SignInFormProps {
   data: SinginFormData;
@@ -26,6 +20,23 @@ interface SignInFormProps {
 
 export function SignInForm({ data }: SignInFormProps) {
   if (!data) return null;
+
+  const INITIAL_STATE: FormState = {
+    data: {
+      identifier: "",
+      password: "",
+    },
+    zodErrors: null,
+    strapiErrors: undefined,
+    success: false,
+    isLoading: false,
+    message: undefined,
+  };
+
+  const [formState, formAction] = useActionState(
+    actions.auth.loginUserAction,
+    INITIAL_STATE
+  );
 
   const { 
     header,
@@ -41,16 +52,22 @@ export function SignInForm({ data }: SignInFormProps) {
   // singup_link es un array, tomar el primer elemento
   const singupLink = singup_link?.[0];
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<z.infer<typeof SignInFormSchema>>({
+    resolver: zodResolver(SignInFormSchema),
     defaultValues: {
       email: "",
       password: "",
     },
   }); 
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log(values);
+  function onSubmit(values: z.infer<typeof SignInFormSchema>) {
+    const formData = new FormData();
+    formData.append("email", values.email);
+    formData.append("password", values.password);
+    
+    startTransition(() => {
+      formAction(formData);
+    });
   }
 
   return (
@@ -64,7 +81,7 @@ export function SignInForm({ data }: SignInFormProps) {
         </CardHeader>
         <CardContent className="px-0">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-6">
               <FormField 
                 control={form.control} 
                 name="email" 
@@ -79,7 +96,7 @@ export function SignInForm({ data }: SignInFormProps) {
                         {...field} 
                       />
                     </FormControl>
-                    <FormMessage />
+                    <FormError error={formState.zodErrors?.email} />
                   </FormItem>
                 )} 
               />
@@ -97,21 +114,35 @@ export function SignInForm({ data }: SignInFormProps) {
                         {...field} 
                       />
                     </FormControl>
-                    <FormMessage />
+                    <FormError error={formState.zodErrors?.password} />
                   </FormItem>
                 )} 
               />
-              <CardFooter className="flex justify-center pt-6 px-0">
+              <CardFooter className="flex flex-col items-center pt-6 px-0 space-y-2">
                 <Button 
-                  type="submit" 
+                  type="button"
                   variant="default"
                   className="btn-black"
-                  disabled={form.formState.isSubmitting}
+                  disabled={form.formState.isSubmitting || formState.success}
+                  onClick={form.handleSubmit(onSubmit)}
                 >
-                  {submit_button}
+                  {form.formState.isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Cargando...
+                    </>
+                  ) : (
+                    submit_button
+                  )}
                 </Button>
+
+                {formState.strapiErrors && (
+                  <FormMessage className="text-pink-500 text-sm text-center">
+                    {formState.strapiErrors.message}
+                  </FormMessage>
+                )}
               </CardFooter>
-            </form>
+            </div>
           </Form>
         </CardContent>
       </Card>
