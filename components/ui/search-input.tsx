@@ -53,7 +53,7 @@ export function SearchInput({
     height,
     isCardVariant 
       ? "rounded-xl bg-card border border-border shadow-sm"
-      : "rounded-lg bg-muted",
+      : "rounded-xl bg-muted",
     containerClassName
   );
 
@@ -73,8 +73,8 @@ export function SearchInput({
   );
 
   return (
-    <label className="flex flex-col min-w-40 w-full">
-      <div className={containerClasses}>
+    <label className="flex flex-col min-w-40 w-full" suppressHydrationWarning>
+      <div className={containerClasses} suppressHydrationWarning>
         <div className="text-muted-foreground flex items-center justify-center pl-4">
           <Search className="h-5 w-5" />
         </div>

@@ -115,6 +115,18 @@ export const components = {
   
   // Badge de inventario
   inventoryBadge: "size-2.5 rounded-full p-0 border-0",
+  
+  // Botones estándar (todos redondeados)
+  button: {
+    base: "rounded-lg",
+    full: "rounded-full",
+  },
+  
+  // Inputs estándar (todos redondeados)
+  input: {
+    base: "rounded-lg",
+    full: "rounded-xl",
+  },
 } as const;
 
 // ============================================================================

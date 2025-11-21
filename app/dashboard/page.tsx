@@ -9,7 +9,7 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components_shadcn/ui/chart";
 import { Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis, CartesianGrid } from "recharts";
-import { User, Car, Key, Wrench } from "lucide-react";
+import { User, Bell, Car, Key, Wrench } from "lucide-react";
 import { useState } from "react";
 import { typography, spacing } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
@@ -63,6 +63,9 @@ export default function DashboardRoute() {
       title="Resumen General"
       rightActions={
         <>
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
+            <Bell className="h-5 w-5" />
+          </Button>
           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
             <User className="h-5 w-5" />
           </Button>

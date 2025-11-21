@@ -11,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components_shadcn/ui/select";
-import { MoreVertical, Plus, Droplet, Wrench, Car, Activity, Settings } from "lucide-react";
+import { MoreVertical, Plus, Droplet, Wrench, Car, Activity, Settings, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 
@@ -26,6 +27,7 @@ interface Service {
 }
 
 export default function AdmServicesPage() {
+  const router = useRouter();
   const [serviceName, setServiceName] = useState("");
   const [servicePrice, setServicePrice] = useState("");
   const [serviceCoverage, setServiceCoverage] = useState("Pagado por el cliente");
@@ -90,7 +92,11 @@ export default function AdmServicesPage() {
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} ${spacing.card.content}`}>
             {predefinedServices.map((service) => (
-              <Card key={service.id} className="shadow-sm ring-1 ring-inset ring-border/50">
+              <Card 
+                key={service.id} 
+                className="shadow-sm ring-1 ring-inset ring-border/50 cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted"
+                onClick={() => router.push(`/adm-services/details/${service.id}`)}
+              >
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-4">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -98,19 +104,22 @@ export default function AdmServicesPage() {
                     </div>
                     <p className={typography.body.base}>{service.name}</p>
                   </div>
-                  <div className="text-right">
-                    <p
-                      className={`${typography.body.base} font-semibold ${
-                        service.isFree ? "text-green-600" : ""
-                      }`}
-                    >
-                      {service.price}
-                    </p>
-                    <p className={`text-xs ${
-                      service.isFree ? "text-green-600" : "text-muted-foreground"
-                    }`}>
-                      {service.coverage}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <p
+                        className={`${typography.body.base} font-semibold ${
+                          service.isFree ? "text-green-600" : ""
+                        }`}
+                      >
+                        {service.price}
+                      </p>
+                      <p className={`text-xs ${
+                        service.isFree ? "text-green-600" : "text-muted-foreground"
+                      }`}>
+                        {service.coverage}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
                   </div>
                 </CardContent>
               </Card>

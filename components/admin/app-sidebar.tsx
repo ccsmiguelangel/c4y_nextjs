@@ -14,7 +14,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components_shadcn/ui/sidebar";
-import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car } from "lucide-react";
+import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car, FileText, Bell, CreditCard } from "lucide-react";
 
 interface NavItem {
   href: string;
@@ -57,6 +57,21 @@ const navItems: NavItem[] = [
     href: "/fleet",
     label: "Flota",
     icon: Car,
+  },
+  {
+    href: "/deal",
+    label: "Contratos",
+    icon: FileText,
+  },
+  {
+    href: "/notifications",
+    label: "Notificaciones",
+    icon: Bell,
+  },
+  {
+    href: "/billing",
+    label: "Facturación",
+    icon: CreditCard,
   },
 ];
 

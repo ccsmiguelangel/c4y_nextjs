@@ -5,8 +5,9 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
-import { Bell, User, MoreVertical, Filter, CircleDot, Zap, Wrench, Plus } from "lucide-react";
+import { Bell, User, MoreVertical, Filter, CircleDot, Zap, Wrench, Plus, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 
@@ -96,6 +97,7 @@ const getIcon = (icon: "filter" | "disc" | "bolt" | "tire") => {
 };
 
 export default function StockPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredItems = inventoryItems.filter((item) =>
@@ -134,7 +136,11 @@ export default function StockPage() {
         {/* Inventory List */}
         <div className={`flex flex-col ${spacing.gap.base}`}>
           {filteredItems.map((item) => (
-            <Card key={item.id} className={commonClasses.card}>
+            <Card 
+              key={item.id} 
+              className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+              onClick={() => router.push(`/stock/details/${item.id}`)}
+            >
               <CardContent className={spacing.card.padding}>
                 <div className={`flex flex-col ${spacing.gap.medium} justify-between`}>
                   <div className="flex items-start gap-4">
@@ -146,10 +152,16 @@ export default function StockPage() {
                       <p className={typography.body.base}>{item.description}</p>
                       <p className={`${typography.body.small} mt-1`}>Asignado a: {item.assignedTo}</p>
                     </div>
-                    <div className="shrink-0">
-                      <Button variant="ghost" size="icon" className="h-10 w-10 text-muted-foreground flex items-center justify-center">
+                    <div className="shrink-0 flex items-center gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-10 w-10 text-muted-foreground flex items-center justify-center"
+                        onClick={(e) => { e.stopPropagation(); }}
+                      >
                         <MoreVertical className="h-5 w-5" />
                       </Button>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
                     </div>
                   </div>
                   <div className="flex justify-end">

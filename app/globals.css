@@ -143,6 +143,7 @@
   /* Estilo de botón negro principal */
   .btn-black {
     @apply w-full h-14 text-lg font-semibold rounded-xl bg-black text-white hover:bg-gray-900 hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] duration-300 ease-in-out;
+    @apply dark:bg-white dark:text-black dark:hover:bg-gray-200;
   }
 
   /* Ocultar scrollbar */

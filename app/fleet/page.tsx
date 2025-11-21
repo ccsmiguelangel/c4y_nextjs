@@ -14,8 +14,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components_shadcn/ui/dropdown-menu";
-import { Search, MoreVertical, ChevronDown, Plus, Car, X } from "lucide-react";
+import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import Image from "next/image";
@@ -104,6 +105,7 @@ const years = Array.from(new Set(vehicles.map((v) => v.year))).sort((a, b) => b 
 const statuses: Vehicle["status"][] = ["nuevo", "usado", "seminuevo"];
 
 export default function FleetPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
@@ -140,6 +142,8 @@ export default function FleetPage() {
               <Search className="h-5 w-5" />
             </div>
             <Input
+              type="text"
+              suppressHydrationWarning
               className="flex w-full min-w-0 flex-1 border-none bg-muted focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:ring-0 focus:outline-none h-full rounded-l-none border-l-0 pl-2 text-base placeholder:text-muted-foreground"
               placeholder="Buscar por nombre, VIN..."
               value={searchQuery}
@@ -156,6 +160,7 @@ export default function FleetPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  suppressHydrationWarning
                   className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
                     selectedBrand ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                   }`}
@@ -170,7 +175,7 @@ export default function FleetPage() {
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
                 <DropdownMenuLabel>Seleccionar Marca</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setSelectedBrand(null)}>
@@ -193,6 +198,7 @@ export default function FleetPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  suppressHydrationWarning
                   className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
                     selectedModel ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                   }`}
@@ -207,7 +213,7 @@ export default function FleetPage() {
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
                 <DropdownMenuLabel>Seleccionar Modelo</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setSelectedModel(null)}>
@@ -230,6 +236,7 @@ export default function FleetPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  suppressHydrationWarning
                   className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
                     selectedYear ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                   }`}
@@ -244,7 +251,7 @@ export default function FleetPage() {
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
                 <DropdownMenuLabel>Seleccionar Año</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setSelectedYear(null)}>
@@ -267,6 +274,7 @@ export default function FleetPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  suppressHydrationWarning
                   className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
                     selectedStatus ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                   }`}
@@ -281,7 +289,7 @@ export default function FleetPage() {
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
                 <DropdownMenuLabel>Seleccionar Estado</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setSelectedStatus(null)}>
@@ -320,7 +328,11 @@ export default function FleetPage() {
       {filteredVehicles.length > 0 ? (
         <div className={`flex flex-col ${spacing.gap.medium}`}>
           {filteredVehicles.map((vehicle) => (
-            <Card key={vehicle.id} className={commonClasses.card}>
+            <Card 
+              key={vehicle.id} 
+              className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+              onClick={() => router.push(`/fleet/details/${vehicle.id}`)}
+            >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
                 <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-28 sm:w-28">
                   <Image
@@ -336,25 +348,30 @@ export default function FleetPage() {
                     <p className={`${typography.body.large} font-bold leading-tight`}>
                       {vehicle.name}
                     </p>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-10 w-10 text-muted-foreground flex items-center justify-center"
-                        >
-                          <MoreVertical className="h-5 w-5" />
-                          <span className="sr-only">Más opciones</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>Ver detalles</DropdownMenuItem>
-                        <DropdownMenuItem>Editar</DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive">
-                          Eliminar
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="flex items-center gap-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 text-muted-foreground flex items-center justify-center"
+                          >
+                            <MoreVertical className="h-5 w-5" />
+                            <span className="sr-only">Más opciones</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/fleet/details/${vehicle.id}`); }}>
+                            Ver detalles
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Editar</DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                            Eliminar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    </div>
                   </div>
                   <p className={`${typography.body.base} text-muted-foreground leading-normal`}>
                     VIN: {vehicle.vin}

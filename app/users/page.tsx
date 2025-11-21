@@ -7,7 +7,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { Separator } from "@/components_shadcn/ui/separator";
-import { MoreVertical, ArrowUpDown, Tag, User as UserIcon, Car, ChevronRight, Plus } from "lucide-react";
+import { MoreVertical, ArrowUpDown, Tag, User as UserIcon, ChevronRight, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +23,7 @@ interface User {
   contact: string;
   avatar?: string;
   status: "activo" | "lead" | "vip";
+  vendedor?: string;
 }
 
 const users: User[] = [
@@ -32,6 +33,7 @@ const users: User[] = [
     contact: "+34 612 345 678",
     avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuBeP0WOO_emI8zYv8K2OFVM-JWtkYiwQHKorZPb1Lu1zxouBvi_-3x_UEO8EAi4uiWk0YGMrRypONstn9oPJ_9EfEW7NTXnyvhwL1_A8YmbvkJHK_wZVHUOhE8boLjjwudUl1Z4vb1-O8faA-35tD0O6uU1HVfrwg7p5aNnrpuqBVLZl4gYgNyyEi6IxafWO5dCfZzTcEMEnx4F0XLEfi4QN_grFv3C_q-mgvXuFslPwisodZWNTzrfSxTl0MDlu-9Ks4SE07kUqpc",
     status: "activo",
+    vendedor: "Juan Pérez",
   },
   {
     id: "2",
@@ -46,6 +48,7 @@ const users: User[] = [
     contact: "Última compra: 15/03/2023",
     avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuBlV1Svfat0UTt97VHsCrRU-NUBkkf3-oLR1zimc7kwlhbjGDhRGlZuAlXOQmjwfYEOq8WVqWz-BZBS-DkTDn9ffVYkMcO5_OogUGeVinaT6d4OGgcmv2hE1bsNoHKYVmETomIZLKZiSyfHuZ64f9RzzW0J0qgEYs5ZZoYXqDWIugoNuYcO_plPuhj5-3P96dICAGZ4JUF_yoLCMAb-bzswLJF4Shoe-iPGMA3bw1xJXOzru4psoKb0IUjHDhxtyDPoh-wTfVpB12I",
     status: "vip",
+    vendedor: "María González",
   },
   {
     id: "4",
@@ -53,6 +56,7 @@ const users: User[] = [
     contact: "+34 698 765 432",
     avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuByJJhs0cEabmMFVU9WyQP0OPHK5vTRnfKkZVPZ-fbItSt9VnXJg08c3zq3a-MkSIqUETpKHlxt0IlsG07VT9eRMtLVl-e9fKZfATNQ4N4hG0Bn692VVnBnyvn4M28WTK7haKGpKZ4ZMUQZMnHwYiKh5_ZMZ_Bsale5OLXkceGmK63m5e7hh3x8M-d9TBAYse_t5BmZTqHgSsVEFnbogibenyhGS6Etx7MZbJqY7kjZOjIVTjOT4KGbG7rl-uPFmC8lVsm9phaOFDE",
     status: "lead",
+    vendedor: "Juan Pérez",
   },
 ];
 
@@ -65,13 +69,22 @@ const statusConfig = {
 export default function UsersPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<string | null>("lead");
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
       user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.contact.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = !activeFilter || user.status === activeFilter;
+    
+    let matchesFilter = true;
+    if (activeFilter === "lead") {
+      matchesFilter = user.status === "lead";
+    } else if (activeFilter === "vendedor") {
+      matchesFilter = !!user.vendedor;
+    } else if (activeFilter) {
+      matchesFilter = user.status === activeFilter;
+    }
+    
     return matchesSearch && matchesFilter;
   });
 
@@ -140,24 +153,27 @@ export default function UsersPage() {
                 <span className={`${typography.body.base} text-foreground`}>Lead</span>
               </Button>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none`}
-              onClick={() => setActiveFilter("vendedor")}
-            >
-              <UserIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className={`${typography.body.base} text-foreground`}>Vendedor</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none`}
-              onClick={() => setActiveFilter("vehiculo")}
-            >
-              <Car className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className={`${typography.body.base} text-foreground`}>Vehículo</span>
-            </Button>
+            {activeFilter === "vendedor" ? (
+              <Button
+                size="sm"
+                className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-primary/10 text-primary border-none hover:bg-primary/20`}
+                onClick={() => setActiveFilter(null)}
+              >
+                <UserIcon className="h-4 w-4 shrink-0" />
+                <span className={typography.body.base}>Vendedor</span>
+                <span className="ml-1 shrink-0">×</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none`}
+                onClick={() => setActiveFilter("vendedor")}
+              >
+                <UserIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className={`${typography.body.base} text-foreground`}>Vendedor</span>
+              </Button>
+            )}
           </nav>
         </section>
 

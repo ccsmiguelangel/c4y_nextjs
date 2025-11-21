@@ -4,17 +4,16 @@ import type { ComponentType } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Button } from "@/components_shadcn/ui/button";
 import {
   Sheet,
-  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components_shadcn/ui/sheet";
-import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car } from "lucide-react";
+import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car, FileText, Bell, CreditCard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -59,6 +58,21 @@ const navItems: NavItem[] = [
     label: "Servicios",
     icon: Settings,
   },
+  {
+    href: "/deal",
+    label: "Contratos",
+    icon: FileText,
+  },
+  {
+    href: "/notifications",
+    label: "Notificaciones",
+    icon: Bell,
+  },
+  {
+    href: "/billing",
+    label: "Facturación",
+    icon: CreditCard,
+  },
 ];
 
 export function MobileMenu() {
@@ -73,14 +87,8 @@ export function MobileMenu() {
           <span className="sr-only">Abrir menú</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[300px] sm:w-[400px] [&>button]:hidden">
-        <SheetHeader className="flex flex-row items-center gap-4">
-          <SheetClose asChild>
-            <Button variant="ghost" size="icon" className="h-10 w-10 flex items-center justify-center">
-              <X className="h-5 w-5" />
-              <span className="sr-only">Cerrar menú</span>
-            </Button>
-          </SheetClose>
+      <SheetContent side="left" className="w-[300px] sm:w-[400px] [&>button]:hidden bg-background/80 backdrop-blur-sm">
+        <SheetHeader>
           <SheetTitle>Menú de Navegación</SheetTitle>
         </SheetHeader>
         <nav className="mt-6 flex flex-col gap-2">
