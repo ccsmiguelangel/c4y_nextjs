@@ -13,6 +13,7 @@ import { User, Bell, Car, Key, Wrench } from "lucide-react";
 import { useState } from "react";
 import { typography, spacing } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import Link from "next/link";
 
 export default function DashboardRoute() {
   const [selectedPeriod, setSelectedPeriod] = useState("Hoy");
@@ -66,8 +67,10 @@ export default function DashboardRoute() {
           <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
             <Bell className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center" asChild>
+            <Link href="/profile">
+              <User className="h-5 w-5" />
+            </Link>
           </Button>
           <LogoutButton />
         </>

@@ -131,7 +131,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Lista de Notificaciones */}
-      <div className={`flex flex-wrap items-center justify-center ${spacing.gap.small} px-0 pb-28`}>
+      <div className={`flex flex-col ${spacing.gap.medium} px-0 pb-28`}>
         {displayedNotifications.length === 0 ? (
           <Card className={commonClasses.card}>
             <CardContent className={`flex flex-col items-center justify-center text-center ${spacing.card.padding}`}>
@@ -152,9 +152,9 @@ export default function NotificationsPage() {
             return (
               <Card
                 key={notification.id}
-                className={`${commonClasses.card} transition-all hover:bg-muted/50 cursor-pointer w-full max-w-md`}
+                className={`${commonClasses.card} transition-all hover:bg-muted/50 cursor-pointer w-full`}
               >
-                <CardContent className={`flex items-center ${spacing.gap.medium} p-3`}>
+                <CardContent className={`flex items-center ${spacing.gap.medium} ${spacing.card.padding}`}>
                   {/* Icono */}
                   <div
                     className={`flex shrink-0 items-center justify-center rounded-full ${notification.iconBgColor} ${notification.iconColor} size-12`}

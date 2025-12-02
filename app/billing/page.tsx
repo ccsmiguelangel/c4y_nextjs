@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 
@@ -110,12 +111,13 @@ const getAmountColor = (status: Payment["status"]) => {
   }
 };
 
-const getActionButton = (status: Payment["status"]) => {
+const getActionButton = (status: Payment["status"], onClick: (e: React.MouseEvent) => void) => {
   switch (status) {
     case "pagado":
       return (
         <Button
           variant="ghost"
+          onClick={onClick}
           className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium hover:bg-muted/80"
         >
           <Receipt className="h-3.5 w-3.5" />
@@ -126,6 +128,7 @@ const getActionButton = (status: Payment["status"]) => {
       return (
         <Button
           variant="ghost"
+          onClick={onClick}
           className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium hover:bg-muted/80"
         >
           <Edit className="h-3.5 w-3.5" />
@@ -136,6 +139,7 @@ const getActionButton = (status: Payment["status"]) => {
       return (
         <Button
           variant="ghost"
+          onClick={onClick}
           className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-xs font-medium hover:bg-muted/80"
         >
           <Bell className="h-3.5 w-3.5" />
@@ -146,6 +150,7 @@ const getActionButton = (status: Payment["status"]) => {
 };
 
 export default function BillingPage() {
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState("");
@@ -255,7 +260,11 @@ export default function BillingPage() {
       {/* Lista de Pagos */}
       <div className={`flex flex-col ${spacing.gap.medium} px-0`}>
         {filteredPayments.map((payment) => (
-          <Card key={payment.id} className={commonClasses.card}>
+          <Card
+            key={payment.id}
+            className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+            onClick={() => router.push(`/billing/details/${payment.id}`)}
+          >
             <CardContent className={spacing.card.padding}>
               <div className={`flex items-start justify-between ${spacing.gap.base}`}>
                 <div className="flex flex-col">
@@ -281,7 +290,10 @@ export default function BillingPage() {
                 <p className={typography.body.small}>
                   {payment.dateLabel} {payment.date}
                 </p>
-                {getActionButton(payment.status)}
+                {getActionButton(payment.status, (e) => {
+                  e.stopPropagation();
+                  router.push(`/billing/details/${payment.id}`);
+                })}
               </div>
             </CardContent>
           </Card>

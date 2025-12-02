@@ -13,7 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components_shadcn/ui/sheet";
-import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car, FileText, Bell, CreditCard } from "lucide-react";
+import { LayoutDashboard, User, Users, Settings, Calendar, Package, Car, FileText, Bell, CreditCard, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -72,6 +72,11 @@ const navItems: NavItem[] = [
     href: "/billing",
     label: "Facturación",
     icon: CreditCard,
+  },
+  {
+    href: "/profile",
+    label: "Perfil",
+    icon: UserCircle,
   },
 ];
 

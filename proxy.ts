@@ -2,13 +2,70 @@ import { type NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { STRAPI_BASE_URL } from "./lib/config";
 
-const protectedRoutes = [
+// Rutas base que no siguen el patrón de módulos
+const baseRoutes = [
   "/dashboard",
   "/dashboard_user",
+  "/notifications",
 ];
 
-function checkIsProtectedRoute(path: string) {
-  return protectedRoutes.includes(path);
+// Módulos que siguen el patrón estándar
+const modules = [
+  "billing",
+  "fleet",
+  "users",
+  "adm-services",
+  "calendar",
+  "stock",
+  "deal",
+];
+
+// Acciones disponibles para los detalles de cada módulo
+const detailActions = [
+  "edit",
+  "delete",
+  "send-reminder",
+  "save-changes",
+  "delete-document",
+  "upload-document",
+];
+
+// Genera las rutas para un módulo
+function generateModuleRoutes(module: string): string[] {
+  const routes = [
+    `/${module}`,
+    `/${module}/details`,
+    `/${module}/details/:id`,
+  ];
+  
+  // Agrega las rutas de acciones
+  detailActions.forEach((action) => {
+    routes.push(`/${module}/details/:id/${action}`);
+  });
+  
+  return routes;
+}
+
+// Genera todas las rutas protegidas
+const protectedRoutes = [
+  ...baseRoutes,
+  ...modules.flatMap(generateModuleRoutes),
+];
+
+function checkIsProtectedRoute(path: string): boolean {
+  // Verifica coincidencia exacta primero
+  if (protectedRoutes.includes(path)) {
+    return true;
+  }
+  
+  // Verifica patrones dinámicos (rutas con :id)
+  return protectedRoutes.some((route) => {
+    // Convierte el patrón de ruta a expresión regular
+    // Reemplaza :id con un patrón que coincida con cualquier ID
+    const pattern = route.replace(/:id/g, '[^/]+');
+    const regex = new RegExp(`^${pattern}$`);
+    return regex.test(path);
+  });
 }
 
 export async function proxy(request: NextRequest) {
