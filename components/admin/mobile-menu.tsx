@@ -34,12 +34,12 @@ interface NavItem {
   icon: ComponentType<{ className?: string }>;
 }
 
-interface NavSection {
+export interface NavSection {
   label: string;
   items: NavItem[];
 }
 
-const navSections: NavSection[] = [
+export const adminNavSections: NavSection[] = [
   {
     label: "Aplicación",
     items: [
@@ -114,7 +114,7 @@ export function MobileMenu() {
           <SheetTitle>Menú de Navegación</SheetTitle>
         </SheetHeader>
         <nav className={cn("mt-6 flex flex-col", spacing.gap.large)}>
-          {navSections.map((section) => (
+          {adminNavSections.map((section) => (
             <div key={section.label} className={cn("flex flex-col", spacing.gap.small)}>
               <p className={cn(typography.label, "px-4 uppercase tracking-wide text-muted-foreground/80")}>
                 {section.label}
