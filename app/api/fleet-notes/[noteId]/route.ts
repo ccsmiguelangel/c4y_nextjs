@@ -47,7 +47,12 @@ async function getCurrentUserProfile() {
       filters: {
         email: { $eq: userData.email },
       },
-      fields: ["documentId"], // Solo necesitamos el documentId
+      fields: ["documentId", "displayName", "email"], // Incluimos displayName para mostrarlo
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
     });
 
     const profileResponse = await fetch(
@@ -74,8 +79,15 @@ async function getCurrentUserProfile() {
       return null;
     }
 
-    // Retornar solo el documentId
-    return { documentId: profile.documentId };
+    // Retornar documentId y displayName para usarlo en la respuesta
+    const result = { 
+      documentId: profile.documentId,
+      displayName: profile.displayName || profile.email || "Usuario",
+      email: profile.email,
+      avatar: profile.avatar,
+    };
+    
+    return result;
   } catch (error) {
     console.error("Error obteniendo user-profile actual:", error);
     return null;

@@ -42,7 +42,6 @@ export async function GET() {
     }
 
     const userData = await userResponse.json();
-    console.log("📥 Respuesta de /api/users/me:", JSON.stringify(userData, null, 2));
     
     // En este proyecto, /api/users/me devuelve el usuario directamente: { id, documentId, username, email, ... }
     // No está envuelto en { data: {...}, meta: {} }
@@ -58,9 +57,6 @@ export async function GET() {
         { 
           error: "Usuario no válido",
           details: "La respuesta de Strapi no contiene un ID de usuario válido",
-          debug: {
-            responseStructure: userData ? Object.keys(userData) : [],
-          }
         },
         { status: 400 }
       );

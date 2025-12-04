@@ -198,165 +198,26 @@ export default function FleetDetailsPage() {
     try {
       const response = await fetch("/api/user-profile/me", { cache: "no-store" });
       if (response.ok) {
-        const result = await response.json() as { data?: { documentId?: string }; error?: string; details?: string };
-        if (result.data?.documentId) {
-          setCurrentUserDocumentId(result.data.documentId);
-          console.log("✅ User-profile cargado, documentId:", result.data.documentId);
-          return result.data.documentId; // Retornar el documentId
+        const { data } = (await response.json()) as { data: { documentId?: string } };
+        if (data?.documentId) {
+          setCurrentUserDocumentId(data.documentId);
+          console.log("✅ User-profile cargado, documentId:", data.documentId);
         } else {
-          console.warn("⚠️ User-profile obtenido pero sin documentId:", result);
+          console.warn("⚠️ User-profile obtenido pero sin documentId:", data);
           setCurrentUserDocumentId(null);
-          return null;
         }
       } else {
-        // Inicializar con información básica
-        const status = response.status;
-        const statusText = response.statusText;
-        let errorData: any = { 
-          status,
-          statusText,
-          message: `Error ${status}: ${statusText}`,
-        };
-        let errorText = "";
-        
-        try {
-          errorText = await response.text();
-          console.log("📥 Error text recibido:", errorText ? errorText.substring(0, 200) : "(vacío)");
-          
-          if (errorText && errorText.trim()) {
-            try {
-              const parsed = JSON.parse(errorText);
-              errorData = { ...errorData, ...parsed };
-              console.log("✅ Error data parseado correctamente:", Object.keys(parsed));
-            } catch (parseError) {
-              console.warn("⚠️ No se pudo parsear errorText como JSON:", parseError);
-              errorData = { 
-                ...errorData,
-                error: errorText || `Error ${status}`,
-                rawResponse: errorText.substring(0, 200),
-                parseError: parseError instanceof Error ? parseError.message : String(parseError),
-              };
-            }
-          } else {
-            console.warn("⚠️ Error text está vacío");
-            errorData = { 
-              ...errorData,
-              error: `Error ${status}: ${statusText}`,
-              note: "La respuesta del servidor no contiene texto",
-            };
-          }
-        } catch (textError) {
-          console.error("❌ Error al leer response.text():", textError);
-          errorData = { 
-            ...errorData,
-            error: `Error ${status}: ${statusText}`,
-            textError: textError instanceof Error ? textError.message : String(textError),
-            note: "No se pudo leer el texto de la respuesta",
-          };
-        }
-        
-        // Logging más detallado usando múltiples console.error
-        // Usar try-catch para cada log para asegurar que todos se ejecuten
-        try {
-          console.error("❌ Error obteniendo user-profile:");
-          console.error("  - Status:", response.status);
-          console.error("  - Status Text:", response.statusText);
-          console.error("  - URL:", response.url || "N/A");
-        } catch (e) {
-          console.error("Error en logging básico:", e);
-        }
-        
-        try {
-          const errorTextPreview = errorText ? errorText.substring(0, 500) : "(vacío o undefined)";
-          console.error("  - Error Text (primeros 500 chars):", errorTextPreview);
-        } catch (e) {
-          console.error("  - Error Text: Error al obtener:", e);
-        }
-        
-        try {
-          console.error("  - Error Data:", JSON.stringify(errorData, null, 2));
-          console.error("  - Error Data Keys:", Object.keys(errorData));
-        } catch (e) {
-          console.error("  - Error Data: Error al serializar:", e);
-          console.error("  - Error Data (raw):", errorData);
-        }
-        
-        try {
-          if (errorData.error) {
-            console.error("  - Error Data.error:", errorData.error);
-          }
-          if (errorData.details) {
-            console.error("  - Error Data.details:", errorData.details);
-          }
-          if (errorData.debug) {
-            console.error("  - Error Data.debug:", JSON.stringify(errorData.debug, null, 2));
-          }
-          if (errorData.message) {
-            console.error("  - Error Data.message:", errorData.message);
-          }
-        } catch (e) {
-          console.error("Error en logging de propiedades:", e);
-        }
-        
-        // Si es un error 400 o 404, puede ser que el usuario no tenga un user-profile
-        if (response.status === 400 || response.status === 404) {
-          console.error("⚠️ El usuario no tiene un user-profile asociado. Esto puede causar problemas al crear notas.");
-          const errorMessage = errorData.error || errorData.details || errorData.message || "Sin detalles";
-          console.error("   Detalles del error:", errorMessage);
-        }
-        
+        const errorText = await response.text();
+        console.warn("⚠️ No se pudo obtener el user-profile del usuario actual:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+        });
         setCurrentUserDocumentId(null);
-        return null;
       }
     } catch (error) {
-      // Mejorar el logging del error para obtener más información
-      let errorInfo: any = {};
-      
-      if (error instanceof Error) {
-        errorInfo = {
-          message: error.message,
-          name: error.name,
-          stack: error.stack?.substring(0, 500), // Limitar stack a 500 caracteres
-        };
-      } else if (error && typeof error === 'object') {
-        // Intentar serializar el objeto de error
-        try {
-          errorInfo = {
-            error: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-            type: typeof error,
-            keys: Object.keys(error),
-          };
-        } catch (stringifyError) {
-          errorInfo = {
-            error: String(error),
-            type: typeof error,
-            stringifyError: stringifyError instanceof Error ? stringifyError.message : String(stringifyError),
-          };
-        }
-      } else {
-        errorInfo = {
-          error: String(error),
-          type: typeof error,
-        };
-      }
-      
-      // Logging más directo para evitar problemas de serialización
-      console.error("❌ Error cargando user-profile (catch):");
-      console.error("  - Tipo de error:", typeof error);
-      console.error("  - Es instancia de Error:", error instanceof Error);
-      if (error instanceof Error) {
-        console.error("  - Mensaje:", error.message);
-        console.error("  - Nombre:", error.name);
-        console.error("  - Stack:", error.stack?.substring(0, 300));
-      } else {
-        console.error("  - Error como string:", String(error));
-        console.error("  - Error completo:", error);
-      }
-      console.error("  - ErrorInfo:", errorInfo);
-      console.error("  - Timestamp:", new Date().toISOString());
-      
+      console.error("❌ Error cargando user-profile:", error);
       setCurrentUserDocumentId(null);
-      return null;
     }
   }, []);
 
@@ -495,37 +356,29 @@ export default function FleetDetailsPage() {
   const handleSaveNote = async () => {
     if (!note.trim()) return;
     
+    // Si no tenemos el documentId, intentar cargarlo antes de guardar
+    if (!currentUserDocumentId) {
+      console.warn("⚠️ No hay currentUserDocumentId, intentando cargarlo...");
+      await loadCurrentUserProfile();
+      // Si después de cargar sigue siendo null, el backend lo obtendrá automáticamente
+    }
+    
     setIsSavingNote(true);
     setErrorMessage(null);
     try {
-      // Obtener el authorDocumentId: primero del estado, si no está disponible, cargarlo
-      let authorDocumentIdToSend = currentUserDocumentId;
-      
-      if (!authorDocumentIdToSend) {
-        console.warn("⚠️ No hay currentUserDocumentId en estado, cargándolo...");
-        authorDocumentIdToSend = await loadCurrentUserProfile();
-      }
-      
-      // Validar que tenemos authorDocumentId antes de continuar
-      if (!authorDocumentIdToSend) {
-        const errorMsg = "No se pudo obtener la información del usuario. Por favor, inicia sesión nuevamente.";
-        setErrorMessage(errorMsg);
-        toast.error("Error al guardar nota", {
-          description: errorMsg,
-        });
-        setIsSavingNote(false);
-        return;
-      }
-      
-      // Preparar el body con el authorDocumentId (siempre debe estar presente)
-      const requestBody: { data: { content: string; authorDocumentId: string } } = {
+      // Solo incluir authorDocumentId si está disponible, sino el backend lo obtendrá
+      const requestBody: { data: { content: string; authorDocumentId?: string } } = {
         data: {
           content: note.trim(),
-          authorDocumentId: authorDocumentIdToSend,
         },
       };
       
-      console.log("📤 Enviando nota con authorDocumentId:", authorDocumentIdToSend);
+      if (currentUserDocumentId) {
+        requestBody.data.authorDocumentId = currentUserDocumentId;
+        console.log("📤 Enviando nota con authorDocumentId:", currentUserDocumentId);
+      } else {
+        console.log("📤 Enviando nota sin authorDocumentId (el backend lo obtendrá)");
+      }
       
       const response = await fetch(`/api/fleet/${vehicleId}/notes`, {
         method: "POST",

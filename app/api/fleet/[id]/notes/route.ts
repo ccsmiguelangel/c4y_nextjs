@@ -194,11 +194,10 @@ export async function GET(_: Request, context: RouteContext) {
     console.log("Notas obtenidas de Strapi:", JSON.stringify(notesData.data, null, 2));
     
     // Buscar el usuario para cada nota usando authorDocumentId
-    // Filtrar notas con authorDocumentId null (notas antiguas creadas antes de la validación)
     const notesWithAuthor = await Promise.all(
       (notesData.data || []).map(async (note: any) => {
-        // Si tiene authorDocumentId válido (no null), buscar el usuario
-        if (note.authorDocumentId && note.authorDocumentId !== null && note.authorDocumentId !== undefined) {
+        // Si tiene authorDocumentId, buscar el usuario
+        if (note.authorDocumentId) {
           try {
             const authorQuery = qs.stringify({
               filters: {
@@ -230,16 +229,44 @@ export async function GET(_: Request, context: RouteContext) {
                   documentId: note.author.documentId,
                   displayName: note.author.displayName,
                   email: note.author.email,
-                  hasAvatar: !!note.author.avatar,
                 });
               } else {
                 console.warn("⚠️ No se encontró autor con documentId:", note.authorDocumentId);
+                // Si no se encuentra, al menos asegurar que tenga email si tenemos el authorDocumentId
+                // Esto es un fallback para notas antiguas o con problemas
+                if (note.authorDocumentId) {
+                  // Intentar extraer email del documentId si es posible, o usar un valor por defecto
+                  note.author = {
+                    id: 0,
+                    documentId: note.authorDocumentId,
+                    displayName: null,
+                    email: null, // No tenemos el email, pero al menos tenemos el documentId
+                  };
+                }
               }
             } else {
               console.warn("⚠️ Error al buscar autor (GET):", authorResponse.status, authorResponse.statusText);
+              // Si hay error, al menos asegurar que tenga algo
+              if (note.authorDocumentId) {
+                note.author = {
+                  id: 0,
+                  documentId: note.authorDocumentId,
+                  displayName: null,
+                  email: null,
+                };
+              }
             }
           } catch (error) {
             console.error("Error obteniendo autor para nota:", error);
+            // Si hay error, al menos asegurar que tenga algo
+            if (note.authorDocumentId) {
+              note.author = {
+                id: 0,
+                documentId: note.authorDocumentId,
+                displayName: null,
+                email: null,
+              };
+            }
           }
         } else {
           // Nota antigua sin authorDocumentId - log para debugging
@@ -264,10 +291,9 @@ export async function GET(_: Request, context: RouteContext) {
           author: note.author ? {
             id: note.author.id,
             documentId: note.author.documentId,
-            displayName: note.author.displayName || "SIN DISPLAYNAME",
-            email: note.author.email || "SIN EMAIL",
+            displayName: note.author.displayName,
             hasAvatar: !!note.author.avatar,
-          } : "SIN AUTOR",
+          } : null,
         });
       });
     }
@@ -326,50 +352,27 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    // Siempre obtener el perfil completo del usuario para tener el displayName y email
+    const currentUserProfile = await getCurrentUserProfile();
+    
     // Obtener el authorDocumentId: primero del body (enviado desde el frontend), si no del usuario logueado
-    // NUNCA permitir null o undefined
-    let authorDocumentId: string | undefined = undefined;
-    let currentUserProfile: { documentId: string; displayName?: string; email?: string; avatar?: any } | null = null;
+    // Ignorar null o undefined, tratarlos como si no viniera el campo
+    let authorDocumentId = body.data.authorDocumentId && body.data.authorDocumentId !== null 
+      ? body.data.authorDocumentId 
+      : undefined;
     
-    // Siempre obtener el perfil completo del usuario para tener el displayName
-    currentUserProfile = await getCurrentUserProfile();
-    
-    // Validar que el authorDocumentId del body no sea null o undefined
-    if (body.data.authorDocumentId && body.data.authorDocumentId !== null && body.data.authorDocumentId !== undefined) {
-      authorDocumentId = body.data.authorDocumentId;
-      console.log("✅ Usando authorDocumentId enviado desde el frontend:", authorDocumentId);
-      // Si el documentId del perfil no coincide, usar el del body pero mantener el displayName del perfil
-      if (currentUserProfile?.documentId !== authorDocumentId) {
-        console.warn("⚠️ El authorDocumentId del frontend no coincide con el del usuario logueado");
-      }
-    } else {
-      // Si no viene del frontend o es null, usar el del usuario logueado
-      console.log("📥 No se recibió authorDocumentId válido del frontend, obteniéndolo del usuario logueado...");
+    // Si no viene del frontend (o es null), obtenerlo del usuario logueado
+    if (!authorDocumentId) {
+      console.log("📥 No se recibió authorDocumentId del frontend (o es null), obteniéndolo del usuario logueado...");
       authorDocumentId = currentUserProfile?.documentId;
       
       if (!authorDocumentId) {
-        console.error("❌ No se pudo obtener el documentId del usuario.");
-        return NextResponse.json(
-          { error: "No se pudo obtener la información del usuario. Por favor, inicia sesión nuevamente." },
-          { status: 401 }
-        );
+        console.warn("⚠️ No se pudo obtener el documentId del usuario. La nota se creará sin authorDocumentId.");
+      } else {
+        console.log("✅ authorDocumentId obtenido del usuario logueado:", authorDocumentId);
       }
-      console.log("✅ authorDocumentId obtenido del usuario logueado:", authorDocumentId);
-    }
-    
-    console.log("👤 Perfil del usuario actual:", {
-      documentId: currentUserProfile?.documentId,
-      displayName: currentUserProfile?.displayName,
-      email: currentUserProfile?.email,
-    });
-    
-    // Validar que tenemos authorDocumentId antes de continuar
-    if (!authorDocumentId || authorDocumentId === null || authorDocumentId === undefined) {
-      console.error("❌ authorDocumentId es null o undefined. Rechazando creación de nota.");
-      return NextResponse.json(
-        { error: "No se pudo identificar al autor de la nota. Por favor, inicia sesión nuevamente." },
-        { status: 400 }
-      );
+    } else {
+      console.log("✅ Usando authorDocumentId enviado desde el frontend:", authorDocumentId);
     }
     
     // Crear la nota
@@ -380,16 +383,22 @@ export async function POST(request: Request, context: RouteContext) {
       source: body.data.authorDocumentId ? "frontend" : "backend",
     });
 
-    // Preparar los datos de la nota (authorDocumentId siempre debe estar presente y no ser null)
+    // Preparar los datos de la nota (solo authorDocumentId, sin relación author)
     const noteData: {
       content: string;
-      authorDocumentId: string; // Requerido, nunca null
+      authorDocumentId?: string;
       vehicle: number;
     } = {
       content: body.data.content,
       vehicle: vehicleId,
-      authorDocumentId: authorDocumentId, // Siempre presente y válido
     };
+    
+    // Incluir el documentId del autor si está disponible
+    if (authorDocumentId) {
+      noteData.authorDocumentId = authorDocumentId;
+    } else {
+      console.warn("⚠️ No se pudo obtener el authorDocumentId. La nota se creará sin autor.");
+    }
 
     const newNoteResponse = await fetch(
       `${STRAPI_BASE_URL}/api/fleet-notes`,
@@ -464,13 +473,13 @@ export async function POST(request: Request, context: RouteContext) {
         const createdNote = await createdNoteResponse.json();
         const noteData = createdNote.data;
         
-        // Si tiene authorDocumentId, buscar el usuario con displayName
-        // Si no se encuentra, usar el perfil del usuario actual que ya tenemos
+        // Si tiene authorDocumentId, buscar el usuario
+        // Primero intentar usar el perfil del usuario actual si coincide
         if (noteData.authorDocumentId) {
-          // Primero intentar usar el perfil del usuario actual si coincide
           if (currentUserProfile && currentUserProfile.documentId === noteData.authorDocumentId) {
+            // Usar el perfil del usuario actual que ya tenemos
             noteData.author = {
-              id: 0, // Placeholder, no es necesario para mostrar
+              id: 0, // Placeholder
               documentId: currentUserProfile.documentId,
               displayName: currentUserProfile.displayName || currentUserProfile.email || "Usuario",
               email: currentUserProfile.email,
@@ -526,7 +535,7 @@ export async function POST(request: Request, context: RouteContext) {
                       email: currentUserProfile.email,
                       avatar: currentUserProfile.avatar,
                     };
-                    console.log("✅ Usando perfil del usuario actual como autor (fallback - no encontrado):", noteData.author);
+                    console.log("✅ Usando perfil del usuario actual como autor (fallback):", noteData.author);
                   }
                 }
               } else {
@@ -558,36 +567,25 @@ export async function POST(request: Request, context: RouteContext) {
               }
             }
           }
-          
-          // Asegurar que siempre tenga el autor, incluso si no se encontró antes
-          if (!noteData.author && noteData.authorDocumentId && currentUserProfile && currentUserProfile.documentId === noteData.authorDocumentId) {
-            noteData.author = {
-              id: 0,
-              documentId: currentUserProfile.documentId,
-              displayName: currentUserProfile.displayName || currentUserProfile.email || "Usuario",
-              email: currentUserProfile.email,
-              avatar: currentUserProfile.avatar,
-            };
-            console.log("✅ Agregando autor del usuario actual (asegurando que esté presente):", noteData.author);
-          }
-        } else {
-          // Si no tiene authorDocumentId pero tenemos el perfil del usuario actual, usarlo
-          if (currentUserProfile) {
-            noteData.author = {
-              id: 0,
-              documentId: currentUserProfile.documentId,
-              displayName: currentUserProfile.displayName || currentUserProfile.email || "Usuario",
-              email: currentUserProfile.email,
-              avatar: currentUserProfile.avatar,
-            };
-            console.log("✅ Usando perfil del usuario actual como autor (sin authorDocumentId):", noteData.author);
-          }
+        }
+        
+        // Asegurar que siempre tenga el autor, incluso si no se encontró antes
+        if (!noteData.author && noteData.authorDocumentId && currentUserProfile && currentUserProfile.documentId === noteData.authorDocumentId) {
+          noteData.author = {
+            id: 0,
+            documentId: currentUserProfile.documentId,
+            displayName: currentUserProfile.displayName || currentUserProfile.email || "Usuario",
+            email: currentUserProfile.email,
+            avatar: currentUserProfile.avatar,
+          };
+          console.log("✅ Agregando autor del usuario actual (asegurando que esté presente):", noteData.author);
         }
         
         console.log("Nota creada con documentId y autor:", {
           documentId: noteData.documentId,
           authorDocumentId: noteData.authorDocumentId,
           authorDisplayName: noteData.author?.displayName,
+          authorEmail: noteData.author?.email,
           hasAuthor: !!noteData.author,
         });
         return NextResponse.json({ data: noteData }, { status: 201 });
@@ -615,6 +613,7 @@ export async function POST(request: Request, context: RouteContext) {
         documentId: fallbackNoteData.documentId,
         authorDocumentId: fallbackNoteData.authorDocumentId,
         authorDisplayName: fallbackNoteData.author?.displayName,
+        authorEmail: fallbackNoteData.author?.email,
         hasAuthor: !!fallbackNoteData.author,
       });
       

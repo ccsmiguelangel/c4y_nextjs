@@ -74,7 +74,7 @@ export function AdminHeader({
         </>
       )}
       {!leftActions && <Separator orientation="vertical" className="mr-2 h-4" />}
-      <h1 className={typography.h3}>{title}</h1>
+      <h1 className={`${typography.h3} hidden md:block`}>{title}</h1>
       <div className="ml-auto flex items-center gap-3">
         <ThemeToggle />
         {rightActions ?? defaultRightActions}
