@@ -1,11 +1,10 @@
 "use client";
 
-import { LogoutButton } from "@/components/ui/logout-button";
 import { SearchInput } from "@/components/ui/search-input";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
-import { Bell, User, MoreVertical, Filter, CircleDot, Zap, Wrench, Plus, ChevronRight } from "lucide-react";
+import { MoreVertical, Filter, CircleDot, Zap, Wrench, Plus, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
@@ -108,20 +107,7 @@ export default function StockPage() {
   return (
     <AdminLayout
       title="Inventario de Piezas"
-      rightActions={
-        <>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <Filter className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <Bell className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5" />
-          </Button>
-          <LogoutButton />
-        </>
-      }
+      showFilterAction
     >
         {/* Search Bar */}
         <div className="px-0">

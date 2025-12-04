@@ -1,12 +1,11 @@
 "use client";
 
-import { LogoutButton } from "@/components/ui/logout-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { ToggleGroup, ToggleGroupItem } from "@/components_shadcn/ui/toggle-group";
-import { User, Bell, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { useState } from "react";
 import { spacing, typography, commonClasses } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
@@ -71,17 +70,7 @@ export default function DashboardUserRoute() {
   return (
     <AdminLayout
       title="Resumen Semanal"
-      rightActions={
-        <>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <Bell className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5" />
-          </Button>
-          <LogoutButton />
-        </>
-      }
+      showFilterAction
     >
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
           <CardContent className={`flex flex-col ${spacing.gap.base} p-6`}>

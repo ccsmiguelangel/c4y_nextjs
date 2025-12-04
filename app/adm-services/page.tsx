@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components_shadcn/ui/select";
-import { MoreVertical, Plus, Droplet, Wrench, Car, Activity, Settings, ChevronRight } from "lucide-react";
+import { Plus, Droplet, Wrench, Car, Activity, Settings, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { spacing, typography } from "@/lib/design-system";
@@ -79,11 +79,7 @@ export default function AdmServicesPage() {
   return (
     <AdminLayout
       title="Gestión de Servicios"
-      rightActions={
-        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-          <MoreVertical className="h-5 w-5" />
-        </Button>
-      }
+      showFilterAction
     >
         {/* Sección: Servicios Predefinidos */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">

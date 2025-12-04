@@ -178,7 +178,7 @@ export default function StockDetailsPage() {
 
   if (!itemData) {
     return (
-      <AdminLayout title="Pieza no encontrada">
+      <AdminLayout title="Pieza no encontrada" showFilterAction>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
           <p className={typography.body.large}>La pieza solicitada no existe.</p>
           <Button onClick={() => router.push("/stock")}>
@@ -202,7 +202,7 @@ export default function StockDetailsPage() {
   const IconComponent = getIcon(itemData.icon);
 
   return (
-    <AdminLayout title={itemData.code}>
+    <AdminLayout title={itemData.code} showFilterAction>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información de la Pieza */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">

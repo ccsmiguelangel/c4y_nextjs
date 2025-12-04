@@ -194,7 +194,7 @@ export default function CalendarDetailsPage() {
 
   if (!appointmentData) {
     return (
-      <AdminLayout title="Cita no encontrada">
+      <AdminLayout title="Cita no encontrada" showFilterAction>
         <div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
           <section className={`flex flex-col items-center justify-center ${spacing.gap.large} w-full max-w-md px-6`}>
             <p className={`${typography.h3} text-center`}>La cita solicitada no existe.</p>
@@ -224,7 +224,7 @@ export default function CalendarDetailsPage() {
   const TypeIcon = getTypeIcon(appointmentData.type);
 
   return (
-    <AdminLayout title={`Cita - ${appointmentData.client}`}>
+    <AdminLayout title={`Cita - ${appointmentData.client}`} showFilterAction>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información de la Cita */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">

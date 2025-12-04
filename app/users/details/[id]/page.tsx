@@ -292,7 +292,7 @@ export default function UserDetailsPage() {
 
   if (!clientData) {
     return (
-      <AdminLayout title="Cliente no encontrado">
+      <AdminLayout title="Cliente no encontrado" showFilterAction>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
           <p className={typography.body.large}>El cliente solicitado no existe.</p>
           <Button onClick={() => router.push("/users")}>
@@ -310,7 +310,7 @@ export default function UserDetailsPage() {
   };
 
   return (
-    <AdminLayout title={clientData.name}>
+    <AdminLayout title={clientData.name} showFilterAction>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información del Cliente */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">

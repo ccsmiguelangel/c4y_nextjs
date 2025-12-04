@@ -1,6 +1,5 @@
 "use client";
 
-import { LogoutButton } from "@/components/ui/logout-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
@@ -9,11 +8,10 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components_shadcn/ui/chart";
 import { Bar, BarChart, Pie, PieChart, Cell, XAxis, YAxis, CartesianGrid } from "recharts";
-import { User, Bell, Car, Key, Wrench } from "lucide-react";
+import { Car, Key, Wrench } from "lucide-react";
 import { useState } from "react";
 import { typography, spacing } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
-import Link from "next/link";
 
 export default function DashboardRoute() {
   const [selectedPeriod, setSelectedPeriod] = useState("Hoy");
@@ -60,22 +58,7 @@ export default function DashboardRoute() {
   } satisfies ChartConfig;
 
   return (
-    <AdminLayout
-      title="Resumen General"
-      rightActions={
-        <>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <Bell className="h-5 w-5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center" asChild>
-            <Link href="/profile">
-              <User className="h-5 w-5" />
-            </Link>
-          </Button>
-          <LogoutButton />
-        </>
-      }
-    >
+    <AdminLayout title="Resumen General">
         <ScrollArea className="w-full whitespace-nowrap">
           <div className="flex gap-2 pb-2">
             {periods.map((period) => (

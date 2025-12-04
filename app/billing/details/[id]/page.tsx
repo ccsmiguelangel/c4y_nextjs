@@ -11,14 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { Separator } from "@/components_shadcn/ui/separator";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components_shadcn/ui/dropdown-menu";
-import {
   ArrowLeft,
-  MoreVertical,
   User,
   Car,
   Bell,
@@ -29,7 +22,6 @@ import {
 } from "lucide-react";
 import { spacing, typography, commonClasses, colors, components } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
-import { LogoutButton } from "@/components/ui/logout-button";
 
 interface PaymentData {
   id: string;
@@ -111,7 +103,7 @@ export default function BillingDetailsPage() {
 
   if (!paymentData) {
     return (
-      <AdminLayout title="Detalle del Pago" rightActions={<LogoutButton />}>
+      <AdminLayout title="Detalle del Pago" showFilterAction>
         <Card className={commonClasses.card}>
           <CardContent className={spacing.card.padding}>
             <p className={typography.body.base}>Pago no encontrado</p>
@@ -150,6 +142,7 @@ export default function BillingDetailsPage() {
   return (
     <AdminLayout
       title="Detalle del Pago"
+      showFilterAction
       leftActions={
         <Button
           variant="ghost"
@@ -159,24 +152,6 @@ export default function BillingDetailsPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-      }
-      rightActions={
-        <>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <MoreVertical className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[8rem]">
-              <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" className="cursor-pointer">
-                Eliminar Pago
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <LogoutButton />
-        </>
       }
     >
       <div className="flex flex-col gap-6 pb-24">

@@ -15,68 +15,14 @@ import {
   DropdownMenuSeparator,
 } from "@/components_shadcn/ui/dropdown-menu";
 import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import Image from "next/image";
+import type { FleetVehicleCard, FleetVehicleStatus } from "@/validations/types";
 
-interface Vehicle {
-  id: string;
-  name: string;
-  vin: string;
-  price: string;
-  status: "nuevo" | "usado" | "seminuevo";
-  brand: string;
-  model: string;
-  year: number;
-  image: string;
-  imageAlt: string;
-}
-
-const vehicles: Vehicle[] = [
-  {
-    id: "1",
-    name: "Ford Mustang 2023",
-    vin: "1ZVBP8...",
-    price: "$55,000",
-    status: "nuevo",
-    brand: "Ford",
-    model: "Mustang",
-    year: 2023,
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuBHQ-PFSUQDANEfTXpOlEKQ2nDYpnZ_O1xQOseEEX-RcKWhWF-WUtGa0-YYqKo9af0QFcll6_c0LKN95sQ7pj7bJ56ZdhlQx2TRSdz5W29YJSqWEBl_BuReqP_BgC_iMZ-Cy95Hsa-ISBdCI-q7cl5kdeIvPSFTKMbOq1DMsRF9rcP9md7aywq5QMTxi52cM3ryR6N0zJvS2UPCMMaL_NUCgVwYdvsvgHB_RRcla88LU-ozwhCneojMav87IMWxogKyMsVCMtis4H8",
-    imageAlt: "Silver Ford Mustang",
-  },
-  {
-    id: "2",
-    name: "Honda Civic 2021",
-    vin: "2HGFC1...",
-    price: "$28,000",
-    status: "usado",
-    brand: "Honda",
-    model: "Civic",
-    year: 2021,
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuB7O40UUyjASVNen_GJmVjX7y2oOpujom0e3_SVJpkSxqa9jpuoGDMEfWq2PQE7OPM7ffqwQpnolQnTvSKtt5pReNTl_iE10A7hdwHuU61Vo1DU8503fajDBRw4P8v0Iiz6_rtFGC0PwpXYWDEmHIL0rmHEqSITMji6eHSnmtSZDaqxj0j9jyxybg8F8BjrwB83Ggo-JmeLzhBy60XrV44USpNyL9iol52tFpCW04lCCYY6SZZgrfvY1woPvbsx3WSAqLqwl2owBfc",
-    imageAlt: "Blue Honda Civic",
-  },
-  {
-    id: "3",
-    name: "Toyota RAV4 2022",
-    vin: "JTMEP4...",
-    price: "$35,500",
-    status: "seminuevo",
-    brand: "Toyota",
-    model: "RAV4",
-    year: 2022,
-    image:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuCFdVv4GK_wJ2IA7BWTG6C3RUOxj8EoYhWGEPfbWHHH25OYtvRITA49FTjCA7_MC9dDfoJhQ2YTLETxTYbj_xRFylSjAXbOg1CPv9lJcpRWwbHpfEHJILUBCY8uRy3bHBtTl8bi78IfZz-elig4Ija-6RQ6VXcR9paEBBwmnxyZX1Bb8Gk7cU6litwdP5Zw6wPywgXRW8RTXhaVfHmr_PZTyPtmI2T7Wf1zUaAS-qlqOWqfKdmhxYkq1XFd9isfeKjVSryEUzLTkTA",
-    imageAlt: "White Toyota RAV4",
-  },
-];
-
-const getStatusBadge = (status: Vehicle["status"]) => {
+const getStatusBadge = (status: FleetVehicleStatus) => {
   switch (status) {
     case "nuevo":
       return (
@@ -99,29 +45,67 @@ const getStatusBadge = (status: Vehicle["status"]) => {
   }
 };
 
-const brands = Array.from(new Set(vehicles.map((v) => v.brand))).sort();
-const models = Array.from(new Set(vehicles.map((v) => v.model))).sort();
-const years = Array.from(new Set(vehicles.map((v) => v.year))).sort((a, b) => b - a);
-const statuses: Vehicle["status"][] = ["nuevo", "usado", "seminuevo"];
+const statuses: FleetVehicleStatus[] = ["nuevo", "usado", "seminuevo"];
 
 export default function FleetPage() {
   const router = useRouter();
+  const [vehicles, setVehicles] = useState<FleetVehicleCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<Vehicle["status"] | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<FleetVehicleStatus | null>(null);
 
-  const filteredVehicles = vehicles.filter((vehicle) => {
-    const matchesSearch =
-      vehicle.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      vehicle.vin.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesBrand = !selectedBrand || vehicle.brand === selectedBrand;
-    const matchesModel = !selectedModel || vehicle.model === selectedModel;
-    const matchesYear = !selectedYear || vehicle.year === selectedYear;
-    const matchesStatus = !selectedStatus || vehicle.status === selectedStatus;
-    return matchesSearch && matchesBrand && matchesModel && matchesYear && matchesStatus;
-  });
+  const loadVehicles = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/fleet", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Fleet request failed");
+      }
+      const { data } = (await response.json()) as { data?: FleetVehicleCard[] };
+      setVehicles(Array.isArray(data) ? data : []);
+      setErrorMessage(null);
+    } catch (error) {
+      console.error("Error loading fleet:", error);
+      setErrorMessage("No pudimos cargar la flota. Intenta nuevamente.");
+      setVehicles([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVehicles();
+  }, [loadVehicles]);
+
+  const brands = useMemo(
+    () => Array.from(new Set(vehicles.map((v) => v.brand))).sort(),
+    [vehicles]
+  );
+  const models = useMemo(
+    () => Array.from(new Set(vehicles.map((v) => v.model))).sort(),
+    [vehicles]
+  );
+  const years = useMemo(
+    () => Array.from(new Set(vehicles.map((v) => v.year))).sort((a, b) => b - a),
+    [vehicles]
+  );
+
+  const filteredVehicles = useMemo(() => {
+    return vehicles.filter((vehicle) => {
+      const matchesSearch =
+        vehicle.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        vehicle.vin.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesBrand = !selectedBrand || vehicle.brand === selectedBrand;
+      const matchesModel = !selectedModel || vehicle.model === selectedModel;
+      const matchesYear = !selectedYear || vehicle.year === selectedYear;
+      const matchesStatus = !selectedStatus || vehicle.status === selectedStatus;
+      return matchesSearch && matchesBrand && matchesModel && matchesYear && matchesStatus;
+    });
+  }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedStatus]);
 
   const clearFilters = () => {
     setSelectedBrand(null);
@@ -133,7 +117,7 @@ export default function FleetPage() {
   const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedStatus;
 
   return (
-    <AdminLayout title="Flota">
+    <AdminLayout title="Flota" showFilterAction>
       {/* Search Bar */}
       <section className={`flex flex-col ${spacing.gap.base}`}>
         <label className="flex flex-col min-w-40 h-12 w-full">
@@ -325,7 +309,24 @@ export default function FleetPage() {
       <Separator />
 
       {/* Lista de Vehículos */}
-      {filteredVehicles.length > 0 ? (
+      {isLoading ? (
+        <Card className={commonClasses.card}>
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <p className={`${typography.body.large} font-semibold`}>Cargando flota...</p>
+            <p className={typography.body.small}>Esto tomará solo unos segundos.</p>
+          </CardContent>
+        </Card>
+      ) : errorMessage ? (
+        <Card className={commonClasses.card}>
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-2">
+            <p className={`${typography.h3} text-destructive`}>No pudimos cargar la flota</p>
+            <p className={typography.body.small}>{errorMessage}</p>
+            <Button onClick={loadVehicles} className="mt-4">
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      ) : filteredVehicles.length > 0 ? (
         <div className={`flex flex-col ${spacing.gap.medium}`}>
           {filteredVehicles.map((vehicle) => (
             <Card 
@@ -334,15 +335,21 @@ export default function FleetPage() {
               onClick={() => router.push(`/fleet/details/${vehicle.id}`)}
             >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
-                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-28 sm:w-28">
-                  <Image
-                    src={vehicle.image}
-                    alt={vehicle.imageAlt}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 640px) 96px, 112px"
-                  />
-                </div>
+                {vehicle.imageUrl ? (
+                  <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-muted sm:h-28 sm:w-28">
+                    <Image
+                      src={vehicle.imageUrl}
+                      alt={vehicle.imageAlt || vehicle.name}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 640px) 96px, 112px"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg bg-muted sm:h-28 sm:w-28">
+                    <Car className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                )}
                 <div className={`flex flex-1 flex-col ${spacing.gap.small}`}>
                   <div className="flex items-center justify-between">
                     <p className={`${typography.body.large} font-bold leading-tight`}>
@@ -377,7 +384,7 @@ export default function FleetPage() {
                     VIN: {vehicle.vin}
                   </p>
                   <p className={`${typography.body.base} font-semibold leading-normal`}>
-                    {vehicle.price}
+                    {vehicle.priceLabel}
                   </p>
                   <div className="pt-1">{getStatusBadge(vehicle.status)}</div>
                 </div>

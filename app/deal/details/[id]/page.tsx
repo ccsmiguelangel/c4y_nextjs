@@ -10,6 +10,7 @@ import { Textarea } from "@/components_shadcn/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components_shadcn/ui/toggle-group";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { spacing, typography, commonClasses } from "@/lib/design-system";
+import { AdminLayout } from "@/components/admin/admin-layout";
 
 interface ContractData {
   id: string;
@@ -56,6 +57,17 @@ export default function DealDetailsPage() {
   const params = useParams();
   const id = params?.id as string;
 
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => router.back()}
+      className="rounded-full"
+    >
+      <ArrowLeft className="h-5 w-5" />
+    </Button>
+  );
+
   const contractData = getContractData(id);
 
   const [clientName, setClientName] = useState(contractData?.clientName || "");
@@ -69,25 +81,16 @@ export default function DealDetailsPage() {
 
   if (!contractData) {
     return (
-      <div className="relative flex min-h-screen w-full flex-col bg-background">
-        <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-          <div className="flex h-16 items-center justify-between px-6">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.back()}
-              className="rounded-full"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <h1 className={typography.h3}>Editor de Contrato</h1>
-            <div className="w-10" />
-          </div>
-        </header>
-        <main className={commonClasses.mainContainer}>
-          <p>Contrato no encontrado</p>
-        </main>
-      </div>
+      <AdminLayout
+        title="Editor de Contrato"
+        showFilterAction
+        leftActions={backButton}
+      >
+        <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[300px]`}>
+          <p className={typography.body.large}>Contrato no encontrado</p>
+          <Button onClick={() => router.push("/deal")}>Ver contratos</Button>
+        </section>
+      </AdminLayout>
     );
   }
 
@@ -102,27 +105,13 @@ export default function DealDetailsPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-10 w-full border-b bg-background/80 backdrop-blur-sm">
-        <div className="flex h-16 items-center justify-between px-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.back()}
-            className="rounded-full"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className={`${typography.h3} flex-1 text-center`}>Editor de Contrato</h1>
-          <div className="w-10" />
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4">
-        <div className="mx-auto w-full max-w-2xl">
-          <div className={`flex flex-col ${spacing.gap.xlarge}`}>
+    <AdminLayout
+      title="Editor de Contrato"
+      showFilterAction
+      leftActions={backButton}
+    >
+      <div className="mx-auto w-full max-w-2xl">
+        <div className={`flex flex-col ${spacing.gap.xlarge} pb-32`}>
           {/* Datos del Cliente */}
           <section>
             <h2 className={`${typography.h4} mb-3`}>Datos del Cliente</h2>
@@ -278,30 +267,28 @@ export default function DealDetailsPage() {
               ))}
             </section>
           )}
-          </div>
         </div>
-      </main>
+      </div>
 
-      {/* Footer */}
-      <footer className="sticky bottom-0 z-10 border-t bg-background p-4">
+      <div className="sticky bottom-0 z-10 border-t bg-background px-0 py-4">
         <div className="mx-auto w-full max-w-2xl">
           <div className={`flex ${spacing.gap.base}`}>
-          <Button
-            variant="outline"
-            onClick={handleSaveDraft}
-            className="flex items-center justify-center flex-1 rounded-lg border-primary bg-background py-3 text-sm font-bold text-primary transition-colors hover:bg-primary/5"
-          >
-            Guardar Borrador
-          </Button>
-          <Button
-            onClick={handleGenerateContract}
-            className="flex items-center justify-center flex-1 rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            Generar Contrato
-          </Button>
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              className="flex flex-1 items-center justify-center rounded-lg border-primary bg-background py-3 text-sm font-bold text-primary transition-colors hover:bg-primary/5"
+            >
+              Guardar Borrador
+            </Button>
+            <Button
+              onClick={handleGenerateContract}
+              className="flex flex-1 items-center justify-center rounded-lg bg-primary py-3 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Generar Contrato
+            </Button>
           </div>
         </div>
-      </footer>
-    </div>
+      </div>
+    </AdminLayout>
   );
 }

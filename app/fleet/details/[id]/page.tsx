@@ -150,7 +150,7 @@ export default function FleetDetailsPage() {
 
   if (!vehicleData) {
     return (
-      <AdminLayout title="Vehículo no encontrado">
+      <AdminLayout title="Vehículo no encontrado" showFilterAction>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
           <p className={typography.body.large}>El vehículo solicitado no existe.</p>
           <Button onClick={() => router.push("/fleet")}>
@@ -172,7 +172,7 @@ export default function FleetDetailsPage() {
   };
 
   return (
-    <AdminLayout title={vehicleData.name}>
+    <AdminLayout title={vehicleData.name} showFilterAction>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información del Vehículo */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">

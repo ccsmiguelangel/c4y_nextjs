@@ -155,7 +155,7 @@ export default function DealPage() {
   );
 
   return (
-    <AdminLayout title="Gestión de Contratos">
+    <AdminLayout title="Gestión de Contratos" showFilterAction>
       {/* Botones de acción principal */}
       <section className={`flex ${spacing.gap.small}`}>
         <Button

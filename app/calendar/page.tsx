@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components_shadcn/ui/toggle-grou
 import { Separator } from "@/components_shadcn/ui/separator";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
-import { Search, ChevronLeft, ChevronRight, Plus, MoreVertical, Car, ShoppingCart, Wrench, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, MoreVertical, Car, ShoppingCart, Wrench, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { typography, spacing, commonClasses } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 
@@ -336,11 +336,7 @@ export default function CalendarPage() {
   return (
     <AdminLayout
       title="Calendario"
-      rightActions={
-        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-          <Search className="h-5 w-5" />
-        </Button>
-      }
+      showFilterAction
     >
         <div className="flex justify-center" aria-label="Tipo de vista">
           <ToggleGroup

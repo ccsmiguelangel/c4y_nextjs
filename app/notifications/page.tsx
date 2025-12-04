@@ -1,11 +1,10 @@
 "use client";
 
-import { LogoutButton } from "@/components/ui/logout-button";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components_shadcn/ui/tabs";
-import { Settings, Archive, CheckCheck, UserPlus, Sparkles, Calendar, Receipt, Car } from "lucide-react";
+import { Archive, CheckCheck, UserPlus, Sparkles, Calendar, Receipt, Car } from "lucide-react";
 import { useState } from "react";
 import { commonClasses, spacing, typography, colors } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
@@ -98,17 +97,7 @@ export default function NotificationsPage() {
   const unreadCount = notificationList.filter((n) => !n.isRead).length;
 
   return (
-    <AdminLayout
-      title="Centro de Notificaciones"
-      rightActions={
-        <>
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-            <Settings className="h-5 w-5" />
-          </Button>
-          <LogoutButton />
-        </>
-      }
-    >
+    <AdminLayout title="Centro de Notificaciones">
       {/* Tabs */}
       <div className="px-0">
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "notifications" | "archived")}>

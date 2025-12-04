@@ -1,6 +1,5 @@
 "use client";
 
-import { LogoutButton } from "@/components/ui/logout-button";
 import { SearchInput } from "@/components/ui/search-input";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -177,7 +176,7 @@ export default function BillingPage() {
   return (
     <AdminLayout
       title="Gestión de Pagos"
-      rightActions={<LogoutButton />}
+      showFilterAction
     >
       {/* Botón de Registrar Pago */}
       <div className="px-0">

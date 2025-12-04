@@ -8,12 +8,6 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { MoreVertical, ArrowUpDown, Tag, User as UserIcon, ChevronRight, Plus } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components_shadcn/ui/dropdown-menu";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 
@@ -100,19 +94,7 @@ export default function UsersPage() {
   return (
     <AdminLayout
       title="Clientes"
-      rightActions={
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full flex items-center justify-center">
-              <MoreVertical className="h-5 w-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem>Exportar</DropdownMenuItem>
-            <DropdownMenuItem>Configuración</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      }
+      showFilterAction
     >
         <section className={`flex flex-col ${spacing.gap.base}`}>
           <SearchInput
