@@ -244,4 +244,78 @@
   .separator-margin {
     @apply mt-2 pt-2;
   }
+
+  /* Squircle shape - Esquinas redondeadas tipo iOS con fallback */
+  .squircle {
+    /* Fallback para navegadores que no soportan mask-image */
+    border-radius: 1.5rem;
+    
+    /* Squircle usando mask-image con SVG - Compatible con Chrome, Firefox, Safari, Edge */
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,20 C0,9 9,0 20,0 L80,0 C91,0 100,9 100,20 L100,80 C100,91 91,100 80,100 L20,100 C9,100 0,91 0,80 Z' fill='black'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg width='100' height='100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0,20 C0,9 9,0 20,0 L80,0 C91,0 100,9 100,20 L100,80 C100,91 91,100 80,100 L20,100 C9,100 0,91 0,80 Z' fill='black'/%3E%3C/svg%3E");
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+  }
+
+  /* Squircle más suave para diálogos - Preserva el borde */
+  .squircle-dialog {
+    /* Squircle simulado con border-radius que preserva el borde */
+    border-radius: 2rem 2rem 1.75rem 1.75rem;
+    
+    /* Para navegadores modernos, usar valores más suaves tipo squircle */
+    @supports (border-radius: 2rem) {
+      border-radius: 2.5rem 2.5rem 2rem 2rem;
+    }
+  }
+
+  /* Layout container para el diálogo con capa de opacidad inferior */
+  .dialog-layout-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Capa de opacidad solo en la parte inferior del diálogo */
+  .dialog-layout-container::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.15) 40%, transparent 100%);
+    pointer-events: none;
+    z-index: 50;
+  }
+
+  .dark .dialog-layout-container::before {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.3) 40%, transparent 100%);
+  }
+
+  /* Efecto de difuminado adicional justo debajo del diálogo */
+  .dialog-layout-container::after {
+    content: '';
+    position: absolute;
+    bottom: calc(50% - 150px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 500px;
+    height: 120px;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.2) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 49;
+    filter: blur(25px);
+  }
+
+  .dark .dialog-layout-container::after {
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.4) 0%, transparent 70%);
+    filter: blur(30px);
+  }
 }

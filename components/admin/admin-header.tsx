@@ -9,6 +9,7 @@ import { typography } from "@/lib/design-system";
 import { LogoutButton } from "@/components/ui/logout-button";
 import { MobileMenu } from "./mobile-menu";
 import { ThemeToggle } from "./theme-toggle";
+import { SpotlightSearch } from "./spotlight-search";
 
 interface AdminHeaderProps {
   title: string;
@@ -27,6 +28,7 @@ export function AdminHeader({
 }: AdminHeaderProps) {
   const defaultRightActions = (
     <>
+      <SpotlightSearch />
       {showFilterAction && (
         <Button
           variant="ghost"

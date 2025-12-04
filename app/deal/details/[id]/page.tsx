@@ -62,7 +62,7 @@ export default function DealDetailsPage() {
       variant="ghost"
       size="icon"
       onClick={() => router.back()}
-      className="rounded-full"
+      className="h-10 w-10 flex items-center justify-center rounded-full"
     >
       <ArrowLeft className="h-5 w-5" />
     </Button>

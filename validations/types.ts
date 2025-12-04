@@ -22,9 +22,9 @@ export interface StrapiPageMetadata {
   favicon?: StrapiImage;
 }
 
-export interface StrapiResponse<T = any> {
+export interface StrapiResponse<T = unknown> {
   data: T;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface HeaderSection {
@@ -118,5 +118,72 @@ export interface DashboardDataProcessed {
   description: string;
   favicon?: StrapiImage;
   sections: HeroSectionData[];
+}
+
+export type FleetVehicleCondition = "nuevo" | "usado" | "seminuevo";
+
+export interface FleetVehicleImage {
+  url?: string;
+  alternativeText?: string;
+}
+
+export interface FleetVehicleRawAttributes {
+  name: string;
+  vin: string;
+  price: string | number;
+  condition: FleetVehicleCondition;
+  brand: string;
+  model: string;
+  year: number;
+  color?: string;
+  mileage?: number;
+  fuelType?: string;
+  transmission?: string;
+  documentId?: string;
+  image?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+  imageAlt?: string | null;
+}
+
+export type FleetVehicleRaw =
+  | ({ id?: number | string; documentId?: string } & FleetVehicleRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: FleetVehicleRawAttributes & { documentId?: string };
+    };
+
+export interface FleetVehicleCard {
+  id: string;
+  documentId: string;
+  name: string;
+  vin: string;
+  priceNumber: number;
+  priceLabel: string;
+  condition: FleetVehicleCondition;
+  brand: string;
+  model: string;
+  year: number;
+  imageUrl?: string;
+  imageAlt?: string;
+  color?: string;
+  mileage?: number;
+  fuelType?: string;
+  transmission?: string;
+}
+
+export interface FleetVehicleUpdatePayload {
+  name?: string;
+  vin?: string;
+  price?: number;
+  condition?: FleetVehicleCondition;
+  brand?: string;
+  model?: string;
+  year?: number;
+  color?: string | null;
+  mileage?: number | null;
+  fuelType?: string | null;
+  transmission?: string | null;
+  image?: number | null;
+  imageAlt?: string | null;
 }
 

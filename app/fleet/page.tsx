@@ -20,9 +20,10 @@ import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import Image from "next/image";
-import type { FleetVehicleCard, FleetVehicleStatus } from "@/validations/types";
+import type { FleetVehicleCard, FleetVehicleCondition } from "@/validations/types";
+import { STRAPI_BASE_URL } from "@/lib/config";
 
-const getStatusBadge = (status: FleetVehicleStatus) => {
+const getConditionBadge = (status: FleetVehicleCondition) => {
   switch (status) {
     case "nuevo":
       return (
@@ -45,7 +46,7 @@ const getStatusBadge = (status: FleetVehicleStatus) => {
   }
 };
 
-const statuses: FleetVehicleStatus[] = ["nuevo", "usado", "seminuevo"];
+const conditions: FleetVehicleCondition[] = ["nuevo", "usado", "seminuevo"];
 
 export default function FleetPage() {
   const router = useRouter();
@@ -56,7 +57,7 @@ export default function FleetPage() {
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
-  const [selectedStatus, setSelectedStatus] = useState<FleetVehicleStatus | null>(null);
+  const [selectedCondition, setSelectedCondition] = useState<FleetVehicleCondition | null>(null);
 
   const loadVehicles = useCallback(async () => {
     setIsLoading(true);
@@ -102,19 +103,19 @@ export default function FleetPage() {
       const matchesBrand = !selectedBrand || vehicle.brand === selectedBrand;
       const matchesModel = !selectedModel || vehicle.model === selectedModel;
       const matchesYear = !selectedYear || vehicle.year === selectedYear;
-      const matchesStatus = !selectedStatus || vehicle.status === selectedStatus;
-      return matchesSearch && matchesBrand && matchesModel && matchesYear && matchesStatus;
+      const matchesCondition = !selectedCondition || vehicle.condition === selectedCondition;
+      return matchesSearch && matchesBrand && matchesModel && matchesYear && matchesCondition;
     });
-  }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedStatus]);
+  }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition]);
 
   const clearFilters = () => {
     setSelectedBrand(null);
     setSelectedModel(null);
     setSelectedYear(null);
-    setSelectedStatus(null);
+    setSelectedCondition(null);
   };
 
-  const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedStatus;
+  const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedCondition;
 
   return (
     <AdminLayout title="Flota" showFilterAction>
@@ -260,14 +261,14 @@ export default function FleetPage() {
                   size="sm"
                   suppressHydrationWarning
                   className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
-                    selectedStatus ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                    selectedCondition ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
                   }`}
                 >
                   <span className={typography.body.base}>Estado</span>
-                  {selectedStatus && (
+                  {selectedCondition && (
                     <>
                       <span className="ml-1 shrink-0">·</span>
-                      <span className="shrink-0 capitalize">{selectedStatus}</span>
+                      <span className="shrink-0 capitalize">{selectedCondition}</span>
                     </>
                   )}
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -276,14 +277,14 @@ export default function FleetPage() {
               <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
                 <DropdownMenuLabel>Seleccionar Estado</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedStatus(null)}>
+                <DropdownMenuItem onClick={() => setSelectedCondition(null)}>
                   Todos los estados
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {statuses.map((status) => (
+                {conditions.map((status) => (
                   <DropdownMenuItem
                     key={status}
-                    onClick={() => setSelectedStatus(status)}
+                    onClick={() => setSelectedCondition(status)}
                   >
                     <span className="capitalize">{status}</span>
                   </DropdownMenuItem>
@@ -332,7 +333,7 @@ export default function FleetPage() {
             <Card 
               key={vehicle.id} 
               className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
-              onClick={() => router.push(`/fleet/details/${vehicle.id}`)}
+              onClick={() => router.push(`/fleet/details/${vehicle.documentId ?? vehicle.id}`)}
             >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
                 {vehicle.imageUrl ? (
@@ -368,7 +369,12 @@ export default function FleetPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); router.push(`/fleet/details/${vehicle.id}`); }}>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/fleet/details/${vehicle.documentId ?? vehicle.id}`);
+                            }}
+                          >
                             Ver detalles
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Editar</DropdownMenuItem>
@@ -386,7 +392,7 @@ export default function FleetPage() {
                   <p className={`${typography.body.base} font-semibold leading-normal`}>
                     {vehicle.priceLabel}
                   </p>
-                  <div className="pt-1">{getStatusBadge(vehicle.status)}</div>
+                  <div className="pt-1">{getConditionBadge(vehicle.condition)}</div>
                 </div>
               </CardContent>
             </Card>
@@ -412,9 +418,13 @@ export default function FleetPage() {
       <Button
         className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105"
         size="icon"
+        onClick={() => {
+          const adminUrl = `${STRAPI_BASE_URL.replace(/\/$/, "")}/admin/content-manager/collection-types/api::fleet.fleet/create`;
+          window.open(adminUrl, "_blank", "noopener");
+        }}
+        aria-label="Agregar nuevo vehículo"
       >
         <Plus className="h-6 w-6" />
-        <span className="sr-only">Añadir vehículo</span>
       </Button>
     </AdminLayout>
   );

@@ -101,9 +101,20 @@ export default function BillingDetailsPage() {
     paymentData?.documents || []
   );
 
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => router.back()}
+      className="h-10 w-10 flex items-center justify-center rounded-full"
+    >
+      <ArrowLeft className="h-5 w-5" />
+    </Button>
+  );
+
   if (!paymentData) {
     return (
-      <AdminLayout title="Detalle del Pago" showFilterAction>
+      <AdminLayout title="Detalle del Pago" showFilterAction leftActions={backButton}>
         <Card className={commonClasses.card}>
           <CardContent className={spacing.card.padding}>
             <p className={typography.body.base}>Pago no encontrado</p>
@@ -143,16 +154,7 @@ export default function BillingDetailsPage() {
     <AdminLayout
       title="Detalle del Pago"
       showFilterAction
-      leftActions={
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.back()}
-          className="rounded-full"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-      }
+      leftActions={backButton}
     >
       <div className="flex flex-col gap-6 pb-24">
             {/* Información del Cliente */}

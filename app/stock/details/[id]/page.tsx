@@ -176,9 +176,20 @@ export default function StockDetailsPage() {
     }
   }, [itemData]);
 
+  const backButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => router.back()}
+      className="h-10 w-10 flex items-center justify-center rounded-full"
+    >
+      <ArrowLeft className="h-5 w-5" />
+    </Button>
+  );
+
   if (!itemData) {
     return (
-      <AdminLayout title="Pieza no encontrada" showFilterAction>
+      <AdminLayout title="Pieza no encontrada" showFilterAction leftActions={backButton}>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
           <p className={typography.body.large}>La pieza solicitada no existe.</p>
           <Button onClick={() => router.push("/stock")}>
@@ -202,7 +213,7 @@ export default function StockDetailsPage() {
   const IconComponent = getIcon(itemData.icon);
 
   return (
-    <AdminLayout title={itemData.code} showFilterAction>
+    <AdminLayout title={itemData.code} showFilterAction leftActions={backButton}>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información de la Pieza */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
