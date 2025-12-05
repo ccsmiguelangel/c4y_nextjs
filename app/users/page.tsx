@@ -10,6 +10,7 @@ import { Separator } from "@/components_shadcn/ui/separator";
 import { MoreVertical, ArrowUpDown, Tag, User as UserIcon, ChevronRight, Plus } from "lucide-react";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 interface User {
   id: string;
@@ -104,7 +105,9 @@ export default function UsersPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
 
-          <nav className={`flex ${spacing.gap.small} overflow-x-auto`}>
+          <ScrollAreaPrimitive.Root className="relative w-full overflow-hidden">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+              <nav className={`flex ${spacing.gap.small} whitespace-nowrap`}>
             <Button
               variant="outline"
               size="sm"
@@ -156,7 +159,16 @@ export default function UsersPage() {
                 <span className={`${typography.body.base} text-foreground`}>Vendedor</span>
               </Button>
             )}
-          </nav>
+              </nav>
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollAreaPrimitive.ScrollAreaScrollbar
+              orientation="horizontal"
+              className="flex touch-none select-none transition-colors w-full h-2.5 border-t border-t-transparent p-[1px]"
+            >
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+            </ScrollAreaPrimitive.ScrollAreaScrollbar>
+            <ScrollAreaPrimitive.Corner />
+          </ScrollAreaPrimitive.Root>
         </section>
 
         <Separator />

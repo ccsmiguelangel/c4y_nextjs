@@ -2,18 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components_shadcn/ui/button";
 import { Input } from "@/components_shadcn/ui/input";
-import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { adminNavSections } from "./mobile-menu";
 
 export function SpotlightSearch() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectedItemRef = useRef<HTMLAnchorElement | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
@@ -44,6 +48,7 @@ export function SpotlightSearch() {
     }
     if (!open) {
       setQuery("");
+      setSelectedIndex(0);
       return;
     }
 
@@ -77,6 +82,59 @@ export function SpotlightSearch() {
       .filter((section) => section.items.length > 0);
   }, [query]);
 
+  // Crear lista plana de items para navegación
+  const flatItems = useMemo(() => {
+    return filteredSections.flatMap((section) => section.items);
+  }, [filteredSections]);
+
+  // Resetear índice cuando cambia la query
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  // Manejar navegación con teclado
+  useEffect(() => {
+    if (!open || !mounted) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelectedIndex((prev) => {
+          const nextIndex = prev < flatItems.length - 1 ? prev + 1 : 0;
+          return nextIndex;
+        });
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSelectedIndex((prev) => {
+          const nextIndex = prev > 0 ? prev - 1 : flatItems.length - 1;
+          return nextIndex;
+        });
+      } else if (event.key === "Enter" && flatItems.length > 0) {
+        event.preventDefault();
+        const selectedItem = flatItems[selectedIndex];
+        if (selectedItem) {
+          router.push(selectedItem.href);
+          setOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open, mounted, flatItems, selectedIndex, router]);
+
+  // Scroll al item seleccionado
+  useEffect(() => {
+    if (selectedItemRef.current) {
+      selectedItemRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [selectedIndex]);
+
   const spotlightPortal =
     mounted && open
       ? createPortal(
@@ -90,9 +148,9 @@ export function SpotlightSearch() {
               className="relative z-[121] w-full max-w-3xl rounded-2xl border bg-background shadow-2xl ring-1 ring-border/50 overflow-hidden"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="p-2 flex flex-col">
-                <div className="relative shrink-0">
-                  <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+              <div className="flex flex-col">
+                <div className="relative shrink-0 p-2">
+                  <Search className="absolute left-6 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     ref={inputRef}
                     value={query}
@@ -101,34 +159,56 @@ export function SpotlightSearch() {
                     className="h-14 pl-12 pr-4 text-base"
                   />
                 </div>
+
                 {filteredSections.length > 0 && (
-                  <div className="mt-2 border-t flex-1 min-h-0">
-                    <ScrollArea className="h-[400px]">
-                      <div className="py-2 pr-4">
-                        {filteredSections.map((section) => (
-                          <div key={section.label} className="py-1">
-                            {section.items.map((item) => {
-                              const Icon = item.icon;
-                              return (
-                                <Link
-                                  key={item.href}
-                                  href={item.href}
-                                  onClick={() => setOpen(false)}
-                                  className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-base transition-colors hover:bg-muted"
-                                >
-                                  <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
-                                  <span className="flex-1 truncate">{item.label}</span>
-                                </Link>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
+                  <div className="border-t">
+                    <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+                      <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                        <div className="py-2">
+                          {filteredSections.map((section) => (
+                            <div key={section.label} className="py-1">
+                              {section.items.map((item, itemIndex) => {
+                                const Icon = item.icon;
+                                // Calcular el índice global del item
+                                const globalIndex = filteredSections
+                                  .slice(0, filteredSections.indexOf(section))
+                                  .reduce((acc, s) => acc + s.items.length, 0) + itemIndex;
+                                const isSelected = globalIndex === selectedIndex;
+                                
+                                return (
+                                  <Link
+                                    key={item.href}
+                                    ref={isSelected ? selectedItemRef : null}
+                                    href={item.href}
+                                    onClick={() => setOpen(false)}
+                                    className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-base transition-colors ${
+                                      isSelected
+                                        ? "bg-accent text-accent-foreground"
+                                        : "hover:bg-muted"
+                                    }`}
+                                  >
+                                    <Icon className="h-5 w-5 shrink-0 text-muted-foreground" />
+                                    <span className="flex-1 truncate">{item.label}</span>
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollAreaPrimitive.Viewport>
+                      <ScrollAreaPrimitive.ScrollAreaScrollbar
+                        orientation="vertical"
+                        className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                      >
+                        <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                      </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                      <ScrollAreaPrimitive.Corner />
+                    </ScrollAreaPrimitive.Root>
                   </div>
                 )}
+
                 {query.trim() && filteredSections.length === 0 && (
-                  <div className="mt-2 border-t py-8 text-center shrink-0">
+                  <div className="border-t py-8 text-center shrink-0">
                     <p className="text-sm text-muted-foreground">No se encontraron resultados.</p>
                   </div>
                 )}

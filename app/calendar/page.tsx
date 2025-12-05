@@ -11,6 +11,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { ChevronLeft, ChevronRight, Plus, MoreVertical, Car, ShoppingCart, Wrench, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { typography, spacing, commonClasses } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 type AppointmentType = "all" | "venta" | "prueba" | "mantenimiento";
 
@@ -502,7 +503,9 @@ export default function CalendarPage() {
         </section>
 
         <div className="flex items-center justify-center" aria-label="Filtros de citas">
-          <div className={`flex items-center ${spacing.gap.small} w-full justify-center overflow-x-auto`}>
+          <ScrollAreaPrimitive.Root className="relative w-full overflow-hidden">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+              <div className={`flex items-center ${spacing.gap.small} w-full justify-center whitespace-nowrap`}>
             {[
               { id: "all" as AppointmentType, label: "Todos" },
               { id: "venta" as AppointmentType, label: "Venta" },
@@ -519,7 +522,16 @@ export default function CalendarPage() {
                 <span className={typography.body.base}>{filter.label}</span>
               </Button>
             ))}
-          </div>
+              </div>
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollAreaPrimitive.ScrollAreaScrollbar
+              orientation="horizontal"
+              className="flex touch-none select-none transition-colors w-full h-2.5 border-t border-t-transparent p-[1px]"
+            >
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+            </ScrollAreaPrimitive.ScrollAreaScrollbar>
+            <ScrollAreaPrimitive.Corner />
+          </ScrollAreaPrimitive.Root>
         </div>
 
         <SearchInput

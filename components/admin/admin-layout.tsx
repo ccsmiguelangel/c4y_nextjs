@@ -3,6 +3,7 @@
 import { AdminHeader } from "./admin-header";
 import { commonClasses } from "@/lib/design-system";
 import { ReactNode } from "react";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 interface AdminLayoutProps {
   title: string;
@@ -22,7 +23,7 @@ export function AdminLayout({
   children,
 }: AdminLayoutProps) {
   return (
-    <div className="flex flex-1 flex-col min-w-0 min-h-screen">
+    <div className="flex h-screen flex-col min-w-0 overflow-hidden">
       <AdminHeader
         title={title}
         leftActions={leftActions}
@@ -30,11 +31,20 @@ export function AdminLayout({
         showFilterAction={showFilterAction}
         onFilterActionClick={onFilterActionClick}
       />
-      <div className="flex flex-1 flex-col overflow-auto">
-        <main className={commonClasses.mainContainer}>
-          {children}
-        </main>
-      </div>
+      <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
+        <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+          <main className={commonClasses.mainContainer}>
+            {children}
+          </main>
+        </ScrollAreaPrimitive.Viewport>
+        <ScrollAreaPrimitive.ScrollAreaScrollbar
+          orientation="vertical"
+          className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+        >
+          <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+        </ScrollAreaPrimitive.ScrollAreaScrollbar>
+        <ScrollAreaPrimitive.Corner />
+      </ScrollAreaPrimitive.Root>
     </div>
   );
 }

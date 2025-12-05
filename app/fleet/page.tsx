@@ -6,7 +6,6 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Input } from "@/components_shadcn/ui/input";
 import { Label } from "@/components_shadcn/ui/label";
 import { Separator } from "@/components_shadcn/ui/separator";
-import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import {
   Dialog,
@@ -311,173 +310,182 @@ export default function FleetPage() {
         </label>
 
         {/* Filtros */}
-        <ScrollArea className="w-full whitespace-nowrap">
-          <nav className={`flex ${spacing.gap.small} py-2`}>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+        <ScrollAreaPrimitive.Root className="relative w-full overflow-hidden">
+          <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+            <nav className={`flex ${spacing.gap.small} py-2 whitespace-nowrap`}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    suppressHydrationWarning
+                    className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
+                      selectedBrand ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                    }`}
+                  >
+                    <span className={typography.body.base}>Marca</span>
+                    {selectedBrand && (
+                      <>
+                        <span className="ml-1 shrink-0">·</span>
+                        <span className="shrink-0">{selectedBrand}</span>
+                      </>
+                    )}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
+                  <DropdownMenuLabel>Seleccionar Marca</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSelectedBrand(null)}>
+                    Todas las marcas
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {brands.map((brand) => (
+                    <DropdownMenuItem
+                      key={brand}
+                      onClick={() => setSelectedBrand(brand)}
+                    >
+                      {brand}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    suppressHydrationWarning
+                    className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
+                      selectedModel ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                    }`}
+                  >
+                    <span className={typography.body.base}>Modelo</span>
+                    {selectedModel && (
+                      <>
+                        <span className="ml-1 shrink-0">·</span>
+                        <span className="shrink-0">{selectedModel}</span>
+                      </>
+                    )}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
+                  <DropdownMenuLabel>Seleccionar Modelo</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSelectedModel(null)}>
+                    Todos los modelos
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {models.map((model) => (
+                    <DropdownMenuItem
+                      key={model}
+                      onClick={() => setSelectedModel(model)}
+                    >
+                      {model}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    suppressHydrationWarning
+                    className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
+                      selectedYear ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                    }`}
+                  >
+                    <span className={typography.body.base}>Año</span>
+                    {selectedYear && (
+                      <>
+                        <span className="ml-1 shrink-0">·</span>
+                        <span className="shrink-0">{selectedYear}</span>
+                      </>
+                    )}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
+                  <DropdownMenuLabel>Seleccionar Año</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSelectedYear(null)}>
+                    Todos los años
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {years.map((year) => (
+                    <DropdownMenuItem
+                      key={year}
+                      onClick={() => setSelectedYear(year)}
+                    >
+                      {year}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    suppressHydrationWarning
+                    className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
+                      selectedCondition ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
+                    }`}
+                  >
+                    <span className={typography.body.base}>Estado</span>
+                    {selectedCondition && (
+                      <>
+                        <span className="ml-1 shrink-0">·</span>
+                        <span className="shrink-0 capitalize">{selectedCondition}</span>
+                      </>
+                    )}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
+                  <DropdownMenuLabel>Seleccionar Estado</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setSelectedCondition(null)}>
+                    Todos los estados
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  {conditions.map((status) => (
+                    <DropdownMenuItem
+                      key={status}
+                      onClick={() => setSelectedCondition(status)}
+                    >
+                      <span className="capitalize">{status}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {hasActiveFilters && (
                 <Button
                   variant="outline"
                   size="sm"
-                  suppressHydrationWarning
-                  className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
-                    selectedBrand ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
-                  }`}
+                  className="h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none hover:bg-muted/80"
+                  onClick={clearFilters}
                 >
-                  <span className={typography.body.base}>Marca</span>
-                  {selectedBrand && (
-                    <>
-                      <span className="ml-1 shrink-0">·</span>
-                      <span className="shrink-0">{selectedBrand}</span>
-                    </>
-                  )}
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <X className="h-4 w-4 shrink-0" />
+                  <span className={typography.body.base}>Limpiar</span>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
-                <DropdownMenuLabel>Seleccionar Marca</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedBrand(null)}>
-                  Todas las marcas
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {brands.map((brand) => (
-                  <DropdownMenuItem
-                    key={brand}
-                    onClick={() => setSelectedBrand(brand)}
-                  >
-                    {brand}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  suppressHydrationWarning
-                  className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
-                    selectedModel ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
-                  }`}
-                >
-                  <span className={typography.body.base}>Modelo</span>
-                  {selectedModel && (
-                    <>
-                      <span className="ml-1 shrink-0">·</span>
-                      <span className="shrink-0">{selectedModel}</span>
-                    </>
-                  )}
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
-                <DropdownMenuLabel>Seleccionar Modelo</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedModel(null)}>
-                  Todos los modelos
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {models.map((model) => (
-                  <DropdownMenuItem
-                    key={model}
-                    onClick={() => setSelectedModel(model)}
-                  >
-                    {model}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  suppressHydrationWarning
-                  className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
-                    selectedYear ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
-                  }`}
-                >
-                  <span className={typography.body.base}>Año</span>
-                  {selectedYear && (
-                    <>
-                      <span className="ml-1 shrink-0">·</span>
-                      <span className="shrink-0">{selectedYear}</span>
-                    </>
-                  )}
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
-                <DropdownMenuLabel>Seleccionar Año</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedYear(null)}>
-                  Todos los años
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {years.map((year) => (
-                  <DropdownMenuItem
-                    key={year}
-                    onClick={() => setSelectedYear(year)}
-                  >
-                    {year}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  suppressHydrationWarning
-                  className={`h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none ${
-                    selectedCondition ? "bg-primary/10 text-primary hover:bg-primary/20" : ""
-                  }`}
-                >
-                  <span className={typography.body.base}>Estado</span>
-                  {selectedCondition && (
-                    <>
-                      <span className="ml-1 shrink-0">·</span>
-                      <span className="shrink-0 capitalize">{selectedCondition}</span>
-                    </>
-                  )}
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" alignOffset={6} className="w-48 z-[100]">
-                <DropdownMenuLabel>Seleccionar Estado</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setSelectedCondition(null)}>
-                  Todos los estados
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {conditions.map((status) => (
-                  <DropdownMenuItem
-                    key={status}
-                    onClick={() => setSelectedCondition(status)}
-                  >
-                    <span className="capitalize">{status}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 rounded-lg bg-muted border-none hover:bg-muted/80"
-                onClick={clearFilters}
-              >
-                <X className="h-4 w-4 shrink-0" />
-                <span className={typography.body.base}>Limpiar</span>
-              </Button>
-            )}
-          </nav>
-        </ScrollArea>
+              )}
+            </nav>
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollAreaPrimitive.ScrollAreaScrollbar
+            orientation="horizontal"
+            className="flex touch-none select-none transition-colors w-full h-2.5 border-t border-t-transparent p-[1px]"
+          >
+            <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+          </ScrollAreaPrimitive.ScrollAreaScrollbar>
+          <ScrollAreaPrimitive.Corner />
+        </ScrollAreaPrimitive.Root>
       </section>
 
       <Separator />
@@ -608,7 +616,7 @@ export default function FleetPage() {
           </DialogHeader>
           
           <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
-            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
               <div className="px-6">
                 <div className={`flex flex-col ${spacing.gap.medium} py-6`}>
                   {/* Información Básica */}
@@ -856,7 +864,7 @@ export default function FleetPage() {
               orientation="vertical"
               className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
             >
-              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/40 hover:bg-border/60 dark:bg-border/30 dark:hover:bg-border/50 transition-colors" />
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
             </ScrollAreaPrimitive.ScrollAreaScrollbar>
             <ScrollAreaPrimitive.Corner />
           </ScrollAreaPrimitive.Root>

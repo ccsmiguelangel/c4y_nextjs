@@ -8,7 +8,6 @@ import Image from "next/image";
 import { Card } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Textarea } from "@/components_shadcn/ui/textarea";
-import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
 import { typography, spacing } from "@/lib/design-system";
 import { strapiImages } from "@/lib/strapi-images";
 

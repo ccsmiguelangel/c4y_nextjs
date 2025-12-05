@@ -116,9 +116,25 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    @apply h-screen overflow-hidden;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply h-screen overflow-hidden bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Scroll suave para ScrollArea */
+  [data-radix-scroll-area-viewport] {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scroll-padding: 0;
+  }
+  
+  /* Mejorar la fluidez del scroll */
+  [data-radix-scroll-area-viewport] * {
+    will-change: scroll-position;
   }
 }
 
@@ -154,6 +170,21 @@
 
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Scroll suave y fluido */
+  .scroll-smooth {
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  
+  /* Momentum scrolling mejorado para iOS */
+  @supports (-webkit-overflow-scrolling: touch) {
+    [data-radix-scroll-area-viewport] {
+      -webkit-overflow-scrolling: touch;
+      scroll-behavior: smooth;
+    }
   }
 
   /* ========================================================================

@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
-import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarFallback } from "@/components_shadcn/ui/avatar";
@@ -59,24 +59,33 @@ export default function DashboardRoute() {
 
   return (
     <AdminLayout title="Resumen General">
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex gap-2 pb-2">
-            {periods.map((period) => (
-              <Button
-                key={period}
-                onClick={() => setSelectedPeriod(period)}
-                variant={selectedPeriod === period ? "default" : "outline"}
-                className={`h-9 shrink-0 rounded-full px-4 flex items-center justify-center ${
-                  selectedPeriod === period
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card"
-                }`}
-              >
-                <span className="text-sm font-semibold">{period}</span>
-              </Button>
-            ))}
-          </div>
-        </ScrollArea>
+        <ScrollAreaPrimitive.Root className="relative w-full overflow-hidden">
+          <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+            <div className="flex gap-2 pb-2 whitespace-nowrap">
+              {periods.map((period) => (
+                <Button
+                  key={period}
+                  onClick={() => setSelectedPeriod(period)}
+                  variant={selectedPeriod === period ? "default" : "outline"}
+                  className={`h-9 shrink-0 rounded-full px-4 flex items-center justify-center ${
+                    selectedPeriod === period
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-card"
+                  }`}
+                >
+                  <span className="text-sm font-semibold">{period}</span>
+                </Button>
+              ))}
+            </div>
+          </ScrollAreaPrimitive.Viewport>
+          <ScrollAreaPrimitive.ScrollAreaScrollbar
+            orientation="horizontal"
+            className="flex touch-none select-none transition-colors w-full h-2.5 border-t border-t-transparent p-[1px]"
+          >
+            <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+          </ScrollAreaPrimitive.ScrollAreaScrollbar>
+          <ScrollAreaPrimitive.Corner />
+        </ScrollAreaPrimitive.Root>
 
         <div className="grid grid-cols-2 gap-5">
           <Card className="shadow-sm ring-1 ring-inset ring-border/50">

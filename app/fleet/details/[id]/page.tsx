@@ -899,7 +899,7 @@ export default function FleetDetailsPage() {
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Timeline de notas */}
             <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
-              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
                 <NotesTimeline 
                   notes={notes} 
                   isLoading={isLoadingNotes}
@@ -912,7 +912,7 @@ export default function FleetDetailsPage() {
                 orientation="vertical"
                 className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
               >
-                <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/40 hover:bg-border/60 dark:bg-border/30 dark:hover:bg-border/50 transition-colors" />
+                <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
               </ScrollAreaPrimitive.ScrollAreaScrollbar>
               <ScrollAreaPrimitive.Corner />
             </ScrollAreaPrimitive.Root>
