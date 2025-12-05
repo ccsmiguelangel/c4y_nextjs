@@ -4,8 +4,18 @@ import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Input } from "@/components_shadcn/ui/input";
+import { Label } from "@/components_shadcn/ui/label";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { ScrollArea } from "@/components_shadcn/ui/scroll-area";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components_shadcn/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,14 +24,16 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components_shadcn/ui/dropdown-menu";
-import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
+import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight, Upload } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import Image from "next/image";
 import type { FleetVehicleCard, FleetVehicleCondition } from "@/validations/types";
-import { STRAPI_BASE_URL } from "@/lib/config";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const getConditionBadge = (status: FleetVehicleCondition) => {
   switch (status) {
@@ -58,6 +70,26 @@ export default function FleetPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedCondition, setSelectedCondition] = useState<FleetVehicleCondition | null>(null);
+  
+  // Estados para el diálogo de agregar vehículo
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    vin: "",
+    price: "",
+    condition: "nuevo" as FleetVehicleCondition,
+    brand: "",
+    model: "",
+    year: "",
+    color: "",
+    mileage: "",
+    fuelType: "",
+    transmission: "",
+    imageAlt: "",
+  });
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const loadVehicles = useCallback(async () => {
     setIsLoading(true);
@@ -116,6 +148,147 @@ export default function FleetPage() {
   };
 
   const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedCondition;
+
+  // Validar si todos los campos requeridos están llenos
+  const isFormValid = useMemo(() => {
+    const year = Number(formData.year);
+    const price = Number(formData.price);
+    
+    return (
+      formData.name.trim() !== "" &&
+      formData.vin.trim() !== "" &&
+      formData.brand.trim() !== "" &&
+      formData.model.trim() !== "" &&
+      formData.year.trim() !== "" &&
+      !isNaN(year) &&
+      year >= 1900 &&
+      year <= 2100 &&
+      formData.price.trim() !== "" &&
+      !isNaN(price) &&
+      price > 0 &&
+      formData.condition !== null &&
+      formData.condition !== undefined
+    );
+  }, [formData]);
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      vin: "",
+      price: "",
+      condition: "nuevo",
+      brand: "",
+      model: "",
+      year: "",
+      color: "",
+      mileage: "",
+      fuelType: "",
+      transmission: "",
+      imageAlt: "",
+    });
+    setSelectedImageFile(null);
+    setImagePreview(null);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCreateVehicle = async () => {
+    // Validar campos requeridos
+    if (!formData.name || !formData.vin || !formData.price || !formData.brand || !formData.model || !formData.year) {
+      toast.error("Por favor completa todos los campos requeridos");
+      return;
+    }
+
+    // Validar año
+    const year = Number(formData.year);
+    if (isNaN(year) || year < 1900 || year > 2100) {
+      toast.error("El año debe estar entre 1900 y 2100");
+      return;
+    }
+
+    // Validar precio
+    const price = Number(formData.price);
+    if (isNaN(price) || price <= 0) {
+      toast.error("El precio debe ser un número válido mayor a 0");
+      return;
+    }
+
+    // Validar mileage si está presente
+    if (formData.mileage && (isNaN(Number(formData.mileage)) || Number(formData.mileage) < 0)) {
+      toast.error("El kilometraje debe ser un número válido mayor o igual a 0");
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      let uploadedImageId: number | null = null;
+      
+      // Subir imagen si hay una seleccionada
+      if (selectedImageFile) {
+        const uploadForm = new FormData();
+        uploadForm.append("files", selectedImageFile);
+        const uploadResponse = await fetch("/api/strapi/upload", {
+          method: "POST",
+          body: uploadForm,
+        });
+        if (!uploadResponse.ok) {
+          throw new Error("No se pudo subir la imagen");
+        }
+        const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
+        uploadedImageId = uploadPayload?.data?.id ?? null;
+      }
+
+      const payload = {
+        name: formData.name,
+        vin: formData.vin,
+        price: price,
+        condition: formData.condition,
+        brand: formData.brand,
+        model: formData.model,
+        year: year,
+        color: formData.color || null,
+        mileage: formData.mileage ? Number(formData.mileage) : null,
+        fuelType: formData.fuelType || null,
+        transmission: formData.transmission || null,
+        image: uploadedImageId,
+        imageAlt: formData.imageAlt || null,
+      };
+
+      const response = await fetch("/api/fleet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: payload }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo crear el vehículo");
+      }
+
+      const { data } = (await response.json()) as { data: FleetVehicleCard };
+      toast.success("Vehículo creado exitosamente");
+      setIsDialogOpen(false);
+      resetForm();
+      await loadVehicles();
+      // Navegar al detalle del vehículo creado
+      router.push(`/fleet/details/${data.documentId ?? data.id}`);
+    } catch (error) {
+      console.error("Error creating vehicle:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo crear el vehículo");
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   return (
     <AdminLayout title="Flota" showFilterAction>
@@ -416,16 +589,303 @@ export default function FleetPage() {
 
       {/* Floating Action Button */}
       <Button
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105"
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105 z-50"
         size="icon"
-        onClick={() => {
-          const adminUrl = `${STRAPI_BASE_URL.replace(/\/$/, "")}/admin/content-manager/collection-types/api::fleet.fleet/create`;
-          window.open(adminUrl, "_blank", "noopener");
-        }}
+        onClick={() => setIsDialogOpen(true)}
         aria-label="Agregar nuevo vehículo"
       >
         <Plus className="h-6 w-6" />
       </Button>
+
+      {/* Dialog para agregar vehículo */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0 !flex !flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+            <DialogTitle className={typography.h2}>Agregar Nuevo Vehículo</DialogTitle>
+            <DialogDescription>
+              Completa todos los campos requeridos para agregar un nuevo vehículo a la flota.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+              <div className="px-6">
+                <div className={`flex flex-col ${spacing.gap.medium} py-6`}>
+                  {/* Información Básica */}
+                  <div className={`flex flex-col ${spacing.gap.base}`}>
+                    <h3 className={typography.h4}>Información Básica</h3>
+                    
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="name" className={typography.label}>
+                        Nombre del Vehículo <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        placeholder="Ej: Ford Mustang 2023"
+                        className="rounded-lg"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="vin" className={typography.label}>
+                        VIN <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="vin"
+                        value={formData.vin}
+                        onChange={(e) => setFormData({ ...formData, vin: e.target.value.toUpperCase() })}
+                        placeholder="Ej: 1ZVBP8CM0D5281234"
+                        className="rounded-lg"
+                        maxLength={17}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="brand" className={typography.label}>
+                          Marca <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="brand"
+                          value={formData.brand}
+                          onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                          placeholder="Ej: Ford"
+                          className="rounded-lg"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="model" className={typography.label}>
+                          Modelo <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="model"
+                          value={formData.model}
+                          onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                          placeholder="Ej: Mustang"
+                          className="rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="year" className={typography.label}>
+                          Año <span className="text-destructive">*</span>
+                        </Label>
+                        <Input
+                          id="year"
+                          type="number"
+                          value={formData.year}
+                          onChange={(e) => setFormData({ ...formData, year: e.target.value })}
+                          placeholder="Ej: 2023"
+                          className="rounded-lg"
+                          min={1900}
+                          max={2100}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="condition" className={typography.label}>
+                          Estado <span className="text-destructive">*</span>
+                        </Label>
+                        <Select
+                          value={formData.condition}
+                          onValueChange={(value) => setFormData({ ...formData, condition: value as FleetVehicleCondition })}
+                        >
+                          <SelectTrigger className="rounded-lg">
+                            <SelectValue placeholder="Seleccionar estado" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {conditions.map((condition) => (
+                              <SelectItem key={condition} value={condition}>
+                                <span className="capitalize">{condition}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Precio */}
+                  <div className={`flex flex-col ${spacing.gap.base}`}>
+                    <h3 className={typography.h4}>Precio</h3>
+                    
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="price" className={typography.label}>
+                        Precio <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="price"
+                        type="number"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        placeholder="Ej: 55000"
+                        className="rounded-lg"
+                        min={0}
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Detalles Adicionales */}
+                  <div className={`flex flex-col ${spacing.gap.base}`}>
+                    <h3 className={typography.h4}>Detalles Adicionales</h3>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="color" className={typography.label}>
+                          Color
+                        </Label>
+                        <Input
+                          id="color"
+                          value={formData.color}
+                          onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                          placeholder="Ej: Plata Metálico"
+                          className="rounded-lg"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="mileage" className={typography.label}>
+                          Kilometraje
+                        </Label>
+                        <Input
+                          id="mileage"
+                          type="number"
+                          value={formData.mileage}
+                          onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
+                          placeholder="Ej: 35000"
+                          className="rounded-lg"
+                          min={0}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="fuelType" className={typography.label}>
+                          Tipo de Combustible
+                        </Label>
+                        <Input
+                          id="fuelType"
+                          value={formData.fuelType}
+                          onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })}
+                          placeholder="Ej: Gasolina, Híbrido, Eléctrico"
+                          className="rounded-lg"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="transmission" className={typography.label}>
+                          Transmisión
+                        </Label>
+                        <Input
+                          id="transmission"
+                          value={formData.transmission}
+                          onChange={(e) => setFormData({ ...formData, transmission: e.target.value })}
+                          placeholder="Ej: Automática, Manual, CVT"
+                          className="rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Imagen */}
+                  <div className={`flex flex-col ${spacing.gap.base}`}>
+                    <h3 className={typography.h4}>Imagen</h3>
+                    
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="image" className={typography.label}>
+                        Imagen del Vehículo
+                      </Label>
+                      <div className="flex items-center gap-4">
+                        <Input
+                          id="image"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageChange}
+                          className="hidden"
+                        />
+                        <Label
+                          htmlFor="image"
+                          className="flex items-center justify-center gap-2 px-4 py-2 border border-dashed rounded-lg cursor-pointer hover:bg-muted transition-colors"
+                        >
+                          <Upload className="h-4 w-4" />
+                          <span className={typography.body.base}>Subir imagen</span>
+                        </Label>
+                        {imagePreview && (
+                          <div className="relative h-20 w-20 rounded-lg overflow-hidden border">
+                            <Image
+                              src={imagePreview}
+                              alt="Preview"
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="imageAlt" className={typography.label}>
+                        Texto Alternativo de la Imagen
+                      </Label>
+                      <Input
+                        id="imageAlt"
+                        value={formData.imageAlt}
+                        onChange={(e) => setFormData({ ...formData, imageAlt: e.target.value })}
+                        placeholder="Descripción de la imagen para accesibilidad"
+                        className="rounded-lg"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollAreaPrimitive.ScrollAreaScrollbar
+              orientation="vertical"
+              className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+            >
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/40 hover:bg-border/60 dark:bg-border/30 dark:hover:bg-border/50 transition-colors" />
+            </ScrollAreaPrimitive.ScrollAreaScrollbar>
+            <ScrollAreaPrimitive.Corner />
+          </ScrollAreaPrimitive.Root>
+
+          <DialogFooter className="px-6 py-4 border-t shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDialogOpen(false);
+                resetForm();
+              }}
+              disabled={isCreating}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleCreateVehicle}
+              disabled={isCreating || !isFormValid}
+              className={cn(
+                "font-semibold shadow-md hover:shadow-lg transition-all duration-200",
+                !isCreating && isFormValid && "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/95 !opacity-100",
+                (isCreating || !isFormValid) && "!opacity-50 cursor-not-allowed"
+              )}
+            >
+              {isCreating ? "Creando..." : "Crear Vehículo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

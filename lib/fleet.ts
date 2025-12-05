@@ -236,3 +236,47 @@ export async function deleteFleetVehicleInStrapi(id: string | number): Promise<v
   }
 }
 
+export interface FleetVehicleCreatePayload {
+  name: string;
+  vin: string;
+  price: number;
+  condition: "nuevo" | "usado" | "seminuevo";
+  brand: string;
+  model: string;
+  year: number;
+  color?: string | null;
+  mileage?: number | null;
+  fuelType?: string | null;
+  transmission?: string | null;
+  image?: number | null;
+  imageAlt?: string | null;
+}
+
+export async function createFleetVehicleInStrapi(
+  data: FleetVehicleCreatePayload
+): Promise<FleetVehicleCard> {
+  const url = `${STRAPI_BASE_URL}/api/fleets?${populateImageQueryString}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ data }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Strapi Fleet create failed with status ${response.status}: ${errorText}`);
+  }
+
+  const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw>;
+  const vehicle = payload?.data ? normalizeVehicle(payload.data) : null;
+  if (!vehicle) {
+    throw new Error("No pudimos normalizar la respuesta de Strapi.");
+  }
+
+  return vehicle;
+}
+
