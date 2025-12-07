@@ -223,3 +223,45 @@ export interface VehicleStatusPayload {
   authorDocumentId?: string;
 }
 
+export type FleetDocumentType =
+  | "poliza_seguro"
+  | "ficha_tecnica"
+  | "tarjeta_propiedad"
+  | "contrato_compraventa"
+  | "matricula_vehicular"
+  | "certificado_revisado"
+  | "otros";
+
+export interface FleetDocument {
+  id: number;
+  documentId?: string;
+  documentType: FleetDocumentType;
+  files?: Array<{
+    id?: number;
+    url?: string;
+    name?: string;
+    mime?: string;
+    size?: number;
+    alternativeText?: string;
+  }>;
+  authorDocumentId?: string;
+  createdAt: string;
+  updatedAt: string;
+  author?: {
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  };
+}
+
+export interface FleetDocumentPayload {
+  documentType: FleetDocumentType;
+  files: number[];
+  authorDocumentId?: string;
+}
+

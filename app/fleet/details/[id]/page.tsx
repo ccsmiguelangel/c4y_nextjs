@@ -21,6 +21,7 @@ import {
   Settings,
   Upload,
   ImagePlus,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -43,6 +44,7 @@ import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { NotesTimeline, type FleetNote } from "@/components/ui/notes-timeline";
 import { VehicleStatusTimeline, type VehicleStatusTimelineProps } from "@/components/ui/vehicle-status-timeline";
+import { FleetDocuments } from "@/components/ui/fleet-documents";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -53,6 +55,8 @@ import type {
   FleetVehicleCondition,
   FleetVehicleUpdatePayload,
   VehicleStatus,
+  FleetDocument,
+  FleetDocumentType,
 } from "@/validations/types";
 
 const getStatusBadge = (status: FleetVehicleCondition) => {
@@ -120,6 +124,11 @@ export default function FleetDetailsPage() {
   const [statusImages, setStatusImages] = useState<File[]>([]);
   const [statusImagePreviews, setStatusImagePreviews] = useState<string[]>([]);
   const [currentUserDocumentId, setCurrentUserDocumentId] = useState<string | null>(null);
+  const [vehicleDocuments, setVehicleDocuments] = useState<FleetDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isSavingDocument, setIsSavingDocument] = useState(false);
+  const [documentType, setDocumentType] = useState<FleetDocumentType>("poliza_seguro");
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const previewObjectUrlRef = useRef<string | null>(null);
   const statusImagePreviewRefs = useRef<string[]>([]);
   const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
@@ -280,6 +289,7 @@ export default function FleetDetailsPage() {
     loadVehicle();
     loadNotes();
     loadVehicleStatuses();
+    loadVehicleDocuments();
     loadCurrentUserProfile();
   }, [vehicleId, syncFormWithVehicle, loadNotes, loadVehicleStatuses, loadCurrentUserProfile]);
 
@@ -865,6 +875,164 @@ export default function FleetDetailsPage() {
       console.error("Error eliminando estado:", error);
       const errorMessage = error instanceof Error ? error.message : "Error desconocido";
       toast.error("Error al eliminar estado", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  // Funciones para documentos
+  const loadVehicleDocuments = async () => {
+    setIsLoadingDocuments(true);
+    try {
+      const response = await fetch(`/api/fleet/${vehicleId}/document`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("No pudimos obtener los documentos");
+      }
+      const { data } = (await response.json()) as { data: FleetDocument[] };
+      setVehicleDocuments(data || []);
+    } catch (error) {
+      console.error("Error cargando documentos:", error);
+      toast.error("Error al cargar documentos", {
+        description: error instanceof Error ? error.message : "Error desconocido",
+      });
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  const handleDocumentFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    const invalidFiles = files.filter(file => file.size > MAX_SIZE);
+    
+    if (invalidFiles.length > 0) {
+      toast.error("Archivos demasiado grandes", {
+        description: `Algunos archivos exceden el tamaño máximo de 5MB. Archivos rechazados: ${invalidFiles.map(f => f.name).join(", ")}`,
+      });
+      // Filtrar solo los archivos válidos
+      const validFiles = files.filter(file => file.size <= MAX_SIZE);
+      setDocumentFiles(prev => [...prev, ...validFiles]);
+    } else {
+      setDocumentFiles(prev => [...prev, ...files]);
+    }
+    
+    // Limpiar el input para permitir seleccionar el mismo archivo de nuevo
+    event.target.value = '';
+  };
+
+  const handleRemoveDocumentFile = (index: number) => {
+    setDocumentFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveDocument = async () => {
+    if (documentFiles.length === 0) {
+      toast.error("Error", {
+        description: "Debes seleccionar al menos un archivo",
+      });
+      return;
+    }
+
+    setIsSavingDocument(true);
+    setErrorMessage(null);
+    try {
+      // Subir archivos primero
+      const uploadedFileIds: number[] = [];
+      for (const file of documentFiles) {
+        const uploadForm = new FormData();
+        uploadForm.append("files", file);
+        const uploadResponse = await fetch("/api/strapi/upload", {
+          method: "POST",
+          body: uploadForm,
+        });
+        if (!uploadResponse.ok) {
+          throw new Error("Error al subir los archivos");
+        }
+        const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
+        const fileId = uploadPayload?.data?.id;
+        if (fileId) {
+          uploadedFileIds.push(fileId);
+        }
+      }
+
+      const requestBody: { data: { documentType: FleetDocumentType; files: number[]; authorDocumentId?: string } } = {
+        data: {
+          documentType: documentType,
+          files: uploadedFileIds,
+        },
+      };
+
+      if (currentUserDocumentId) {
+        requestBody.data.authorDocumentId = currentUserDocumentId;
+      }
+
+      const response = await fetch(`/api/fleet/${vehicleId}/document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          const errorText = await response.text();
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: `Error ${response.status}: ${response.statusText}` };
+        }
+        
+        if (response.status === 405) {
+          throw new Error("El método POST no está permitido en esta ruta. Por favor, reinicia el servidor de desarrollo.");
+        }
+        
+        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
+      }
+
+      const { data: createdDocument } = (await response.json()) as { data: FleetDocument };
+      
+      // Recargar documentos
+      await loadVehicleDocuments();
+      
+      // Limpiar formulario
+      setDocumentFiles([]);
+      setDocumentType("poliza_seguro");
+      
+      toast.success("Documento guardado", {
+        description: "El documento ha sido guardado correctamente",
+      });
+    } catch (error) {
+      console.error("Error guardando documento:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al guardar documento", {
+        description: errorMessage,
+      });
+    } finally {
+      setIsSavingDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async (documentId: number | string) => {
+    try {
+      const documentIdStr = String(documentId);
+      const response = await fetch(`/api/fleet-document/${encodeURIComponent(documentIdStr)}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      setVehicleDocuments((prev) => prev.filter((d) => d.id !== documentId && d.documentId !== documentId));
+      toast.success("Documento eliminado", {
+        description: "El documento ha sido eliminado",
+      });
+    } catch (error) {
+      console.error("Error eliminando documento:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al eliminar documento", {
         description: errorMessage,
       });
       throw error;
@@ -1512,7 +1680,7 @@ export default function FleetDetailsPage() {
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Timeline de estados */}
-            <ScrollAreaPrimitive.Root className="relative h-[900px] overflow-hidden">
+            <ScrollAreaPrimitive.Root className={`relative overflow-hidden ${vehicleStatuses.length > 0 ? 'h-[900px]' : 'h-auto min-h-[200px]'}`}>
               <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
                 <VehicleStatusTimeline 
                   statuses={vehicleStatuses} 
@@ -1523,13 +1691,17 @@ export default function FleetDetailsPage() {
                   vehicleId={vehicleId}
                 />
               </ScrollAreaPrimitive.Viewport>
-              <ScrollAreaPrimitive.ScrollAreaScrollbar
-                orientation="vertical"
-                className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
-              >
-                <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
-              </ScrollAreaPrimitive.ScrollAreaScrollbar>
-              <ScrollAreaPrimitive.Corner />
+              {vehicleStatuses.length > 0 && (
+                <>
+                  <ScrollAreaPrimitive.ScrollAreaScrollbar
+                    orientation="vertical"
+                    className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                  >
+                    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                  </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                  <ScrollAreaPrimitive.Corner />
+                </>
+              )}
             </ScrollAreaPrimitive.Root>
 
             {/* Formulario para agregar nuevo estado */}
@@ -1598,6 +1770,137 @@ export default function FleetDetailsPage() {
                 disabled={(statusImages.length === 0 && !statusComment.trim()) || isSavingStatus}
               >
                 {isSavingStatus ? "Guardando..." : "Guardar Estado"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card de Documentos del Vehículo */}
+        <Card 
+          className="shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
+          <CardHeader className="px-6 pt-6 pb-4">
+            <CardTitle className={typography.h4}>Documentos del Vehículo</CardTitle>
+          </CardHeader>
+          <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+            {/* Lista de documentos */}
+            <ScrollAreaPrimitive.Root className={`relative overflow-hidden ${vehicleDocuments.length > 0 ? 'h-[600px]' : 'h-auto min-h-[200px]'}`}>
+              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                <FleetDocuments 
+                  documents={vehicleDocuments} 
+                  isLoading={isLoadingDocuments}
+                  onDelete={handleDeleteDocument}
+                  vehicleId={vehicleId}
+                />
+              </ScrollAreaPrimitive.Viewport>
+              {vehicleDocuments.length > 0 && (
+                <>
+                  <ScrollAreaPrimitive.ScrollAreaScrollbar
+                    orientation="vertical"
+                    className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                  >
+                    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                  </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                  <ScrollAreaPrimitive.Corner />
+                </>
+              )}
+            </ScrollAreaPrimitive.Root>
+
+            {/* Formulario para agregar nuevo documento */}
+            <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+              {/* Select para tipo de documento */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label htmlFor="document-type">Tipo de Documento</Label>
+                <Select value={documentType} onValueChange={(value: FleetDocumentType) => setDocumentType(value)}>
+                  <SelectTrigger id="document-type">
+                    <SelectValue placeholder="Selecciona el tipo de documento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="poliza_seguro">Póliza de Seguro del Vehículo</SelectItem>
+                    <SelectItem value="ficha_tecnica">Ficha Técnica del Vehículo</SelectItem>
+                    <SelectItem value="tarjeta_propiedad">Tarjeta de Propiedad Vehicular</SelectItem>
+                    <SelectItem value="contrato_compraventa">Contrato Compraventa</SelectItem>
+                    <SelectItem value="matricula_vehicular">Matrícula Vehicular Vigente</SelectItem>
+                    <SelectItem value="certificado_revisado">Certificado de Revisado Vehicular</SelectItem>
+                    <SelectItem value="otros">Otros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Preview de archivos seleccionados */}
+              {documentFiles.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {documentFiles.map((file, index) => (
+                    <div key={index} className="relative group">
+                      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted flex items-center justify-center">
+                        {file.type.startsWith("image/") ? (
+                          <Image
+                            src={URL.createObjectURL(file)}
+                            alt={file.name}
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 768px) 50vw, 33vw"
+                            unoptimized
+                          />
+                        ) : (
+                          <FileText className="h-12 w-12 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white p-2 rounded-b-lg">
+                        <p className={`${typography.body.small} truncate`} title={file.name}>
+                          {file.name}
+                        </p>
+                        <p className={`${typography.body.small} text-xs text-muted-foreground`}>
+                          {(file.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleRemoveDocumentFile(index)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Input para seleccionar archivos */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label
+                  htmlFor="document-files-upload"
+                  className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-primary/40 px-4 py-2 text-sm font-medium text-primary transition hover:bg-primary/10"
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  {documentFiles.length > 0 ? `Agregar más archivos (${documentFiles.length} seleccionados)` : "Seleccionar archivos (máx. 5MB cada uno)"}
+                </Label>
+                <Input
+                  id="document-files-upload"
+                  type="file"
+                  accept="*/*"
+                  multiple
+                  className="sr-only"
+                  onChange={handleDocumentFileChange}
+                />
+                <p className={`${typography.body.small} text-muted-foreground text-xs`}>
+                  Puedes subir múltiples archivos. Tamaño máximo por archivo: 5MB
+                </p>
+              </div>
+              
+              <Button 
+                onClick={handleSaveDocument} 
+                variant="default" 
+                size="lg" 
+                className="w-full" 
+                disabled={documentFiles.length === 0 || isSavingDocument}
+              >
+                {isSavingDocument ? "Guardando..." : "Guardar Documento"}
               </Button>
             </div>
           </CardContent>
