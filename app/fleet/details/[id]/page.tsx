@@ -87,6 +87,8 @@ export default function FleetDetailsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [note, setNote] = useState("");
   const [formData, setFormData] = useState({
+    name: "",
+    vin: "",
     price: "",
     mileage: "",
     color: "",
@@ -124,6 +126,8 @@ export default function FleetDetailsPage() {
   const syncFormWithVehicle = useCallback(
     (data: FleetVehicleCard) => {
       setFormData({
+        name: data.name,
+        vin: data.vin,
         price: data.priceNumber.toString(),
         mileage: data.mileage?.toString() ?? "",
         color: data.color ?? "",
@@ -264,6 +268,8 @@ export default function FleetDetailsPage() {
       }
 
       const payload: FleetVehicleUpdatePayload = {
+        name: formData.name || vehicleData.name,
+        vin: formData.vin || vehicleData.vin,
         price: Number(formData.price) || 0,
         mileage: formData.mileage ? Number(formData.mileage) : null,
         color: formData.color || null,
@@ -585,93 +591,98 @@ export default function FleetDetailsPage() {
   return (
     <AdminLayout title={vehicleData.name} showFilterAction leftActions={backButton}>
       <section className={`flex flex-col ${spacing.gap.large}`}>
-        <Card className="shadow-sm ring-1 ring-inset ring-border/50">
-          <CardContent className={`flex flex-col items-center ${spacing.gap.base} p-6 relative`}>
-            <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-10">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-full flex items-center justify-center"
-                onClick={() => router.back()}
-                aria-label="Volver"
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 rounded-full flex items-center justify-center"
-                    aria-label="Acciones"
-                  >
-                    <MoreVertical className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[8rem]">
-                  <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(true)}>
-                    Editar Vehículo
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    className="cursor-pointer"
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    disabled={isDeleting}
-                  >
-                    Eliminar Vehículo
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+        {!isEditing && (
+          <Card 
+            className="!bg-transparent shadow-sm backdrop-blur-sm border rounded-lg"
+            style={{
+              backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+              borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+            } as React.CSSProperties}
+          >
+            <CardContent className={`flex flex-col items-center ${spacing.gap.base} px-12 relative`}>
+              <div className="absolute top-4 right-8 flex items-center justify-end z-10">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 rounded-full flex items-center justify-center"
+                      aria-label="Acciones"
+                    >
+                      <MoreVertical className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-[8rem]">
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(true)}>
+                      Editar Vehículo
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      className="cursor-pointer text-destructive focus:text-destructive hover:text-destructive"
+                      onClick={() => setIsDeleteDialogOpen(true)}
+                      disabled={isDeleting}
+                    >
+                      Eliminar Vehículo
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
 
-            <div className="relative w-full h-64 mt-8 overflow-hidden rounded-lg bg-muted">
-              {displayImageUrl ? (
-                <Image
-                  src={displayImageUrl}
-                  alt={displayImageAlt}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 768px) 100vw, 600px"
-                  unoptimized={isBlobImage}
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                  Sin imagen
-                </div>
-              )}
-            </div>
+              <div className="relative w-full h-96 mt-20 overflow-hidden rounded-lg bg-muted">
+                {displayImageUrl ? (
+                  <Image
+                    src={displayImageUrl}
+                    alt={displayImageAlt}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 768px) 100vw, 1200px"
+                    unoptimized={isBlobImage}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                    Sin imagen
+                  </div>
+                )}
+              </div>
 
-            <div className="flex flex-col items-center text-center">
-              <h2 className={typography.h3}>{vehicleData.name}</h2>
-              <div className="mt-2">{getStatusBadge(vehicleData.condition)}</div>
-            </div>
+              <div className="flex flex-col items-center text-center">
+                <h2 className={typography.h3}>{vehicleData.name}</h2>
+                <div className="mt-2">{getStatusBadge(vehicleData.condition)}</div>
+              </div>
 
-            <div className={`flex items-center justify-center ${spacing.gap.small} w-full pt-2`}>
-              <Button
-                variant="default"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
-                onClick={() => setIsEditing(!isEditing)}
-                aria-label="Editar vehículo"
-              >
-                <Edit className="h-5 w-5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                aria-label="Eliminar vehículo"
-                onClick={() => setIsDeleteDialogOpen(true)}
-                disabled={isDeleting}
-              >
-                <Trash2 className="h-5 w-5" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <div className={`flex items-center justify-center ${spacing.gap.small} w-full pt-2`}>
+                <Button
+                  variant="default"
+                  size="icon"
+                  className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
+                  onClick={() => setIsEditing(!isEditing)}
+                  aria-label="Editar vehículo"
+                >
+                  <Edit className="h-5 w-5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
+                  aria-label="Eliminar vehículo"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-5 w-5" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+        <Card 
+          className="shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
           <CardHeader className="px-6 pt-6 pb-4">
             <CardTitle className={typography.h4}>Información del Vehículo</CardTitle>
           </CardHeader>
@@ -681,7 +692,7 @@ export default function FleetDetailsPage() {
                 <div className={`flex flex-col ${spacing.gap.small}`}>
                   <Label htmlFor="vehicle-image-upload">Imagen del vehículo</Label>
                   <div className={`flex flex-col ${spacing.gap.small}`}>
-                    <div className="relative flex h-48 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-muted-foreground/30 bg-muted/40">
+                    <div className="relative flex h-96 w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-muted-foreground/30 bg-muted/40">
                       {displayImageUrl ? (
                         <img src={displayImageUrl} alt={displayImageAlt} className="h-full w-full object-cover" />
                       ) : (
@@ -728,76 +739,102 @@ export default function FleetDetailsPage() {
                     placeholder="Ej. SUV blanco con techo panorámico"
                   />
                 </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="price">Precio (USD)</Label>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-muted-foreground">
-                      $
-                    </span>
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="name">Nombre del vehículo</Label>
                     <Input
-                      id="price"
-                      type="number"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      className="pl-7"
-                      placeholder="55000"
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Ej. Toyota Corolla 2020"
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="vin">VIN</Label>
+                    <Input
+                      id="vin"
+                      value={formData.vin}
+                      onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
+                      placeholder="1HGBH41JXMN109186"
                     />
                   </div>
                 </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="mileage">Kilometraje</Label>
-                  <Input
-                    id="mileage"
-                    type="number"
-                    value={formData.mileage}
-                    onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
-                    placeholder="35000"
-                  />
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="price">Precio (USD)</Label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-muted-foreground">
+                        $
+                      </span>
+                      <Input
+                        id="price"
+                        type="number"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        className="pl-7"
+                        placeholder="55000"
+                      />
+                    </div>
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="mileage">Kilometraje</Label>
+                    <Input
+                      id="mileage"
+                      type="number"
+                      value={formData.mileage}
+                      onChange={(e) => setFormData({ ...formData, mileage: e.target.value })}
+                      placeholder="35000"
+                    />
+                  </div>
                 </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="color">Color</Label>
-                  <Input
-                    id="color"
-                    value={formData.color}
-                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    placeholder="Plata Metálico"
-                  />
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="color">Color</Label>
+                    <Input
+                      id="color"
+                      value={formData.color}
+                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      placeholder="Plata Metálico"
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="fuelType">Combustible</Label>
+                    <Input
+                      id="fuelType"
+                      value={formData.fuelType}
+                      onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })}
+                      placeholder="Gasolina"
+                    />
+                  </div>
                 </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="fuelType">Combustible</Label>
-                  <Input
-                    id="fuelType"
-                    value={formData.fuelType}
-                    onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })}
-                    placeholder="Gasolina"
-                  />
-                </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="transmission">Transmisión</Label>
-                  <Input
-                    id="transmission"
-                    value={formData.transmission}
-                    onChange={(e) => setFormData({ ...formData, transmission: e.target.value })}
-                    placeholder="Automática"
-                  />
-                </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label>Estado</Label>
-                  <Select
-                    value={formData.condition}
-                    onValueChange={(value: FleetVehicleCondition) =>
-                      setFormData((prev) => ({ ...prev, condition: value }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un estado" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="nuevo">Nuevo</SelectItem>
-                      <SelectItem value="usado">Usado</SelectItem>
-                      <SelectItem value="seminuevo">Seminuevo</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="transmission">Transmisión</Label>
+                    <Input
+                      id="transmission"
+                      value={formData.transmission}
+                      onChange={(e) => setFormData({ ...formData, transmission: e.target.value })}
+                      placeholder="Automática"
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label>Estado</Label>
+                    <Select
+                      value={formData.condition}
+                      onValueChange={(value: FleetVehicleCondition) =>
+                        setFormData((prev) => ({ ...prev, condition: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona un estado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nuevo">Nuevo</SelectItem>
+                        <SelectItem value="usado">Usado</SelectItem>
+                        <SelectItem value="seminuevo">Seminuevo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -842,7 +879,7 @@ export default function FleetDetailsPage() {
                 </div>
               </>
             ) : (
-              <>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className={`flex items-center ${spacing.gap.medium}`}>
                   <DollarSign className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
@@ -858,10 +895,31 @@ export default function FleetDetailsPage() {
                   </div>
                 </div>
                 <div className={`flex items-center ${spacing.gap.medium}`}>
+                  <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground`}>Marca</p>
+                    <p className={typography.body.base}>{vehicleData.brand}</p>
+                  </div>
+                </div>
+                <div className={`flex items-center ${spacing.gap.medium}`}>
+                  <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground`}>Modelo</p>
+                    <p className={typography.body.base}>{vehicleData.model}</p>
+                  </div>
+                </div>
+                <div className={`flex items-center ${spacing.gap.medium}`}>
                   <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
                     <p className={`${typography.body.small} text-muted-foreground`}>Año</p>
                     <p className={typography.body.base}>{vehicleData.year}</p>
+                  </div>
+                </div>
+                <div className={`flex items-center ${spacing.gap.medium}`}>
+                  <Settings className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground`}>Estado</p>
+                    <div className="mt-1">{getStatusBadge(vehicleData.condition)}</div>
                   </div>
                 </div>
                 {vehicleData.mileage !== undefined && (
@@ -900,12 +958,18 @@ export default function FleetDetailsPage() {
                     </div>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+        <Card 
+          className="shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
           <CardHeader className="px-6 pt-6 pb-4">
             <CardTitle className={typography.h4}>Notas y Comentarios</CardTitle>
           </CardHeader>

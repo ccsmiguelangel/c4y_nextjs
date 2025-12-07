@@ -65,7 +65,13 @@ export function AdminHeader({
   );
 
   return (
-    <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur-sm">
+    <header 
+      className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-2 border-b px-4 backdrop-blur-sm rounded-b-lg"
+      style={{
+        backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+        borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+      } as React.CSSProperties}
+    >
       <MobileMenu />
       {leftActions && (
         <>

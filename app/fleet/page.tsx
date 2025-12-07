@@ -633,9 +633,13 @@ export default function FleetPage() {
               <Label htmlFor="items-per-page" className={cn(typography.body.small, "text-muted-foreground whitespace-nowrap")}>
                 Mostrar:
               </Label>
-              <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(Number(value))}>
-                <SelectTrigger id="items-per-page" className="h-8 w-20 rounded-lg">
-                  <SelectValue />
+              <Select 
+                value={itemsPerPage.toString()} 
+                onValueChange={(value) => setItemsPerPage(Number(value))}
+                defaultValue="5"
+              >
+                <SelectTrigger id="items-per-page" className="h-8 w-20 rounded-lg" suppressHydrationWarning>
+                  <SelectValue placeholder="5" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="5">5</SelectItem>
@@ -655,7 +659,14 @@ export default function FleetPage() {
       {isLoading ? (
         <div className={`flex flex-col ${spacing.gap.medium}`}>
           {[...Array(skeletonCount)].map((_, index) => (
-            <Card key={index} className={commonClasses.card}>
+            <Card 
+              key={index} 
+              className="!bg-transparent shadow-sm backdrop-blur-sm border rounded-lg"
+              style={{
+                backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+                borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+              } as React.CSSProperties}
+            >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
                 <Skeleton className="h-24 w-24 shrink-0 rounded-lg sm:h-28 sm:w-28" />
                 <div className={`flex flex-1 flex-col ${spacing.gap.small}`}>
@@ -675,7 +686,13 @@ export default function FleetPage() {
           ))}
         </div>
       ) : errorMessage ? (
-        <Card className={commonClasses.card}>
+        <Card 
+          className="!bg-transparent shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
           <CardContent className="flex flex-col items-center justify-center py-16 text-center gap-2">
             <p className={`${typography.h3} text-destructive`}>No pudimos cargar la flota</p>
             <p className={typography.body.small}>{errorMessage}</p>
@@ -690,7 +707,11 @@ export default function FleetPage() {
             {paginatedVehicles.map((vehicle) => (
             <Card 
               key={vehicle.id} 
-              className={`${commonClasses.card} bg-background/90 backdrop-blur-sm cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+              className="!bg-transparent shadow-sm backdrop-blur-sm border rounded-lg cursor-pointer transition-colors hover:opacity-90 active:opacity-80"
+              style={{
+                backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+                borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+              } as React.CSSProperties}
               onClick={() => router.push(`/fleet/details/${vehicle.documentId ?? vehicle.id}`)}
             >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
@@ -841,7 +862,13 @@ export default function FleetPage() {
           )}
         </>
       ) : (
-        <Card className={commonClasses.card}>
+        <Card 
+          className="!bg-transparent shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted">
               <Car className="h-10 w-10 text-muted-foreground" />

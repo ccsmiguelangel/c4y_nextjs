@@ -32,7 +32,19 @@ export function AdminLayout({
         onFilterActionClick={onFilterActionClick}
       />
       <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
-        <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+        <ScrollAreaPrimitive.Viewport 
+          className="h-full w-full rounded-[inherit] scroll-smooth"
+          style={{
+            backgroundImage: `
+              repeating-linear-gradient(0deg, rgba(0,0,0,0.03) 0px, transparent 1px, transparent 2px, rgba(0,0,0,0.03) 3px),
+              repeating-linear-gradient(90deg, rgba(0,0,0,0.03) 0px, transparent 1px, transparent 2px, rgba(0,0,0,0.03) 3px),
+              radial-gradient(circle at 2px 2px, rgba(255,255,255,0.08) 1px, transparent 0),
+              radial-gradient(circle at 6px 6px, rgba(0,0,0,0.05) 1px, transparent 0)
+            `,
+            backgroundSize: '100% 4px, 4px 100%, 8px 8px, 12px 12px',
+            backgroundPosition: '0 0, 0 0, 0 0, 4px 4px',
+          } as React.CSSProperties}
+        >
           <main className={commonClasses.mainContainer}>
             {children}
           </main>

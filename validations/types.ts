@@ -125,6 +125,12 @@ export type FleetVehicleCondition = "nuevo" | "usado" | "seminuevo";
 export interface FleetVehicleImage {
   url?: string;
   alternativeText?: string;
+  formats?: {
+    thumbnail?: { url?: string };
+    small?: { url?: string };
+    medium?: { url?: string };
+    large?: { url?: string };
+  };
 }
 
 export interface FleetVehicleRawAttributes {

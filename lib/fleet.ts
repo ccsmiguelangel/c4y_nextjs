@@ -11,7 +11,17 @@ import type {
 import { formatCurrency } from "./format";
 import type { StrapiResponse } from "@/validations/types";
 
+// Para la lista, necesitamos los formats para usar imágenes pequeñas
+// En Strapi v4, los formats se obtienen automáticamente cuando populamos la imagen
+// pero necesitamos no especificar fields para obtenerlos
 const populateImageConfig = {
+  populate: {
+    image: true, // Obtener todos los campos de la imagen incluyendo formats
+  },
+};
+
+// Para detalles, usamos la misma configuración pero sin formato pequeño
+const populateImageConfigForDetails = {
   populate: {
     image: {
       fields: ["url", "alternativeText"],
@@ -66,7 +76,46 @@ const getImageData = (image: FleetVehicleRawAttributes["image"]) => {
   return image as FleetVehicleImage;
 };
 
-const normalizeVehicle = (entry: FleetVehicleRaw): FleetVehicleCard | null => {
+const getImageUrl = (imageData: FleetVehicleImage | undefined, useSmallFormat = false): string | undefined => {
+  if (!imageData) return undefined;
+  
+  // Para cards pequeñas, usar formato 'small' si está disponible, sino 'thumbnail', sino la original
+  if (useSmallFormat) {
+    // Debug: verificar estructura de formats
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Image data:', {
+        hasFormats: !!imageData.formats,
+        formatsKeys: imageData.formats ? Object.keys(imageData.formats) : [],
+        hasSmall: !!imageData.formats?.small,
+        hasThumbnail: !!imageData.formats?.thumbnail,
+        useSmallFormat,
+      });
+    }
+    
+    if (imageData.formats?.small?.url) {
+      const smallUrl = strapiImages.getURL(imageData.formats.small.url);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Using small format:', smallUrl);
+      }
+      return smallUrl;
+    }
+    if (imageData.formats?.thumbnail?.url) {
+      const thumbUrl = strapiImages.getURL(imageData.formats.thumbnail.url);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Using thumbnail format:', thumbUrl);
+      }
+      return thumbUrl;
+    }
+    if (process.env.NODE_ENV === 'development') {
+      console.log('No small formats available, using original');
+    }
+  }
+  
+  // Para vista completa, usar la imagen original
+  return imageData.url ? strapiImages.getURL(imageData.url) : undefined;
+};
+
+const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetVehicleCard | null => {
   const attributes = extractAttributes(entry);
   if (!attributes.name || !attributes.vin) {
     return null;
@@ -74,7 +123,7 @@ const normalizeVehicle = (entry: FleetVehicleRaw): FleetVehicleCard | null => {
 
   const parsedPrice = Number(attributes.price ?? 0) || 0;
   const imageData = getImageData(attributes.image);
-  const imageUrl = imageData?.url ? strapiImages.getURL(imageData.url) : undefined;
+  const imageUrl = getImageUrl(imageData, useSmallImage);
   const imageAlt =
     imageData?.alternativeText ?? attributes.imageAlt ?? attributes.name ?? "Vehículo";
   const idSource = attributes.id ?? attributes.documentId ?? attributes.vin;
@@ -110,14 +159,22 @@ export async function fetchFleetVehiclesFromStrapi(): Promise<FleetVehicleCard[]
   });
 
   if (!response.ok) {
-    throw new Error(`Strapi Fleet request failed with status ${response.status}`);
+    const errorText = await response.text();
+    console.error("Strapi Fleet request failed:", {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText,
+      url,
+      queryString: listQueryString,
+    });
+    throw new Error(`Strapi Fleet request failed with status ${response.status}: ${errorText}`);
   }
 
   const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw[]>;
   const items = Array.isArray(payload?.data) ? payload.data : [];
 
   return items
-    .map(normalizeVehicle)
+    .map((item) => normalizeVehicle(item, true)) // true = usar formato pequeño para cards de lista
     .filter((vehicle): vehicle is FleetVehicleCard => Boolean(vehicle));
 }
 
@@ -142,7 +199,7 @@ const buildFleetDetailQuery = (id: string | number) => {
   return qs.stringify(
     {
       filters,
-      ...populateImageConfig,
+      ...populateImageConfigForDetails,
       pagination: { pageSize: 1 },
     },
     { encodeValuesOnly: true }
