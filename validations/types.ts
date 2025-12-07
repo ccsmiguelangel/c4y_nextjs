@@ -193,3 +193,33 @@ export interface FleetVehicleUpdatePayload {
   imageAlt?: string | null;
 }
 
+export interface VehicleStatus {
+  id: number;
+  documentId?: string;
+  comment?: string;
+  images?: Array<{
+    id?: number;
+    url?: string;
+    alternativeText?: string;
+  }>;
+  authorDocumentId?: string;
+  createdAt: string;
+  updatedAt: string;
+  author?: {
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  };
+}
+
+export interface VehicleStatusPayload {
+  comment?: string;
+  images?: number[];
+  authorDocumentId?: string;
+}
+

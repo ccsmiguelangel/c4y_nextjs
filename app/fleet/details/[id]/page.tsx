@@ -42,14 +42,17 @@ import {
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { NotesTimeline, type FleetNote } from "@/components/ui/notes-timeline";
+import { VehicleStatusTimeline, type VehicleStatusTimelineProps } from "@/components/ui/vehicle-status-timeline";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Skeleton } from "@/components_shadcn/ui/skeleton";
+import { Camera, X } from "lucide-react";
 import type {
   FleetVehicleCard,
   FleetVehicleCondition,
   FleetVehicleUpdatePayload,
+  VehicleStatus,
 } from "@/validations/types";
 
 const getStatusBadge = (status: FleetVehicleCondition) => {
@@ -109,8 +112,16 @@ export default function FleetDetailsPage() {
   const [notes, setNotes] = useState<FleetNote[]>([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [vehicleStatuses, setVehicleStatuses] = useState<VehicleStatus[]>([]);
+  const [isLoadingStatuses, setIsLoadingStatuses] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [loadingStatusId, setLoadingStatusId] = useState<string | number | null>(null);
+  const [statusComment, setStatusComment] = useState("");
+  const [statusImages, setStatusImages] = useState<File[]>([]);
+  const [statusImagePreviews, setStatusImagePreviews] = useState<string[]>([]);
   const [currentUserDocumentId, setCurrentUserDocumentId] = useState<string | null>(null);
   const previewObjectUrlRef = useRef<string | null>(null);
+  const statusImagePreviewRefs = useRef<string[]>([]);
   const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
     if (previewObjectUrlRef.current) {
       URL.revokeObjectURL(previewObjectUrlRef.current);
@@ -239,11 +250,38 @@ export default function FleetDetailsPage() {
     }
   }, []);
 
+  const loadVehicleStatuses = useCallback(async () => {
+    setIsLoadingStatuses(true);
+    try {
+      const response = await fetch(`/api/fleet/${vehicleId}/status`, { cache: "no-store" });
+      if (!response.ok) {
+        // Si es 404, probablemente el tipo de contenido no existe todavía en Strapi
+        // En ese caso, simplemente retornar un array vacío
+        if (response.status === 404) {
+          console.warn("Tipo de contenido 'fleet-statuses' no encontrado en Strapi. Retornando array vacío.");
+          setVehicleStatuses([]);
+          return;
+        }
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || "No pudimos obtener los estados");
+      }
+      const { data } = (await response.json()) as { data: VehicleStatus[] };
+      setVehicleStatuses(data || []);
+    } catch (error) {
+      console.error("Error cargando estados:", error);
+      // En caso de error, establecer array vacío para que la UI no se rompa
+      setVehicleStatuses([]);
+    } finally {
+      setIsLoadingStatuses(false);
+    }
+  }, [vehicleId]);
+
   useEffect(() => {
     loadVehicle();
     loadNotes();
+    loadVehicleStatuses();
     loadCurrentUserProfile();
-  }, [vehicleId, syncFormWithVehicle, loadNotes, loadCurrentUserProfile]);
+  }, [vehicleId, syncFormWithVehicle, loadNotes, loadVehicleStatuses, loadCurrentUserProfile]);
 
   const handleSaveChanges = async () => {
     if (!vehicleData) return;
@@ -547,6 +585,265 @@ export default function FleetDetailsPage() {
     }
   };
 
+  const handleStatusImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    // Limpiar previews anteriores
+    statusImagePreviewRefs.current.forEach((url) => {
+      URL.revokeObjectURL(url);
+    });
+    statusImagePreviewRefs.current = [];
+
+    const newPreviews: string[] = [];
+    files.forEach((file) => {
+      const objectUrl = URL.createObjectURL(file);
+      newPreviews.push(objectUrl);
+      statusImagePreviewRefs.current.push(objectUrl);
+    });
+
+    setStatusImages(files);
+    setStatusImagePreviews(newPreviews);
+  };
+
+  const handleRemoveStatusImage = (index: number) => {
+    // Revocar URL del objeto
+    if (statusImagePreviewRefs.current[index]) {
+      URL.revokeObjectURL(statusImagePreviewRefs.current[index]);
+    }
+
+    const newImages = statusImages.filter((_, i) => i !== index);
+    const newPreviews = statusImagePreviews.filter((_, i) => i !== index);
+    const newRefs = statusImagePreviewRefs.current.filter((_, i) => i !== index);
+
+    setStatusImages(newImages);
+    setStatusImagePreviews(newPreviews);
+    statusImagePreviewRefs.current = newRefs;
+  };
+
+  const handleSaveStatus = async () => {
+    if (statusImages.length === 0 && !statusComment.trim()) {
+      toast.error("Error al guardar estado", {
+        description: "Debes proporcionar al menos una imagen o un comentario",
+      });
+      return;
+    }
+
+    if (!currentUserDocumentId) {
+      await loadCurrentUserProfile();
+    }
+
+    setIsSavingStatus(true);
+    setErrorMessage(null);
+    try {
+      // Subir imágenes primero
+      const uploadedImageIds: number[] = [];
+      for (const imageFile of statusImages) {
+        const uploadForm = new FormData();
+        uploadForm.append("files", imageFile);
+        const uploadResponse = await fetch("/api/strapi/upload", {
+          method: "POST",
+          body: uploadForm,
+        });
+        if (!uploadResponse.ok) {
+          throw new Error("upload_failed");
+        }
+        const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
+        const imageId = uploadPayload?.data?.id;
+        if (imageId) {
+          uploadedImageIds.push(imageId);
+        }
+      }
+
+      const requestBody: { data: { comment?: string; images?: number[]; authorDocumentId?: string } } = {
+        data: {},
+      };
+
+      if (statusComment.trim()) {
+        requestBody.data.comment = statusComment.trim();
+      }
+
+      if (uploadedImageIds.length > 0) {
+        requestBody.data.images = uploadedImageIds;
+      }
+
+      if (currentUserDocumentId) {
+        requestBody.data.authorDocumentId = currentUserDocumentId;
+      }
+
+      const response = await fetch(`/api/fleet/${vehicleId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          const errorText = await response.text();
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: `Error ${response.status}: ${response.statusText}` };
+        }
+        
+        // Manejo específico para Method Not Allowed
+        if (response.status === 405) {
+          throw new Error("El método POST no está permitido en esta ruta. Por favor, reinicia el servidor de desarrollo.");
+        }
+        
+        throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
+      }
+
+      const { data: createdStatus } = (await response.json()) as { data: VehicleStatus };
+      const statusId = createdStatus.documentId || createdStatus.id;
+      
+      // Agregar el estado con un placeholder mientras cargamos los datos completos
+      setVehicleStatuses((prev) => [createdStatus, ...prev]);
+      setLoadingStatusId(statusId);
+      
+      // Limpiar formulario inmediatamente
+      setStatusComment("");
+      setStatusImages([]);
+      setStatusImagePreviews([]);
+      statusImagePreviewRefs.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+      statusImagePreviewRefs.current = [];
+      
+      // Hacer GET para obtener los datos completos con imágenes
+      // Esperar un momento para que Strapi procese las imágenes
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      
+      try {
+        const getResponse = await fetch(`/api/fleet/${vehicleId}/status`, { cache: "no-store" });
+        if (getResponse.ok) {
+          const { data: allStatuses } = (await getResponse.json()) as { data: VehicleStatus[] };
+          // Encontrar el estado recién creado y actualizarlo
+          const updatedStatus = allStatuses.find(
+            (s) => (s.documentId && s.documentId === statusId) || (s.id && String(s.id) === String(statusId))
+          );
+          
+          if (updatedStatus) {
+            setVehicleStatuses((prev) =>
+              prev.map((s) =>
+                (s.documentId && s.documentId === statusId) || (s.id && String(s.id) === String(statusId))
+                  ? updatedStatus
+                  : s
+              )
+            );
+          } else {
+            // Si no se encuentra, recargar todos los estados
+            await loadVehicleStatuses();
+          }
+        } else {
+          // Si falla, recargar todos los estados
+          await loadVehicleStatuses();
+        }
+      } catch (error) {
+        console.error("Error obteniendo estado completo:", error);
+        // Si falla el GET, recargar todos los estados
+        await loadVehicleStatuses();
+      } finally {
+        setLoadingStatusId(null);
+      }
+      
+      toast.success("Estado guardado con éxito", {
+        description: "El estado del vehículo ha sido registrado",
+      });
+    } catch (error) {
+      console.error("Error guardando estado:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      setErrorMessage(`No pudimos guardar el estado: ${errorMessage}. Intenta nuevamente.`);
+      toast.error("Error al guardar estado", {
+        description: errorMessage,
+      });
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
+
+  const handleEditStatus = async (statusId: number | string, editComment: string) => {
+    try {
+      const statusIdStr = String(statusId);
+      const url = `/api/fleet-status/${encodeURIComponent(statusIdStr)}`;
+      
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            comment: editComment,
+            vehicleId: vehicleId,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = errorText ? JSON.parse(errorText) : null;
+        } catch {
+          errorData = null;
+        }
+        
+        const errorMessage = errorData?.error || 
+                            errorText || 
+                            `Error ${response.status}: ${response.statusText}`;
+        
+        throw new Error(errorMessage);
+      }
+
+      const { data } = (await response.json()) as { data: VehicleStatus };
+      setVehicleStatuses((prev) => prev.map((s) => (s.id === data.id || s.documentId === data.documentId ? data : s)));
+      toast.success("Estado actualizado", {
+        description: "El estado del vehículo ha sido actualizado",
+      });
+    } catch (error) {
+      console.error("Error editando estado:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al actualizar estado", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  const handleDeleteStatus = async (statusId: number | string) => {
+    try {
+      const statusIdStr = String(statusId);
+      const response = await fetch(`/api/fleet-status/${encodeURIComponent(statusIdStr)}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      setVehicleStatuses((prev) => prev.filter((s) => s.id !== statusId && s.documentId !== statusId));
+      toast.success("Estado eliminado", {
+        description: "El estado del vehículo ha sido eliminado",
+      });
+    } catch (error) {
+      console.error("Error eliminando estado:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al eliminar estado", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  // Limpiar previews al desmontar
+  useEffect(() => {
+    return () => {
+      statusImagePreviewRefs.current.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
+
   const backButton = (
     <Button
       variant="ghost"
@@ -657,6 +954,56 @@ export default function FleetDetailsPage() {
 
               {/* Skeleton del Formulario */}
               <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+                <Skeleton className="h-24 w-full rounded-md" />
+                <Skeleton className="h-12 w-full rounded-md" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Skeleton del Card de Estados del Vehículo */}
+          <Card 
+            className="shadow-sm backdrop-blur-sm border rounded-lg"
+            style={{
+              backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+              borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+            } as React.CSSProperties}
+          >
+            <CardHeader className="px-6 pt-6 pb-4">
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+              {/* Skeleton del Timeline */}
+              <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <div className={`flex flex-col ${spacing.gap.base} py-2`}>
+                    {[...Array(2)].map((_, index) => (
+                      <div key={index} className={`flex items-start ${spacing.gap.medium}`}>
+                        <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Skeleton className="h-4 w-24" />
+                            <Skeleton className="h-4 w-32" />
+                          </div>
+                          <Skeleton className="h-48 w-full rounded-lg mb-2" />
+                          <Skeleton className="h-4 w-full mb-1" />
+                          <Skeleton className="h-4 w-3/4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.ScrollAreaScrollbar
+                  orientation="vertical"
+                  className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                >
+                  <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                <ScrollAreaPrimitive.Corner />
+              </ScrollAreaPrimitive.Root>
+
+              {/* Skeleton del Formulario */}
+              <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+                <Skeleton className="h-32 w-full rounded-md" />
                 <Skeleton className="h-24 w-full rounded-md" />
                 <Skeleton className="h-12 w-full rounded-md" />
               </div>
@@ -1111,6 +1458,110 @@ export default function FleetDetailsPage() {
                 disabled={!note.trim() || isSavingNote}
               >
                 {isSavingNote ? "Guardando..." : "Guardar Nota"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card de Estados del Vehículo */}
+        <Card 
+          className="shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
+          <CardHeader className="px-6 pt-6 pb-4">
+            <CardTitle className={typography.h4}>Estados del Vehículo</CardTitle>
+          </CardHeader>
+          <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+            {/* Timeline de estados */}
+            <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                <VehicleStatusTimeline 
+                  statuses={vehicleStatuses} 
+                  isLoading={isLoadingStatuses}
+                  loadingStatusId={loadingStatusId}
+                  onEdit={handleEditStatus}
+                  onDelete={handleDeleteStatus}
+                  vehicleId={vehicleId}
+                />
+              </ScrollAreaPrimitive.Viewport>
+              <ScrollAreaPrimitive.ScrollAreaScrollbar
+                orientation="vertical"
+                className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+              >
+                <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+              </ScrollAreaPrimitive.ScrollAreaScrollbar>
+              <ScrollAreaPrimitive.Corner />
+            </ScrollAreaPrimitive.Root>
+
+            {/* Formulario para agregar nuevo estado */}
+            <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+              {/* Preview de imágenes seleccionadas */}
+              {statusImagePreviews.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {statusImagePreviews.map((preview, index) => (
+                    <div key={index} className="relative group">
+                      <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
+                        <Image
+                          src={preview}
+                          alt={`Preview ${index + 1}`}
+                          fill
+                          className="object-cover"
+                          sizes="(max-width: 768px) 50vw, 33vw"
+                          unoptimized
+                        />
+                      </div>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleRemoveStatusImage(index)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Input para seleccionar imágenes */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label
+                  htmlFor="status-images-upload"
+                  className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-primary/40 px-4 py-2 text-sm font-medium text-primary transition hover:bg-primary/10"
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  {statusImages.length > 0 ? `Agregar más imágenes (${statusImages.length} seleccionadas)` : "Seleccionar imágenes del estado"}
+                </Label>
+                <Input
+                  id="status-images-upload"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={handleStatusImageChange}
+                />
+              </div>
+
+              {/* Textarea para comentario */}
+              <Textarea
+                placeholder="Añadir un comentario sobre el estado del vehículo (opcional)..."
+                value={statusComment}
+                onChange={(e) => setStatusComment(e.target.value)}
+                rows={4}
+                className="min-h-24 resize-y"
+              />
+              
+              <Button 
+                onClick={handleSaveStatus} 
+                variant="default" 
+                size="lg" 
+                className="w-full" 
+                disabled={(statusImages.length === 0 && !statusComment.trim()) || isSavingStatus}
+              >
+                {isSavingStatus ? "Guardando..." : "Guardar Estado"}
               </Button>
             </div>
           </CardContent>
