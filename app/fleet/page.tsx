@@ -25,8 +25,18 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components_shadcn/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components_shadcn/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
-import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight, Upload } from "lucide-react";
+import { Search, MoreVertical, ChevronDown, Plus, Car, X, ChevronRight, Upload, ChevronLeft } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
@@ -73,6 +83,10 @@ export default function FleetPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedCondition, setSelectedCondition] = useState<FleetVehicleCondition | null>(null);
   
+  // Estados para paginación
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [currentPage, setCurrentPage] = useState(1);
+  
   // Estados para el diálogo de agregar vehículo
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -92,6 +106,11 @@ export default function FleetPage() {
   });
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  
+  // Estados para el diálogo de eliminar vehículo
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [vehicleToDelete, setVehicleToDelete] = useState<FleetVehicleCard | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadVehicles = useCallback(async () => {
     setIsLoading(true);
@@ -166,6 +185,19 @@ export default function FleetPage() {
     });
   }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition]);
 
+  // Calcular paginación
+  const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage);
+  const paginatedVehicles = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredVehicles.slice(startIndex, endIndex);
+  }, [filteredVehicles, currentPage, itemsPerPage]);
+
+  // Resetear a página 1 cuando cambian los filtros o itemsPerPage
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition, itemsPerPage]);
+
 
   const clearFilters = () => {
     setSelectedBrand(null);
@@ -226,6 +258,98 @@ export default function FleetPage() {
         setImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDeleteVehicle = async () => {
+    if (!vehicleToDelete) return;
+    setIsDeleting(true);
+    try {
+      const targetId = vehicleToDelete.documentId ?? vehicleToDelete.id;
+      const response = await fetch(`/api/fleet/${targetId}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("delete_failed");
+      }
+      toast.success("Vehículo eliminado exitosamente");
+      setDeleteDialogOpen(false);
+      setVehicleToDelete(null);
+      await loadVehicles();
+    } catch (error) {
+      console.error("Error deleting vehicle:", error);
+      toast.error("No pudimos eliminar el vehículo. Intenta nuevamente.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDuplicateVehicle = async (vehicle: FleetVehicleCard) => {
+    try {
+      // Obtener los datos raw del vehículo para acceder al imageId
+      const targetId = vehicle.documentId ?? vehicle.id;
+      
+      // Hacer una llamada a la API para obtener los datos raw con la imagen
+      const vehicleResponse = await fetch(`/api/fleet/${targetId}?includeRaw=true`);
+      if (!vehicleResponse.ok) {
+        throw new Error("No se pudo obtener los datos del vehículo");
+      }
+      const vehicleData = (await vehicleResponse.json()) as { data?: any };
+      
+      // Generar un nuevo VIN único agregando un sufijo
+      const timestamp = Date.now().toString().slice(-4);
+      const newVin = `${vehicle.vin}-COPY-${timestamp}`;
+      
+      // Extraer el imageId del vehículo original si existe
+      // La estructura puede ser: attributes.image.data.id o image.data.id dependiendo de cómo Strapi devuelva los datos
+      let imageId: number | null = null;
+      const rawData = vehicleData.data;
+      if (rawData) {
+        const attributes = rawData.attributes || rawData;
+        const imageData = attributes.image;
+        if (imageData) {
+          if (imageData.data?.id) {
+            imageId = imageData.data.id;
+          } else if (imageData.id) {
+            imageId = imageData.id;
+          } else if (typeof imageData === 'number') {
+            imageId = imageData;
+          }
+        }
+      }
+      
+      // Crear el payload con los datos del vehículo original
+      const payload = {
+        name: `${vehicle.name} (Copia)`,
+        vin: newVin,
+        price: vehicle.priceNumber, // Usar priceNumber en lugar de price
+        condition: vehicle.condition,
+        brand: vehicle.brand,
+        model: vehicle.model,
+        year: vehicle.year,
+        color: vehicle.color || null,
+        mileage: vehicle.mileage !== undefined ? vehicle.mileage : null,
+        fuelType: vehicle.fuelType || null,
+        transmission: vehicle.transmission || null,
+        image: imageId,
+        imageAlt: vehicle.imageAlt || null,
+      };
+
+      const response = await fetch("/api/fleet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: payload }),
+      });
+
+      if (!response.ok) {
+        const errorData = (await response.json()) as { error?: string };
+        throw new Error(errorData?.error || "No se pudo duplicar el vehículo");
+      }
+
+      toast.success("Vehículo duplicado exitosamente");
+      await loadVehicles();
+    } catch (error) {
+      console.error("Error duplicating vehicle:", error);
+      const errorMessage = error instanceof Error ? error.message : "No pudimos duplicar el vehículo. Intenta nuevamente.";
+      toast.error(errorMessage);
     }
   };
 
@@ -503,6 +627,24 @@ export default function FleetPage() {
                 <span className={typography.body.base}>Limpiar</span>
               </Button>
             )}
+
+            {/* Selector de items por página */}
+            <div className="flex items-center gap-2 shrink-0">
+              <Label htmlFor="items-per-page" className={cn(typography.body.small, "text-muted-foreground whitespace-nowrap")}>
+                Mostrar:
+              </Label>
+              <Select value={itemsPerPage.toString()} onValueChange={(value) => setItemsPerPage(Number(value))}>
+                <SelectTrigger id="items-per-page" className="h-8 w-20 rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </nav>
         </ScrollArea>
       </section>
@@ -543,11 +685,12 @@ export default function FleetPage() {
           </CardContent>
         </Card>
       ) : filteredVehicles.length > 0 ? (
-        <div className={`flex flex-col ${spacing.gap.medium}`}>
-          {filteredVehicles.map((vehicle) => (
+        <>
+          <div className={`flex flex-col ${spacing.gap.medium}`}>
+            {paginatedVehicles.map((vehicle) => (
             <Card 
               key={vehicle.id} 
-              className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+              className={`${commonClasses.card} bg-background/90 backdrop-blur-sm cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
               onClick={() => router.push(`/fleet/details/${vehicle.documentId ?? vehicle.id}`)}
             >
               <CardContent className={`flex items-start ${spacing.gap.medium} ${spacing.card.padding}`}>
@@ -592,8 +735,30 @@ export default function FleetPage() {
                           >
                             Ver detalles
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => e.stopPropagation()}>Editar</DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/fleet/details/${vehicle.documentId ?? vehicle.id}?edit=true`);
+                            }}
+                          >
+                            Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicateVehicle(vehicle);
+                            }}
+                          >
+                            Duplicar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setVehicleToDelete(vehicle);
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
                             Eliminar
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -611,8 +776,70 @@ export default function FleetPage() {
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+
+          {/* Controles de Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-4 border-t">
+              <div className="flex items-center gap-2">
+                <p className={cn(typography.body.small, "text-muted-foreground")}>
+                  Mostrando {((currentPage - 1) * itemsPerPage) + 1} - {Math.min(currentPage * itemsPerPage, filteredVehicles.length)} de {filteredVehicles.length} vehículos
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="h-8"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span className="sr-only">Anterior</span>
+                </Button>
+                
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNum: number;
+                    if (totalPages <= 7) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 4) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNum = totalPages - 6 + i;
+                    } else {
+                      pageNum = currentPage - 3 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-8"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                  <span className="sr-only">Siguiente</span>
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <Card className={commonClasses.card}>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
@@ -641,7 +868,7 @@ export default function FleetPage() {
 
       {/* Dialog para agregar vehículo */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] p-0 !flex !flex-col">
+        <DialogContent className="max-w-2xl h-[90vh] p-0 !flex !flex-col overflow-hidden">
           <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
             <DialogTitle className={typography.h2}>Agregar Nuevo Vehículo</DialogTitle>
             <DialogDescription>
@@ -650,7 +877,7 @@ export default function FleetPage() {
           </DialogHeader>
           
           <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
-            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
               <div className="px-6">
                 <div className={`flex flex-col ${spacing.gap.medium} py-6`}>
                   {/* Información Básica */}
@@ -740,7 +967,7 @@ export default function FleetPage() {
                           <SelectTrigger className="rounded-lg">
                             <SelectValue placeholder="Seleccionar estado" />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="z-[200]">
                             {conditions.map((condition) => (
                               <SelectItem key={condition} value={condition}>
                                 <span className="capitalize">{condition}</span>
@@ -898,7 +1125,7 @@ export default function FleetPage() {
               orientation="vertical"
               className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
             >
-              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/40 hover:bg-border/60 dark:bg-border/30 dark:hover:bg-border/50 transition-colors" />
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
             </ScrollAreaPrimitive.ScrollAreaScrollbar>
             <ScrollAreaPrimitive.Corner />
           </ScrollAreaPrimitive.Root>
@@ -928,6 +1155,28 @@ export default function FleetPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog de confirmación para eliminar vehículo */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent onClose={() => setDeleteDialogOpen(false)}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{vehicleToDelete?.name}</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Eliminar este vehículo? Esta acción eliminará el vehículo de la flota y no se podrá deshacer. Confirma si deseas continuar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteVehicle}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }

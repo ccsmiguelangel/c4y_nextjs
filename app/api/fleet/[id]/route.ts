@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   deleteFleetVehicleInStrapi,
   fetchFleetVehicleByIdFromStrapi,
+  fetchFleetVehicleRawFromStrapi,
   updateFleetVehicleInStrapi,
 } from "@/lib/fleet";
 import type { FleetVehicleUpdatePayload } from "@/validations/types";
@@ -12,9 +13,21 @@ interface RouteContext {
   }>;
 }
 
-export async function GET(_: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    const url = new URL(request.url);
+    const includeRaw = url.searchParams.get("includeRaw") === "true";
+    
+    if (includeRaw) {
+      // Devolver datos raw para obtener el imageId
+      const rawVehicle = await fetchFleetVehicleRawFromStrapi(id);
+      if (!rawVehicle) {
+        return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 });
+      }
+      return NextResponse.json({ data: rawVehicle });
+    }
+    
     const vehicle = await fetchFleetVehicleByIdFromStrapi(id);
     if (!vehicle) {
       return NextResponse.json({ error: "Vehículo no encontrado" }, { status: 404 });

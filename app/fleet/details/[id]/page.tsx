@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, MouseEvent } from "react";
 import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
@@ -77,6 +77,7 @@ const getStatusBadge = (status: FleetVehicleCondition) => {
 export default function FleetDetailsPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const vehicleId = params.id as string;
 
   const [vehicleData, setVehicleData] = useState<FleetVehicleCard | null>(null);
@@ -148,6 +149,18 @@ export default function FleetDetailsPage() {
       }
     };
   }, []);
+
+  // Activar modo de edición si viene el query parameter
+  useEffect(() => {
+    const editParam = searchParams.get("edit");
+    if (editParam === "true" && !isLoading && vehicleData) {
+      setIsEditing(true);
+      // Limpiar el query parameter de la URL sin recargar
+      const url = new URL(window.location.href);
+      url.searchParams.delete("edit");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, [searchParams, isLoading, vehicleData]);
 
   const priceLabel = useMemo(() => {
     if (!vehicleData) return "";
@@ -940,7 +953,7 @@ export default function FleetDetailsPage() {
         </Card>
       </section>
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent onClose={() => setIsDeleteDialogOpen(false)}>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar este vehículo?</AlertDialogTitle>
             <AlertDialogDescription>

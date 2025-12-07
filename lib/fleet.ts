@@ -173,6 +173,29 @@ export async function fetchFleetVehicleByIdFromStrapi(
   return entry ? normalizeVehicle(entry) : null;
 }
 
+export async function fetchFleetVehicleRawFromStrapi(
+  id: string | number
+): Promise<FleetVehicleRaw | null> {
+  const detailQuery = buildFleetDetailQuery(id);
+  const response = await fetch(`${STRAPI_BASE_URL}/api/fleets?${detailQuery}`, {
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+    },
+    cache: "no-store",
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Strapi Fleet details request failed with status ${response.status}`);
+  }
+
+  const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw[]>;
+  return payload?.data?.[0] ?? null;
+}
+
 const resolveFleetDocumentId = async (id: string | number) => {
   if (!isNumericId(id)) {
     return String(id);
