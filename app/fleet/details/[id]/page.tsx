@@ -762,20 +762,56 @@ export default function FleetDetailsPage() {
     }
   };
 
-  const handleEditStatus = async (statusId: number | string, editComment: string) => {
+  const handleEditStatus = async (statusId: number | string, editComment: string, imageIds?: number[], newImages?: File[]) => {
     try {
       const statusIdStr = String(statusId);
       const url = `/api/fleet-status/${encodeURIComponent(statusIdStr)}`;
       
+      // Subir nuevas imágenes primero si hay
+      let uploadedImageIds: number[] = [];
+      if (newImages && newImages.length > 0) {
+        for (const imageFile of newImages) {
+          const uploadForm = new FormData();
+          uploadForm.append("files", imageFile);
+          const uploadResponse = await fetch("/api/strapi/upload", {
+            method: "POST",
+            body: uploadForm,
+          });
+          if (!uploadResponse.ok) {
+            throw new Error("Error al subir las nuevas imágenes");
+          }
+          const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
+          const imageId = uploadPayload?.data?.id;
+          if (imageId) {
+            uploadedImageIds.push(imageId);
+          }
+        }
+      }
+      
+      // Combinar IDs de imágenes existentes con las nuevas
+      const allImageIds = imageIds ? [...imageIds, ...uploadedImageIds] : uploadedImageIds;
+      
+      const requestBody: { data: { comment?: string; images?: number[]; vehicleId?: string } } = {
+        data: {
+          vehicleId: vehicleId,
+        },
+      };
+      
+      if (editComment.trim()) {
+        requestBody.data.comment = editComment.trim();
+      }
+      
+      if (allImageIds.length > 0) {
+        requestBody.data.images = allImageIds;
+      } else if (imageIds !== undefined) {
+        // Si no hay nuevas imágenes pero se eliminaron todas, enviar array vacío
+        requestBody.data.images = [];
+      }
+      
       const response = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: {
-            comment: editComment,
-            vehicleId: vehicleId,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -973,7 +1009,7 @@ export default function FleetDetailsPage() {
             </CardHeader>
             <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
               {/* Skeleton del Timeline */}
-              <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+              <ScrollAreaPrimitive.Root className="relative h-[900px] overflow-hidden">
                 <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
                   <div className={`flex flex-col ${spacing.gap.base} py-2`}>
                     {[...Array(2)].map((_, index) => (
@@ -1476,7 +1512,7 @@ export default function FleetDetailsPage() {
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Timeline de estados */}
-            <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+            <ScrollAreaPrimitive.Root className="relative h-[900px] overflow-hidden">
               <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
                 <VehicleStatusTimeline 
                   statuses={vehicleStatuses} 

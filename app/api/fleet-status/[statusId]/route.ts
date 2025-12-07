@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 import qs from "qs";
+import { strapiImages } from "@/lib/strapi-images";
 
 // Función helper para obtener el user-profile del usuario actual
 async function getCurrentUserProfile() {
@@ -103,6 +104,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         data?: { 
           comment?: string;
           vehicleId?: string;
+          images?: number[];
         } 
       };
     } catch (parseError) {
@@ -132,6 +134,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     
     const updateData: { 
       comment?: string; 
+      images?: number[];
       authorDocumentId: string;
     } = {
       authorDocumentId: authorDocumentId,
@@ -139,6 +142,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     
     if (body.data.comment !== undefined) {
       updateData.comment = body.data.comment;
+    }
+    
+    if (body.data.images !== undefined) {
+      updateData.images = body.data.images;
     }
     
     const updateResponse = await fetch(
@@ -198,6 +205,49 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (statusResponse.ok) {
       const statusDataResponse = await statusResponse.json();
       const statusData = statusDataResponse.data;
+      
+      // Normalizar imágenes
+      const normalizeImages = (imagesData: any): Array<{ id?: number; url?: string; alternativeText?: string }> => {
+        if (!imagesData) return [];
+        
+        if (Array.isArray(imagesData)) {
+          return imagesData.map((img: any) => {
+            let imageUrl: string | undefined;
+            let imageId: number | undefined;
+            let imageAlt: string | undefined;
+            
+            if (img?.data?.attributes) {
+              imageId = img.data.id;
+              imageUrl = img.data.attributes.url;
+              imageAlt = img.data.attributes.alternativeText;
+            } else if (img?.attributes) {
+              imageId = img.id;
+              imageUrl = img.attributes.url;
+              imageAlt = img.attributes.alternativeText;
+            } else {
+              imageId = img.id;
+              imageUrl = img.url;
+              imageAlt = img.alternativeText;
+            }
+            
+            return {
+              id: imageId,
+              url: imageUrl ? strapiImages.getURL(imageUrl) : undefined,
+              alternativeText: imageAlt,
+            };
+          });
+        }
+        
+        if (imagesData?.data && Array.isArray(imagesData.data)) {
+          return normalizeImages(imagesData.data);
+        }
+        
+        return [];
+      };
+      
+      if (statusData.images) {
+        statusData.images = normalizeImages(statusData.images);
+      }
       
       // Agregar el autor
       if (statusData.authorDocumentId) {
