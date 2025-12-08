@@ -120,7 +120,17 @@ export default function FleetDetailsPage() {
     model: "",
     year: "",
     imageAlt: "",
+    stockQuantity: "",
+    nextMaintenanceDate: "",
+    placa: "",
   });
+  const [maintenanceScheduledDate, setMaintenanceScheduledDate] = useState("");
+  const [maintenanceScheduledTime, setMaintenanceScheduledTime] = useState("");
+  const [maintenanceIsAllDay, setMaintenanceIsAllDay] = useState(false);
+  const [maintenanceRecurrencePattern, setMaintenanceRecurrencePattern] = useState<RecurrencePattern>("monthly");
+  const [maintenanceRecurrenceEndDate, setMaintenanceRecurrenceEndDate] = useState("");
+  const [selectedResponsables, setSelectedResponsables] = useState<number[]>([]);
+  const [selectedAssignedDrivers, setSelectedAssignedDrivers] = useState<number[]>([]);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
@@ -141,6 +151,7 @@ export default function FleetDetailsPage() {
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isSavingDocument, setIsSavingDocument] = useState(false);
   const [documentType, setDocumentType] = useState<FleetDocumentType>("poliza_seguro");
+  const [documentOtherDescription, setDocumentOtherDescription] = useState("");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [vehicleReminders, setVehicleReminders] = useState<FleetReminder[]>([]);
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
@@ -158,6 +169,9 @@ export default function FleetDetailsPage() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [showReminderForm, setShowReminderForm] = useState(false);
   const [editingReminderId, setEditingReminderId] = useState<number | string | null>(null);
+  const [showDocumentForm, setShowDocumentForm] = useState(false);
+  const [showStatusForm, setShowStatusForm] = useState(false);
+  const [showNoteForm, setShowNoteForm] = useState(false);
   const previewObjectUrlRef = useRef<string | null>(null);
   const statusImagePreviewRefs = useRef<string[]>([]);
   const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
@@ -174,7 +188,7 @@ export default function FleetDetailsPage() {
   }, []);
 
   const syncFormWithVehicle = useCallback(
-    (data: FleetVehicleCard) => {
+    async (data: FleetVehicleCard) => {
       setFormData({
         name: data.name,
         vin: data.vin,
@@ -188,12 +202,78 @@ export default function FleetDetailsPage() {
         model: data.model,
         year: data.year.toString(),
         imageAlt: data.imageAlt ?? "",
+        stockQuantity: (data as any).stockQuantity?.toString() ?? "",
+        nextMaintenanceDate: data.nextMaintenanceDate ? new Date(data.nextMaintenanceDate).toISOString().split('T')[0] : "",
+        placa: (data as any).placa ?? "",
       });
+      
+      // Cargar datos de mantenimiento recurrente si existe
+      if (data.nextMaintenanceDate) {
+        const maintenanceDate = new Date(data.nextMaintenanceDate);
+        const year = maintenanceDate.getFullYear();
+        const month = String(maintenanceDate.getMonth() + 1).padStart(2, "0");
+        const day = String(maintenanceDate.getDate()).padStart(2, "0");
+        setMaintenanceScheduledDate(`${year}-${month}-${day}`);
+        
+        const hours = String(maintenanceDate.getHours()).padStart(2, "0");
+        const minutes = String(maintenanceDate.getMinutes()).padStart(2, "0");
+        const timeValue = `${hours}:${minutes}`;
+        setMaintenanceScheduledTime(timeValue);
+        setMaintenanceIsAllDay(timeValue === "00:00");
+      } else {
+        setMaintenanceScheduledDate("");
+        setMaintenanceScheduledTime("");
+        setMaintenanceIsAllDay(false);
+      }
       updateImagePreview(data.imageUrl ?? null);
       setSelectedImageFile(null);
       setShouldRemoveImage(false);
+      
+      // Cargar responsables y conductores asignados desde los datos normalizados
+      // Primero intentar usar los datos normalizados del vehículo
+      if (data.responsables && data.responsables.length > 0) {
+        const responsablesIds = data.responsables
+          .map((r) => r.id)
+          .filter((id): id is number => typeof id === 'number' && !isNaN(id));
+        setSelectedResponsables(responsablesIds);
+      } else {
+        setSelectedResponsables([]);
+      }
+      
+      if (data.assignedDrivers && data.assignedDrivers.length > 0) {
+        const assignedDriversIds = data.assignedDrivers
+          .map((d) => d.id)
+          .filter((id): id is number => typeof id === 'number' && !isNaN(id));
+        setSelectedAssignedDrivers(assignedDriversIds);
+      } else {
+        setSelectedAssignedDrivers([]);
+      }
+      
+      // Si no hay datos normalizados, intentar cargar desde la API raw como fallback
+      if ((!data.responsables || data.responsables.length === 0) && (!data.assignedDrivers || data.assignedDrivers.length === 0)) {
+        try {
+          const rawResponse = await fetch(`/api/fleet/${vehicleId}?includeRaw=true`, { cache: "no-store" });
+          if (rawResponse.ok) {
+            const { data: rawData } = (await rawResponse.json()) as { data: any };
+            if (rawData?.attributes?.responsables?.data) {
+              const responsablesIds = rawData.attributes.responsables.data
+                .map((r: any) => r.id)
+                .filter((id: any): id is number => typeof id === 'number' && !isNaN(id));
+              setSelectedResponsables(responsablesIds);
+            }
+            if (rawData?.attributes?.assignedDrivers?.data) {
+              const assignedDriversIds = rawData.attributes.assignedDrivers.data
+                .map((d: any) => d.id)
+                .filter((id: any): id is number => typeof id === 'number' && !isNaN(id));
+              setSelectedAssignedDrivers(assignedDriversIds);
+            }
+          }
+        } catch (error) {
+          console.error("Error cargando responsables y conductores:", error);
+        }
+      }
     },
-    [updateImagePreview]
+    [updateImagePreview, vehicleId]
   );
 
   useEffect(() => {
@@ -233,8 +313,17 @@ export default function FleetDetailsPage() {
         throw new Error("No pudimos obtener el vehículo");
       }
       const { data } = (await response.json()) as { data: FleetVehicleCard };
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log("📥 Datos recibidos en loadVehicle:", {
+          assignedDrivers: data.assignedDrivers,
+          responsables: data.responsables,
+          stockQuantity: data.stockQuantity,
+        });
+      }
+      
       setVehicleData(data);
-      syncFormWithVehicle(data);
+      await syncFormWithVehicle(data);
       setErrorMessage(null);
     } catch (error) {
       console.error("Error cargando vehículo:", error);
@@ -314,6 +403,97 @@ export default function FleetDetailsPage() {
     }
   }, [vehicleId]);
 
+  // Funciones para recordatorios y usuarios
+  const loadAvailableUsers = useCallback(async () => {
+    setIsLoadingUsers(true);
+    try {
+      const response = await fetch(`/api/user-profiles`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("No pudimos obtener los usuarios");
+      }
+      const { data } = (await response.json()) as { data: Array<{ id: number; documentId?: string; displayName?: string; email?: string; avatar?: { url?: string; alternativeText?: string } }> };
+      setAvailableUsers(data || []);
+    } catch (error) {
+      console.error("Error cargando usuarios:", error);
+      toast.error("Error al cargar usuarios", {
+        description: error instanceof Error ? error.message : "Error desconocido",
+      });
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  }, []);
+
+  // Efecto para sincronizar seleccionados cuando se cargan los usuarios disponibles
+  useEffect(() => {
+    if (availableUsers.length > 0 && vehicleData) {
+      // Mapear responsables usando documentId o id
+      if (vehicleData.responsables && vehicleData.responsables.length > 0) {
+        const responsablesIds = vehicleData.responsables
+          .map((resp) => {
+            // Buscar el usuario en availableUsers por id o documentId
+            const foundUser = availableUsers.find(
+              (u) => u.id === resp.id || u.documentId === resp.documentId
+            );
+            if (foundUser) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log("🔍 Mapeando responsable:", {
+                  respId: resp.id,
+                  respDocumentId: resp.documentId,
+                  foundUserId: foundUser.id,
+                  foundUserDocumentId: foundUser.documentId,
+                });
+              }
+              return foundUser.id;
+            }
+            // Si no se encuentra por id/documentId, intentar usar directamente el id del resp
+            return resp.id;
+          })
+          .filter((id): id is number => typeof id === 'number' && !isNaN(id));
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log("✅ Responsables IDs mapeados:", responsablesIds);
+        }
+        
+        if (responsablesIds.length > 0) {
+          setSelectedResponsables(responsablesIds);
+        }
+      }
+      
+      // Mapear conductores usando documentId o id
+      if (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) {
+        const assignedDriversIds = vehicleData.assignedDrivers
+          .map((driver) => {
+            // Buscar el usuario en availableUsers por id o documentId
+            const foundUser = availableUsers.find(
+              (u) => u.id === driver.id || u.documentId === driver.documentId
+            );
+            if (foundUser) {
+              if (process.env.NODE_ENV === 'development') {
+                console.log("🔍 Mapeando conductor:", {
+                  driverId: driver.id,
+                  driverDocumentId: driver.documentId,
+                  foundUserId: foundUser.id,
+                  foundUserDocumentId: foundUser.documentId,
+                });
+              }
+              return foundUser.id;
+            }
+            // Si no se encuentra por id/documentId, intentar usar directamente el id del driver
+            return driver.id;
+          })
+          .filter((id): id is number => typeof id === 'number' && !isNaN(id));
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log("✅ Conductores IDs mapeados:", assignedDriversIds);
+        }
+        
+        if (assignedDriversIds.length > 0) {
+          setSelectedAssignedDrivers(assignedDriversIds);
+        }
+      }
+    }
+  }, [availableUsers, vehicleData]);
+
   useEffect(() => {
     loadVehicle();
     loadNotes();
@@ -322,7 +502,7 @@ export default function FleetDetailsPage() {
     loadVehicleReminders();
     loadAvailableUsers();
     loadCurrentUserProfile();
-  }, [vehicleId, syncFormWithVehicle, loadNotes, loadVehicleStatuses, loadCurrentUserProfile]);
+  }, [vehicleId, syncFormWithVehicle, loadNotes, loadVehicleStatuses, loadCurrentUserProfile, loadAvailableUsers]);
 
   const handleSaveChanges = async () => {
     if (!vehicleData) return;
@@ -331,6 +511,18 @@ export default function FleetDetailsPage() {
     try {
       let uploadedImageId: number | null = null;
       if (selectedImageFile) {
+        // Validar tipo de archivo
+        const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validImageTypes.includes(selectedImageFile.type)) {
+          throw new Error(`Tipo de archivo no válido. Solo se permiten imágenes: ${validImageTypes.join(', ')}`);
+        }
+        
+        // Validar tamaño (máximo 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB en bytes
+        if (selectedImageFile.size > maxSize) {
+          throw new Error(`La imagen es demasiado grande. El tamaño máximo permitido es 10MB.`);
+        }
+        
         const uploadForm = new FormData();
         uploadForm.append("files", selectedImageFile);
         const uploadResponse = await fetch("/api/strapi/upload", {
@@ -338,12 +530,19 @@ export default function FleetDetailsPage() {
           body: uploadForm,
         });
         if (!uploadResponse.ok) {
-          throw new Error("upload_failed");
+          let errorMessage = "No se pudo subir la imagen";
+          try {
+            const errorData = await uploadResponse.json();
+            errorMessage = errorData?.error || errorMessage;
+          } catch {
+            // Si no se puede parsear el JSON, usar el mensaje por defecto
+          }
+          throw new Error(errorMessage);
         }
         const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
         uploadedImageId = uploadPayload?.data?.id ?? null;
         if (!uploadedImageId) {
-          throw new Error("upload_failed");
+          throw new Error("No se pudo obtener el ID de la imagen subida");
         }
       }
 
@@ -360,7 +559,21 @@ export default function FleetDetailsPage() {
         model: formData.model,
         year: Number(formData.year) || vehicleData.year,
         imageAlt: formData.imageAlt || null,
+        stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : null,
+        placa: formData.placa || null,
+        nextMaintenanceDate: maintenanceScheduledDate ? (() => {
+          const timeToUse = maintenanceIsAllDay ? "00:00" : (maintenanceScheduledTime || "00:00");
+          return `${maintenanceScheduledDate}T${timeToUse}:00`;
+        })() : null,
+        responsables: selectedResponsables.length > 0 ? selectedResponsables : [],
+        assignedDrivers: selectedAssignedDrivers.length > 0 ? selectedAssignedDrivers : [],
       };
+
+      console.log("📤 Enviando payload:", {
+        responsables: payload.responsables,
+        assignedDrivers: payload.assignedDrivers,
+        stockQuantity: payload.stockQuantity,
+      });
 
       if (uploadedImageId !== null) {
         payload.image = uploadedImageId;
@@ -379,20 +592,127 @@ export default function FleetDetailsPage() {
         throw new Error("save_failed");
       }
 
-      const { data } = (await response.json()) as { data: FleetVehicleCard };
-      setVehicleData(data);
-      syncFormWithVehicle(data);
+      // Sincronizar fecha de mantenimiento con recordatorios
+      if (maintenanceScheduledDate) {
+        await syncMaintenanceReminder(maintenanceScheduledDate, maintenanceScheduledTime, maintenanceIsAllDay, maintenanceRecurrencePattern, maintenanceRecurrenceEndDate);
+      }
+
+      // Recargar el vehículo completo para obtener todas las relaciones actualizadas
+      await loadVehicle();
       setIsEditing(false);
+      toast.success("Vehículo actualizado correctamente");
     } catch (error) {
       console.error("Error guardando vehículo:", error);
-      const uploadFailed = (error as Error)?.message === "upload_failed";
-      setErrorMessage(
-        uploadFailed
-          ? "No pudimos subir la imagen. Verifica el archivo e intenta nuevamente."
-          : "No pudimos guardar los cambios. Intenta nuevamente."
-      );
+      const errorMessage = error instanceof Error ? error.message : "No pudimos guardar los cambios. Intenta nuevamente.";
+      const isUploadError = errorMessage.includes("imagen") || errorMessage.includes("archivo") || errorMessage.includes("subir");
+      
+      if (isUploadError) {
+        setErrorMessage(errorMessage);
+        toast.error("Error al subir imagen", {
+          description: errorMessage,
+        });
+      } else {
+        setErrorMessage(errorMessage);
+        toast.error("Error al guardar", {
+          description: errorMessage,
+        });
+      }
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Función para sincronizar la fecha de mantenimiento con recordatorios
+  const syncMaintenanceReminder = async (
+    maintenanceDate: string,
+    maintenanceTime: string,
+    isAllDay: boolean,
+    recurrencePattern: RecurrencePattern,
+    recurrenceEndDate?: string
+  ) => {
+    try {
+      const maintenanceTitle = "Mantenimiento completo del vehículo";
+      
+      // Buscar si ya existe un recordatorio de mantenimiento para este vehículo
+      const existingReminder = vehicleReminders.find(
+        (r) => r.title.toLowerCase().includes("mantenimiento") || r.title === maintenanceTitle
+      );
+
+      const timeToUse = isAllDay ? "00:00" : (maintenanceTime || "00:00");
+      const scheduledDateTime = `${maintenanceDate}T${timeToUse}:00`;
+
+      if (existingReminder) {
+        // Actualizar el recordatorio existente
+        const reminderId = existingReminder.documentId || String(existingReminder.id);
+        const updateData: any = {
+          title: maintenanceTitle,
+          scheduledDate: scheduledDateTime,
+          nextTrigger: scheduledDateTime,
+          isAllDay: isAllDay,
+          reminderType: "recurring",
+          recurrencePattern: recurrencePattern,
+        };
+        
+        if (recurrenceEndDate) {
+          updateData.recurrenceEndDate = `${recurrenceEndDate}T00:00:00`;
+        }
+        
+        const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: updateData,
+          }),
+        });
+
+        if (response.ok) {
+          await loadVehicleReminders();
+          console.log("✅ Recordatorio de mantenimiento actualizado");
+        }
+      } else {
+        // Crear nuevo recordatorio
+        if (!currentUserDocumentId) {
+          console.warn("⚠️ No se puede crear recordatorio: usuario no identificado");
+          return;
+        }
+
+        // Asignar a responsables y conductores si existen
+        const assignedUserIds = [
+          ...selectedResponsables,
+          ...selectedAssignedDrivers,
+        ].filter((id, index, self) => self.indexOf(id) === index); // Eliminar duplicados
+
+        const createData: any = {
+          title: maintenanceTitle,
+          description: `Mantenimiento completo programado para el vehículo ${vehicleData?.name || ""}`,
+          reminderType: "recurring" as ReminderType,
+          scheduledDate: scheduledDateTime,
+          isAllDay: isAllDay,
+          recurrencePattern: recurrencePattern,
+          assignedUserIds: assignedUserIds.length > 0 ? assignedUserIds : undefined,
+          authorDocumentId: currentUserDocumentId,
+        };
+        
+        if (recurrenceEndDate) {
+          createData.recurrenceEndDate = `${recurrenceEndDate}T00:00:00`;
+        }
+
+        const response = await fetch(`/api/fleet/${vehicleId}/reminder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: createData,
+          }),
+        });
+
+        if (response.ok) {
+          await loadVehicleReminders();
+          console.log("✅ Recordatorio de mantenimiento creado");
+        }
+      }
+    } catch (error) {
+      console.error("Error sincronizando recordatorio de mantenimiento:", error);
+      // No mostrar error al usuario, solo loguear
     }
   };
 
@@ -516,6 +836,10 @@ export default function FleetDetailsPage() {
       const { data } = (await response.json()) as { data: FleetNote };
       setNotes((prev) => [data, ...prev]);
       setNote("");
+      
+      // Cerrar formulario después de guardar
+      setShowNoteForm(false);
+      
       toast.success("Nota guardada con éxito", {
         description: "Tu comentario ha sido agregado al timeline",
       });
@@ -680,6 +1004,18 @@ export default function FleetDetailsPage() {
       // Subir imágenes primero
       const uploadedImageIds: number[] = [];
       for (const imageFile of statusImages) {
+        // Validar tipo de archivo
+        const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validImageTypes.includes(imageFile.type)) {
+          throw new Error(`Tipo de archivo no válido. Solo se permiten imágenes: ${validImageTypes.join(', ')}`);
+        }
+        
+        // Validar tamaño (máximo 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB en bytes
+        if (imageFile.size > maxSize) {
+          throw new Error(`La imagen es demasiado grande. El tamaño máximo permitido es 10MB.`);
+        }
+        
         const uploadForm = new FormData();
         uploadForm.append("files", imageFile);
         const uploadResponse = await fetch("/api/strapi/upload", {
@@ -687,13 +1023,21 @@ export default function FleetDetailsPage() {
           body: uploadForm,
         });
         if (!uploadResponse.ok) {
-          throw new Error("upload_failed");
+          let errorMessage = "No se pudo subir la imagen";
+          try {
+            const errorData = await uploadResponse.json();
+            errorMessage = errorData?.error || errorMessage;
+          } catch {
+            // Si no se puede parsear el JSON, usar el mensaje por defecto
+          }
+          throw new Error(errorMessage);
         }
         const uploadPayload = (await uploadResponse.json()) as { data?: { id?: number } };
         const imageId = uploadPayload?.data?.id;
-        if (imageId) {
-          uploadedImageIds.push(imageId);
+        if (!imageId) {
+          throw new Error("No se pudo obtener el ID de la imagen subida");
         }
+        uploadedImageIds.push(imageId);
       }
 
       const requestBody: { data: { comment?: string; images?: number[]; authorDocumentId?: string } } = {
@@ -746,6 +1090,9 @@ export default function FleetDetailsPage() {
       setStatusComment("");
       setStatusImages([]);
       setStatusImagePreviews([]);
+      
+      // Cerrar formulario después de guardar
+      setShowStatusForm(false);
       statusImagePreviewRefs.current.forEach((url) => {
         URL.revokeObjectURL(url);
       });
@@ -966,6 +1313,13 @@ export default function FleetDetailsPage() {
       return;
     }
 
+    if (documentType === "otros" && !documentOtherDescription.trim()) {
+      toast.error("Error", {
+        description: "Debes describir el tipo de documento cuando seleccionas 'Otros'",
+      });
+      return;
+    }
+
     setIsSavingDocument(true);
     setErrorMessage(null);
     try {
@@ -988,12 +1342,17 @@ export default function FleetDetailsPage() {
         }
       }
 
-      const requestBody: { data: { documentType: FleetDocumentType; files: number[]; authorDocumentId?: string } } = {
+      const requestBody: { data: { documentType: FleetDocumentType; files: number[]; authorDocumentId?: string; otherDescription?: string } } = {
         data: {
           documentType: documentType,
           files: uploadedFileIds,
         },
       };
+
+      // Agregar descripción si es tipo "otros"
+      if (documentType === "otros" && documentOtherDescription.trim()) {
+        requestBody.data.otherDescription = documentOtherDescription.trim();
+      }
 
       if (currentUserDocumentId) {
         requestBody.data.authorDocumentId = currentUserDocumentId;
@@ -1029,6 +1388,10 @@ export default function FleetDetailsPage() {
       // Limpiar formulario
       setDocumentFiles([]);
       setDocumentType("poliza_seguro");
+      setDocumentOtherDescription("");
+      
+      // Cerrar formulario después de guardar
+      setShowDocumentForm(false);
       
       toast.success("Documento guardado", {
         description: "El documento ha sido guardado correctamente",
@@ -1067,26 +1430,6 @@ export default function FleetDetailsPage() {
         description: errorMessage,
       });
       throw error;
-    }
-  };
-
-  // Funciones para recordatorios
-  const loadAvailableUsers = async () => {
-    setIsLoadingUsers(true);
-    try {
-      const response = await fetch(`/api/user-profiles`, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("No pudimos obtener los usuarios");
-      }
-      const { data } = (await response.json()) as { data: Array<{ id: number; documentId?: string; displayName?: string; email?: string; avatar?: { url?: string; alternativeText?: string } }> };
-      setAvailableUsers(data || []);
-    } catch (error) {
-      console.error("Error cargando usuarios:", error);
-      toast.error("Error al cargar usuarios", {
-        description: error instanceof Error ? error.message : "Error desconocido",
-      });
-    } finally {
-      setIsLoadingUsers(false);
     }
   };
 
@@ -1966,6 +2309,389 @@ export default function FleetDetailsPage() {
                     />
                   </div>
                 </div>
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="stockQuantity">Cantidad en stock</Label>
+                    <Input
+                      id="stockQuantity"
+                      type="number"
+                      min="0"
+                      value={formData.stockQuantity}
+                      onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="placa">Placa</Label>
+                    <Input
+                      id="placa"
+                      value={formData.placa}
+                      onChange={(e) => setFormData({ ...formData, placa: e.target.value.toUpperCase() })}
+                      placeholder="Ej: ABC-123"
+                      maxLength={20}
+                    />
+                  </div>
+                </div>
+                {/* Fecha y Hora Programada de Mantenimiento */}
+                <div className={`flex flex-col ${spacing.gap.base}`}>
+                  <h3 className={typography.h4}>Mantenimiento Recurrente</h3>
+                  
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label>Fecha y Hora Programada</Label>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col lg:flex-row gap-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full lg:flex-1 justify-start text-left font-normal h-10 pl-3",
+                                !maintenanceScheduledDate && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {maintenanceScheduledDate ? (
+                                format(new Date(maintenanceScheduledDate + "T00:00:00"), "d 'de' MMMM, yyyy", { locale: es })
+                              ) : (
+                                <span>Selecciona una fecha</span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={maintenanceScheduledDate ? new Date(maintenanceScheduledDate + "T00:00:00") : undefined}
+                              onSelect={(date) => {
+                                if (date) {
+                                  const year = date.getFullYear();
+                                  const month = String(date.getMonth() + 1).padStart(2, "0");
+                                  const day = String(date.getDate()).padStart(2, "0");
+                                  setMaintenanceScheduledDate(`${year}-${month}-${day}`);
+                                }
+                              }}
+                              initialFocus
+                              locale={dayPickerEs}
+                              captionLayout="dropdown"
+                              fromYear={2020}
+                              toYear={2030}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <div className="flex flex-col sm:flex-row gap-2 lg:flex-1 items-center">
+                          <Input
+                            type="number"
+                            min="1"
+                            max="12"
+                            value={(() => {
+                              if (!maintenanceScheduledTime) return "";
+                              const [hours] = maintenanceScheduledTime.split(":");
+                              const hour24 = parseInt(hours, 10);
+                              const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                              return hour12.toString();
+                            })()}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === "" || (parseInt(value, 10) >= 1 && parseInt(value, 10) <= 12)) {
+                                const currentMinutes = maintenanceScheduledTime ? maintenanceScheduledTime.split(":")[1] || "00" : "00";
+                                const currentHour24 = maintenanceScheduledTime ? parseInt(maintenanceScheduledTime.split(":")[0], 10) : 0;
+                                const isPM = currentHour24 >= 12;
+                                
+                                if (value === "") {
+                                  setMaintenanceScheduledTime(`00:${currentMinutes}`);
+                                } else {
+                                  const hour12 = parseInt(value, 10);
+                                  const hour24 = hour12 === 12 ? (isPM ? 12 : 0) : (isPM ? hour12 + 12 : hour12);
+                                  setMaintenanceScheduledTime(`${String(hour24).padStart(2, "0")}:${currentMinutes}`);
+                                }
+                                if (!maintenanceScheduledTime) {
+                                  setMaintenanceIsAllDay(false);
+                                }
+                              }
+                            }}
+                            disabled={maintenanceIsAllDay}
+                            className="w-full sm:w-20 h-10"
+                            placeholder="12"
+                          />
+                          <span className="text-muted-foreground hidden sm:inline">:</span>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={maintenanceScheduledTime ? maintenanceScheduledTime.split(":")[1] || "00" : ""}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === "" || (parseInt(value, 10) >= 0 && parseInt(value, 10) <= 59)) {
+                                const currentHours = maintenanceScheduledTime ? maintenanceScheduledTime.split(":")[0] || "00" : "00";
+                                const minutes = value === "" ? "00" : String(parseInt(value, 10)).padStart(2, "0");
+                                setMaintenanceScheduledTime(`${currentHours}:${minutes}`);
+                                if (!maintenanceScheduledTime) {
+                                  setMaintenanceIsAllDay(false);
+                                }
+                              }
+                            }}
+                            disabled={maintenanceIsAllDay}
+                            className="w-full sm:w-20 h-10"
+                            placeholder="00"
+                          />
+                          <Select
+                            value={(() => {
+                              if (!maintenanceScheduledTime) return "AM";
+                              const [hours] = maintenanceScheduledTime.split(":");
+                              const hour24 = parseInt(hours, 10);
+                              return hour24 >= 12 ? "PM" : "AM";
+                            })()}
+                            onValueChange={(value) => {
+                              const currentTime = maintenanceScheduledTime || "00:00";
+                              const [hours, minutes] = currentTime.split(":");
+                              const hour24 = parseInt(hours, 10);
+                              let newHour24 = hour24;
+                              
+                              if (value === "PM" && hour24 < 12) {
+                                newHour24 = hour24 + 12;
+                              } else if (value === "AM" && hour24 >= 12) {
+                                newHour24 = hour24 - 12;
+                              }
+                              
+                              setMaintenanceScheduledTime(`${String(newHour24).padStart(2, "0")}:${minutes}`);
+                              if (!maintenanceScheduledTime) {
+                                setMaintenanceIsAllDay(false);
+                              }
+                            }}
+                            disabled={maintenanceIsAllDay}
+                          >
+                            <SelectTrigger className="w-full sm:w-24 h-10">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="AM">AM</SelectItem>
+                              <SelectItem value="PM">PM</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="maintenance-all-day"
+                          checked={maintenanceIsAllDay}
+                          onCheckedChange={(checked) => {
+                            setMaintenanceIsAllDay(checked === true);
+                            if (checked === true) {
+                              setMaintenanceScheduledTime("00:00");
+                            }
+                          }}
+                          className="h-4 w-4 border-2 border-border"
+                        />
+                        <Label
+                          htmlFor="maintenance-all-day"
+                          className="text-sm font-normal cursor-pointer select-none"
+                        >
+                          Todo el día
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Patrón de Recurrencia */}
+                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${spacing.gap.small}`}>
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="maintenance-recurrence-pattern">Patrón de Recurrencia</Label>
+                      <Select value={maintenanceRecurrencePattern} onValueChange={(value: RecurrencePattern) => setMaintenanceRecurrencePattern(value)}>
+                        <SelectTrigger id="maintenance-recurrence-pattern">
+                          <SelectValue placeholder="Selecciona el patrón" />
+                        </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="daily">Diario</SelectItem>
+                            <SelectItem value="weekly">Semanal</SelectItem>
+                            <SelectItem value="biweekly">Bisemanal</SelectItem>
+                            <SelectItem value="monthly">Mensual</SelectItem>
+                            <SelectItem value="yearly">Anual</SelectItem>
+                          </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Fecha de fin de recurrencia (opcional) */}
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="maintenance-recurrence-end-date">Fecha de Fin (opcional)</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal h-10 pl-3",
+                              !maintenanceRecurrenceEndDate && "text-muted-foreground"
+                            )}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            {maintenanceRecurrenceEndDate ? (
+                              format(new Date(maintenanceRecurrenceEndDate + "T00:00:00"), "d 'de' MMMM, yyyy", { locale: es })
+                            ) : (
+                              <span>Sin fecha de fin</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarComponent
+                            mode="single"
+                            selected={maintenanceRecurrenceEndDate ? new Date(maintenanceRecurrenceEndDate + "T00:00:00") : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, "0");
+                                const day = String(date.getDate()).padStart(2, "0");
+                                setMaintenanceRecurrenceEndDate(`${year}-${month}-${day}`);
+                              } else {
+                                setMaintenanceRecurrenceEndDate("");
+                              }
+                            }}
+                            initialFocus
+                            locale={dayPickerEs}
+                            captionLayout="dropdown"
+                            fromYear={2020}
+                            toYear={2030}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+                </div>
+                {/* Mostrar responsables y conductores actuales */}
+                {(vehicleData.responsables && vehicleData.responsables.length > 0) || (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) ? (
+                  <div className={`flex flex-col ${spacing.gap.small} p-4 bg-muted/50 rounded-lg border`}>
+                    <p className={`${typography.body.small} font-semibold text-muted-foreground mb-2`}>
+                      Asignaciones actuales:
+                    </p>
+                    {vehicleData.responsables && vehicleData.responsables.length > 0 && (
+                      <div className={`flex flex-col ${spacing.gap.small}`}>
+                        <p className={`${typography.body.small} text-muted-foreground`}>Responsables actuales:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {vehicleData.responsables.map((resp) => (
+                            <div key={resp.id} className="flex items-center gap-2">
+                              {resp.avatar?.url ? (
+                                <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                  <Image
+                                    src={strapiImages.getURL(resp.avatar.url)}
+                                    alt={resp.avatar.alternativeText || resp.displayName || resp.email || `Avatar de ${resp.id}`}
+                                    fill
+                                    className="object-cover"
+                                    sizes="24px"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {(resp.displayName || resp.email || `U${resp.id}`).charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              <span className="text-sm">
+                                {resp.displayName || resp.email || `Usuario ${resp.id}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0 && (
+                      <div className={`flex flex-col ${spacing.gap.small}`}>
+                        <p className={`${typography.body.small} text-muted-foreground`}>Conductores asignados actualmente:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {vehicleData.assignedDrivers.map((driver) => (
+                            <div key={driver.id} className="flex items-center gap-2">
+                              {driver.avatar?.url ? (
+                                <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                  <Image
+                                    src={strapiImages.getURL(driver.avatar.url)}
+                                    alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                                    fill
+                                    className="object-cover"
+                                    sizes="24px"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              <span className="text-sm">
+                                {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+                <div className={`grid gap-4 md:grid-cols-2`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label>Responsable(s) del Auto</Label>
+                    <MultiSelectCombobox
+                      options={availableUsers.map((user) => ({
+                        value: user.id,
+                        label: user.displayName || user.email || "Usuario",
+                        email: user.email,
+                        avatar: user.avatar,
+                      }))}
+                      selectedValues={selectedResponsables}
+                      onSelectionChange={(values) => {
+                        const numericValues = values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id));
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log("🔄 Responsables seleccionados cambiados:", {
+                            values,
+                            numericValues,
+                            selectedResponsables,
+                          });
+                        }
+                        setSelectedResponsables(numericValues);
+                      }}
+                      placeholder="Selecciona responsables..."
+                      emptyMessage="No hay usuarios disponibles"
+                      disabled={isLoadingUsers}
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label>Conductores asignados</Label>
+                    <MultiSelectCombobox
+                      options={availableUsers.map((user) => ({
+                        value: user.id,
+                        label: user.displayName || user.email || "Usuario",
+                        email: user.email,
+                        avatar: user.avatar,
+                      }))}
+                      selectedValues={selectedAssignedDrivers}
+                      onSelectionChange={(values) => {
+                        const numericValues = values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id));
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log("🔄 Conductores seleccionados cambiados:", {
+                            values,
+                            numericValues,
+                            selectedAssignedDrivers,
+                          });
+                        }
+                        setSelectedAssignedDrivers(numericValues);
+                      }}
+                      placeholder="Selecciona conductores..."
+                      emptyMessage="No hay usuarios disponibles"
+                      disabled={isLoadingUsers}
+                    />
+                  </div>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label>Vehículos disponibles</Label>
+                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm font-medium text-foreground">
+                      {(() => {
+                        const stock = Number(formData.stockQuantity) || 0;
+                        const assigned = selectedAssignedDrivers.length;
+                        const available = Math.max(0, stock - assigned);
+                        return `${available} vehículo${available !== 1 ? 's' : ''} disponible${available !== 1 ? 's' : ''}`;
+                      })()}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Cálculo: {formData.stockQuantity || 0} (stock) - {selectedAssignedDrivers.length} (asignados) = {Math.max(0, (Number(formData.stockQuantity) || 0) - selectedAssignedDrivers.length)} (disponibles)
+                    </p>
+                  </div>
+                </div>
                 <div className={`flex flex-col md:flex-row ${spacing.gap.small} mt-4`}>
                   <Button variant="default" size="lg" className="flex-1" onClick={handleSaveChanges} disabled={isSaving}>
                     {isSaving ? "Guardando..." : "Guardar Cambios"}
@@ -2061,6 +2787,121 @@ export default function FleetDetailsPage() {
                     </div>
                   </div>
                 )}
+                {vehicleData.stockQuantity !== undefined && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Cantidad en stock</p>
+                      <p className={typography.body.base}>{vehicleData.stockQuantity}</p>
+                    </div>
+                  </div>
+                )}
+                {(vehicleData as any).placa && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Placa</p>
+                      <p className={typography.body.base}>{(vehicleData as any).placa}</p>
+                    </div>
+                  </div>
+                )}
+                {vehicleData.nextMaintenanceDate && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Próxima fecha de mantenimiento</p>
+                      <p className={typography.body.base}>
+                        {format(new Date(vehicleData.nextMaintenanceDate), "d 'de' MMMM, yyyy", { locale: es })}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div className={`flex items-start ${spacing.gap.medium}`}>
+                  <Car className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground mb-2`}>Conductores asignados</p>
+                    {vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0 ? (
+                      <div className="flex flex-wrap gap-3">
+                        {vehicleData.assignedDrivers.map((driver) => (
+                          <div key={driver.id} className="flex items-center gap-2">
+                            {driver.avatar?.url ? (
+                              <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                <Image
+                                  src={strapiImages.getURL(driver.avatar.url)}
+                                  alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                                  fill
+                                  className="object-cover"
+                                  sizes="32px"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                  {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <span className="text-sm font-medium">
+                              {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">No hay conductores asignados</p>
+                    )}
+                  </div>
+                </div>
+                <div className={`flex items-start ${spacing.gap.medium}`}>
+                  <Settings className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground mb-2`}>Responsables</p>
+                    {vehicleData.responsables && vehicleData.responsables.length > 0 ? (
+                      <div className="flex flex-wrap gap-3">
+                        {vehicleData.responsables.map((resp) => (
+                          <div key={resp.id} className="flex items-center gap-2">
+                            {resp.avatar?.url ? (
+                              <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                <Image
+                                  src={strapiImages.getURL(resp.avatar.url)}
+                                  alt={resp.avatar.alternativeText || resp.displayName || resp.email || `Avatar de ${resp.id}`}
+                                  fill
+                                  className="object-cover"
+                                  sizes="32px"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                  {(resp.displayName || resp.email || `U${resp.id}`).charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <span className="text-sm font-medium">
+                              {resp.displayName || resp.email || `Usuario ${resp.id}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">No hay responsables asignados</p>
+                    )}
+                  </div>
+                </div>
+                {vehicleData.stockQuantity !== undefined && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Vehículos disponibles</p>
+                      <p className={`${typography.body.large} font-semibold`}>
+                        {Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0))} disponible{Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0)) !== 1 ? 's' : ''}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {vehicleData.stockQuantity} (stock) - {vehicleData.assignedDrivers?.length || 0} (asignados) = {Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0))} (disponibles)
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -2073,32 +2914,58 @@ export default function FleetDetailsPage() {
             borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
           } as React.CSSProperties}
         >
-          <CardHeader className="px-6 pt-6 pb-4">
+          <CardHeader className="px-6 pt-6 pb-4 flex flex-row items-center justify-between">
             <CardTitle className={typography.h4}>Notas y Comentarios</CardTitle>
+            {notes.length > 0 && !showNoteForm && (
+              <Button
+                onClick={() => setShowNoteForm(true)}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar Nota
+              </Button>
+            )}
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Timeline de notas */}
-            <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
-              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
-                <NotesTimeline 
-                  notes={notes} 
-                  isLoading={isLoadingNotes}
-                  onEdit={handleEditNote}
-                  onDelete={handleDeleteNote}
-                  vehicleId={vehicleId}
-                />
-              </ScrollAreaPrimitive.Viewport>
-              <ScrollAreaPrimitive.ScrollAreaScrollbar
-                orientation="vertical"
-                className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
-              >
-                <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
-              </ScrollAreaPrimitive.ScrollAreaScrollbar>
-              <ScrollAreaPrimitive.Corner />
-            </ScrollAreaPrimitive.Root>
+            {notes.length > 0 && (
+              <ScrollAreaPrimitive.Root className="relative h-[400px] overflow-hidden">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <NotesTimeline 
+                    notes={notes} 
+                    isLoading={isLoadingNotes}
+                    onEdit={handleEditNote}
+                    onDelete={handleDeleteNote}
+                    vehicleId={vehicleId}
+                  />
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.ScrollAreaScrollbar
+                  orientation="vertical"
+                  className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                >
+                  <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                <ScrollAreaPrimitive.Corner />
+              </ScrollAreaPrimitive.Root>
+            )}
+
+            {/* Estado vacío con botón + */}
+            {notes.length === 0 && !showNoteForm && !isLoadingNotes && (
+              <NotesTimeline 
+                notes={notes} 
+                isLoading={isLoadingNotes}
+                onEdit={handleEditNote}
+                onDelete={handleDeleteNote}
+                vehicleId={vehicleId}
+                onAddClick={() => setShowNoteForm(true)}
+              />
+            )}
 
             {/* Formulario para agregar nueva nota */}
-            <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+            {showNoteForm && (
+            <div className={`flex flex-col ${spacing.gap.small} ${notes.length > 0 ? 'pt-4 border-t border-border' : ''}`}>
               <Textarea
                 placeholder="Añadir una nota sobre el vehículo..."
                 value={note}
@@ -2106,16 +2973,31 @@ export default function FleetDetailsPage() {
                 rows={4}
                 className="min-h-24 resize-y"
               />
-              <Button 
-                onClick={handleSaveNote} 
-                variant="default" 
-                size="lg" 
-                className="w-full" 
-                disabled={!note.trim() || isSavingNote}
-              >
-                {isSavingNote ? "Guardando..." : "Guardar Nota"}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => {
+                    setShowNoteForm(false);
+                    setNote("");
+                  }}
+                  variant="outline" 
+                  size="lg" 
+                  className="flex-1"
+                  disabled={isSavingNote}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleSaveNote} 
+                  variant="default" 
+                  size="lg" 
+                  className="flex-1" 
+                  disabled={!note.trim() || isSavingNote}
+                >
+                  {isSavingNote ? "Guardando..." : "Guardar Nota"}
+                </Button>
+              </div>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -2127,37 +3009,60 @@ export default function FleetDetailsPage() {
             borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
           } as React.CSSProperties}
         >
-          <CardHeader className="px-6 pt-6 pb-4">
+          <CardHeader className="px-6 pt-6 pb-4 flex flex-row items-center justify-between">
             <CardTitle className={typography.h4}>Estados del Vehículo</CardTitle>
+            {vehicleStatuses.length > 0 && !showStatusForm && (
+              <Button
+                onClick={() => setShowStatusForm(true)}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar Estado
+              </Button>
+            )}
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Timeline de estados */}
-            <ScrollAreaPrimitive.Root className={`relative overflow-hidden ${vehicleStatuses.length > 0 ? 'h-[900px]' : 'h-auto min-h-[200px]'}`}>
-              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
-                <VehicleStatusTimeline 
-                  statuses={vehicleStatuses} 
-                  isLoading={isLoadingStatuses}
-                  loadingStatusId={loadingStatusId}
-                  onEdit={handleEditStatus}
-                  onDelete={handleDeleteStatus}
-                  vehicleId={vehicleId}
-                />
-              </ScrollAreaPrimitive.Viewport>
-              {vehicleStatuses.length > 0 && (
-                <>
-                  <ScrollAreaPrimitive.ScrollAreaScrollbar
-                    orientation="vertical"
-                    className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
-                  >
-                    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
-                  </ScrollAreaPrimitive.ScrollAreaScrollbar>
-                  <ScrollAreaPrimitive.Corner />
-                </>
-              )}
-            </ScrollAreaPrimitive.Root>
+            {vehicleStatuses.length > 0 && (
+              <ScrollAreaPrimitive.Root className="relative overflow-hidden h-[900px]">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <VehicleStatusTimeline 
+                    statuses={vehicleStatuses} 
+                    isLoading={isLoadingStatuses}
+                    loadingStatusId={loadingStatusId}
+                    onEdit={handleEditStatus}
+                    onDelete={handleDeleteStatus}
+                    vehicleId={vehicleId}
+                  />
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.ScrollAreaScrollbar
+                  orientation="vertical"
+                  className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                >
+                  <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                <ScrollAreaPrimitive.Corner />
+              </ScrollAreaPrimitive.Root>
+            )}
+
+            {/* Estado vacío con botón + */}
+            {vehicleStatuses.length === 0 && !showStatusForm && !isLoadingStatuses && (
+              <VehicleStatusTimeline 
+                statuses={vehicleStatuses} 
+                isLoading={isLoadingStatuses}
+                loadingStatusId={loadingStatusId}
+                onEdit={handleEditStatus}
+                onDelete={handleDeleteStatus}
+                vehicleId={vehicleId}
+                onAddClick={() => setShowStatusForm(true)}
+              />
+            )}
 
             {/* Formulario para agregar nuevo estado */}
-            <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+            {showStatusForm && (
+            <div className={`flex flex-col ${spacing.gap.small} ${vehicleStatuses.length > 0 ? 'pt-4 border-t border-border' : ''}`}>
               {/* Preview de imágenes seleccionadas */}
               {statusImagePreviews.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -2214,16 +3119,33 @@ export default function FleetDetailsPage() {
                 className="min-h-24 resize-y"
               />
               
-              <Button 
-                onClick={handleSaveStatus} 
-                variant="default" 
-                size="lg" 
-                className="w-full" 
-                disabled={(statusImages.length === 0 && !statusComment.trim()) || isSavingStatus}
-              >
-                {isSavingStatus ? "Guardando..." : "Guardar Estado"}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => {
+                    setShowStatusForm(false);
+                    setStatusImages([]);
+                    setStatusImagePreviews([]);
+                    setStatusComment("");
+                  }}
+                  variant="outline" 
+                  size="lg" 
+                  className="flex-1"
+                  disabled={isSavingStatus}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleSaveStatus} 
+                  variant="default" 
+                  size="lg" 
+                  className="flex-1" 
+                  disabled={(statusImages.length === 0 && !statusComment.trim()) || isSavingStatus}
+                >
+                  {isSavingStatus ? "Guardando..." : "Guardar Estado"}
+                </Button>
+              </div>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -2235,39 +3157,66 @@ export default function FleetDetailsPage() {
             borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
           } as React.CSSProperties}
         >
-          <CardHeader className="px-6 pt-6 pb-4">
+          <CardHeader className="px-6 pt-6 pb-4 flex flex-row items-center justify-between">
             <CardTitle className={typography.h4}>Documentos del Vehículo</CardTitle>
+            {vehicleDocuments.length > 0 && !showDocumentForm && (
+              <Button
+                onClick={() => setShowDocumentForm(true)}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar Documento
+              </Button>
+            )}
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
             {/* Lista de documentos */}
-            <ScrollAreaPrimitive.Root className={`relative overflow-hidden ${vehicleDocuments.length > 0 ? 'h-[600px]' : 'h-auto min-h-[200px]'}`}>
-              <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
-                <FleetDocuments 
-                  documents={vehicleDocuments} 
-                  isLoading={isLoadingDocuments}
-                  onDelete={handleDeleteDocument}
-                  vehicleId={vehicleId}
-                />
-              </ScrollAreaPrimitive.Viewport>
-              {vehicleDocuments.length > 0 && (
-                <>
-                  <ScrollAreaPrimitive.ScrollAreaScrollbar
-                    orientation="vertical"
-                    className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
-                  >
-                    <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
-                  </ScrollAreaPrimitive.ScrollAreaScrollbar>
-                  <ScrollAreaPrimitive.Corner />
-                </>
-              )}
-            </ScrollAreaPrimitive.Root>
+            {vehicleDocuments.length > 0 && (
+              <ScrollAreaPrimitive.Root className="relative overflow-hidden h-[600px]">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <FleetDocuments 
+                    documents={vehicleDocuments} 
+                    isLoading={isLoadingDocuments}
+                    onDelete={handleDeleteDocument}
+                    vehicleId={vehicleId}
+                  />
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.ScrollAreaScrollbar
+                  orientation="vertical"
+                  className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                >
+                  <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                <ScrollAreaPrimitive.Corner />
+              </ScrollAreaPrimitive.Root>
+            )}
+
+            {/* Estado vacío con botón + */}
+            {vehicleDocuments.length === 0 && !showDocumentForm && !isLoadingDocuments && (
+              <FleetDocuments 
+                documents={vehicleDocuments} 
+                isLoading={isLoadingDocuments}
+                onDelete={handleDeleteDocument}
+                vehicleId={vehicleId}
+                onAddClick={() => setShowDocumentForm(true)}
+              />
+            )}
 
             {/* Formulario para agregar nuevo documento */}
-            <div className={`flex flex-col ${spacing.gap.small} pt-4 border-t border-border`}>
+            {showDocumentForm && (
+            <div className={`flex flex-col ${spacing.gap.small} ${vehicleDocuments.length > 0 ? 'pt-4 border-t border-border' : ''}`}>
               {/* Select para tipo de documento */}
               <div className={`flex flex-col ${spacing.gap.small}`}>
                 <Label htmlFor="document-type">Tipo de Documento</Label>
-                <Select value={documentType} onValueChange={(value: FleetDocumentType) => setDocumentType(value)}>
+                <Select value={documentType} onValueChange={(value: FleetDocumentType) => {
+                  setDocumentType(value);
+                  // Limpiar descripción cuando se cambia el tipo
+                  if (value !== "otros") {
+                    setDocumentOtherDescription("");
+                  }
+                }}>
                   <SelectTrigger id="document-type">
                     <SelectValue placeholder="Selecciona el tipo de documento" />
                   </SelectTrigger>
@@ -2282,6 +3231,27 @@ export default function FleetDetailsPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Campo para describir "Otros" */}
+              {documentType === "otros" && (
+                <div className={`flex flex-col ${spacing.gap.small}`}>
+                  <Label htmlFor="document-other-description">
+                    Describe el tipo de documento <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="document-other-description"
+                    type="text"
+                    placeholder="Ej: Permiso de circulación, Certificado de emisiones, etc."
+                    value={documentOtherDescription}
+                    onChange={(e) => setDocumentOtherDescription(e.target.value)}
+                    className="w-full"
+                    required
+                  />
+                  <p className={`${typography.body.small} text-muted-foreground text-xs`}>
+                    Especifica qué tipo de documento estás subiendo
+                  </p>
+                </div>
+              )}
 
               {/* Preview de archivos seleccionados */}
               {documentFiles.length > 0 && (
@@ -2345,16 +3315,37 @@ export default function FleetDetailsPage() {
                 </p>
               </div>
               
-              <Button 
-                onClick={handleSaveDocument} 
-                variant="default" 
-                size="lg" 
-                className="w-full" 
-                disabled={documentFiles.length === 0 || isSavingDocument}
-              >
-                {isSavingDocument ? "Guardando..." : "Guardar Documento"}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => {
+                    setShowDocumentForm(false);
+                    setDocumentFiles([]);
+                    setDocumentType("poliza_seguro");
+                    setDocumentOtherDescription("");
+                  }}
+                  variant="outline" 
+                  size="lg" 
+                  className="flex-1"
+                  disabled={isSavingDocument}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleSaveDocument} 
+                  variant="default" 
+                  size="lg" 
+                  className="flex-1" 
+                  disabled={
+                    documentFiles.length === 0 || 
+                    isSavingDocument ||
+                    (documentType === "otros" && !documentOtherDescription.trim())
+                  }
+                >
+                  {isSavingDocument ? "Guardando..." : "Guardar Documento"}
+                </Button>
+              </div>
             </div>
+            )}
           </CardContent>
         </Card>
 
@@ -2474,13 +3465,13 @@ export default function FleetDetailsPage() {
                 <div className={`flex flex-col ${spacing.gap.small}`}>
                   <Label htmlFor="reminder-scheduled-date">Fecha y Hora Programada</Label>
                   <div className="flex flex-col gap-2">
-                    <div className="flex gap-2">
+                    <div className="flex flex-col lg:flex-row gap-2">
                       <Popover>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
                             className={cn(
-                              "flex-1 justify-start text-left font-normal h-10 pl-3",
+                              "w-full lg:flex-1 justify-start text-left font-normal h-10 pl-3",
                               !reminderScheduledDate && "text-muted-foreground"
                             )}
                           >
@@ -2512,7 +3503,7 @@ export default function FleetDetailsPage() {
                           />
                         </PopoverContent>
                       </Popover>
-                      <div className="flex gap-2 flex-1 items-center">
+                      <div className="flex flex-col sm:flex-row gap-2 lg:flex-1 items-center">
                         <Input
                           type="number"
                           min="1"
@@ -2546,9 +3537,9 @@ export default function FleetDetailsPage() {
                           }}
                           placeholder="Hora"
                           disabled={isAllDay}
-                          className="w-20 h-10"
+                          className="w-full sm:w-20 h-10"
                         />
-                        <span className="text-muted-foreground">:</span>
+                        <span className="text-muted-foreground hidden sm:inline">:</span>
                         <Input
                           type="number"
                           min="0"
@@ -2568,7 +3559,7 @@ export default function FleetDetailsPage() {
                           }}
                           placeholder="Min"
                           disabled={isAllDay}
-                          className="w-20 h-9"
+                          className="w-full sm:w-20 h-10"
                         />
                         <Select
                           value={(() => {
@@ -2587,7 +3578,7 @@ export default function FleetDetailsPage() {
                           }}
                           disabled={isAllDay}
                         >
-                          <SelectTrigger className="w-24 h-9">
+                          <SelectTrigger className="w-full sm:w-24 h-10">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2629,12 +3620,13 @@ export default function FleetDetailsPage() {
                       <SelectTrigger id="reminder-recurrence-pattern">
                         <SelectValue placeholder="Selecciona el patrón" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daily">Diario</SelectItem>
-                        <SelectItem value="weekly">Semanal</SelectItem>
-                        <SelectItem value="monthly">Mensual</SelectItem>
-                        <SelectItem value="yearly">Anual</SelectItem>
-                      </SelectContent>
+                          <SelectContent>
+                            <SelectItem value="daily">Diario</SelectItem>
+                            <SelectItem value="weekly">Semanal</SelectItem>
+                            <SelectItem value="biweekly">Bisemanal</SelectItem>
+                            <SelectItem value="monthly">Mensual</SelectItem>
+                            <SelectItem value="yearly">Anual</SelectItem>
+                          </SelectContent>
                     </Select>
                   </div>
 

@@ -26,6 +26,22 @@ const populateImageConfigForDetails = {
     image: {
       fields: ["url", "alternativeText"],
     },
+    responsables: {
+      fields: ["id", "documentId", "displayName", "email"],
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
+    assignedDrivers: {
+      fields: ["id", "documentId", "displayName", "email"],
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
   },
 };
 
@@ -129,6 +145,75 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
   const idSource = attributes.id ?? attributes.documentId ?? attributes.vin;
   const documentId = attributes.documentId ?? String(idSource);
 
+  // Helper para obtener avatar
+  const getAvatarData = (avatar: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null } | undefined) => {
+    if (!avatar) return undefined;
+    if ("data" in (avatar as FleetVehicleImageRelation)) {
+      return (avatar as FleetVehicleImageRelation).data?.attributes ?? undefined;
+    }
+    return avatar as FleetVehicleImage;
+  };
+
+  // Normalizar assignedDrivers
+  // En Strapi v4, las relaciones manyToMany pueden venir como { data: [...] } o directamente como array
+  const assignedDriversRaw = attributes.assignedDrivers as any;
+  const assignedDriversData = assignedDriversRaw?.data || (Array.isArray(assignedDriversRaw) ? assignedDriversRaw : []);
+  const assignedDrivers = assignedDriversData.map((driver: any) => {
+    // El driver puede venir con attributes o directamente con los campos
+    const driverAttrs = driver.attributes || driver;
+    const avatarData = getAvatarData(driverAttrs?.avatar);
+    return {
+      id: driver.id || driverAttrs?.id,
+      documentId: driver.documentId || driverAttrs?.documentId,
+      displayName: driverAttrs?.displayName,
+      email: driverAttrs?.email,
+      avatar: avatarData ? {
+        url: avatarData.url,
+        alternativeText: avatarData.alternativeText,
+      } : undefined,
+    };
+  });
+
+  // Normalizar responsables
+  const responsablesRaw = attributes.responsables as any;
+  const responsablesData = responsablesRaw?.data || (Array.isArray(responsablesRaw) ? responsablesRaw : []);
+  const responsables = responsablesData.map((resp: any) => {
+    // El resp puede venir con attributes o directamente con los campos
+    const respAttrs = resp.attributes || resp;
+    const avatarData = getAvatarData(respAttrs?.avatar);
+    return {
+      id: resp.id || respAttrs?.id,
+      documentId: resp.documentId || respAttrs?.documentId,
+      displayName: respAttrs?.displayName,
+      email: respAttrs?.email,
+      avatar: avatarData ? {
+        url: avatarData.url,
+        alternativeText: avatarData.alternativeText,
+      } : undefined,
+    };
+  });
+
+  // Normalizar interestedPersons (personas interesadas)
+  const interestedPersonsRaw = attributes.interestedPersons as any;
+  const interestedPersonsData = interestedPersonsRaw?.data || (Array.isArray(interestedPersonsRaw) ? interestedPersonsRaw : []);
+  const interestedPersons = interestedPersonsData.map((person: any) => {
+    // La persona puede venir con attributes o directamente con los campos
+    const personAttrs = person.attributes || person;
+    const avatarData = getAvatarData(personAttrs?.avatar);
+    return {
+      id: person.id || personAttrs?.id,
+      documentId: person.documentId || personAttrs?.documentId,
+      fullName: personAttrs?.fullName,
+      email: personAttrs?.email,
+      phone: personAttrs?.phone,
+      status: personAttrs?.status,
+      avatar: avatarData ? {
+        url: avatarData.url,
+        alternativeText: avatarData.alternativeText,
+      } : undefined,
+    };
+  });
+
   return {
     id: String(idSource),
     documentId: String(documentId),
@@ -146,6 +231,12 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     mileage: attributes.mileage ?? undefined,
     fuelType: attributes.fuelType ?? undefined,
     transmission: attributes.transmission ?? undefined,
+    stockQuantity: attributes.stockQuantity,
+    nextMaintenanceDate: attributes.nextMaintenanceDate,
+    placa: attributes.placa ?? undefined,
+    assignedDrivers: assignedDrivers,
+    responsables: responsables,
+    interestedPersons: interestedPersons,
   };
 };
 
@@ -199,6 +290,17 @@ const buildFleetDetailQuery = (id: string | number) => {
   return qs.stringify(
     {
       filters,
+      fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "stockQuantity", "nextMaintenanceDate", "placa"],
+      populate: {
+        interestedPersons: {
+          fields: ["id", "documentId", "fullName", "email", "phone", "status"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
+      },
       ...populateImageConfigForDetails,
       pagination: { pageSize: 1 },
     },
@@ -272,7 +374,9 @@ export async function updateFleetVehicleInStrapi(
     throw new Error("No pudimos encontrar el vehículo para actualizarlo.");
   }
 
-  const url = `${STRAPI_BASE_URL}/api/fleets/${documentId}?${populateImageQueryString}`;
+  // Usar populateImageConfigForDetails para incluir todas las relaciones
+  const populateQueryString = qs.stringify(populateImageConfigForDetails, { encodeValuesOnly: true });
+  const url = `${STRAPI_BASE_URL}/api/fleets/${documentId}?${populateQueryString}`;
   const response = await fetch(url, {
     method: "PUT",
     headers: {
@@ -284,10 +388,30 @@ export async function updateFleetVehicleInStrapi(
   });
 
   if (!response.ok) {
+    const errorText = await response.text();
+    console.error("❌ Error en Strapi update:", response.status, errorText);
     throw new Error(`Strapi Fleet update failed with status ${response.status}`);
   }
 
   const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw>;
+  
+  if (process.env.NODE_ENV === 'development') {
+    const rawData = payload?.data;
+    if (rawData) {
+      const attrs = extractAttributes(rawData);
+      console.log("📥 Respuesta de Strapi después de actualizar:", {
+        hasData: !!payload?.data,
+        hasAssignedDrivers: !!attrs?.assignedDrivers,
+        hasResponsables: !!attrs?.responsables,
+        assignedDriversType: typeof attrs?.assignedDrivers,
+        assignedDriversIsArray: Array.isArray(attrs?.assignedDrivers),
+        assignedDriversRaw: attrs?.assignedDrivers,
+        responsablesRaw: attrs?.responsables,
+        stockQuantity: attrs?.stockQuantity,
+      });
+    }
+  }
+  
   const vehicle = payload?.data ? normalizeVehicle(payload.data) : null;
   if (!vehicle) {
     throw new Error("No pudimos normalizar la respuesta de Strapi.");
@@ -330,6 +454,10 @@ export interface FleetVehicleCreatePayload {
   transmission?: string | null;
   image?: number | null;
   imageAlt?: string | null;
+  stockQuantity?: number | null;
+  responsables?: number[];
+  assignedDrivers?: number[];
+  nextMaintenanceDate?: string | null;
 }
 
 export async function createFleetVehicleInStrapi(
@@ -352,9 +480,35 @@ export async function createFleetVehicleInStrapi(
   }
 
   const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw>;
+  
+  if (process.env.NODE_ENV === 'development') {
+    const rawData = payload?.data;
+    if (rawData) {
+      const attrs = extractAttributes(rawData);
+      console.log("📥 Respuesta de Strapi después de actualizar:", {
+        hasData: !!payload?.data,
+        hasAssignedDrivers: !!attrs?.assignedDrivers,
+        hasResponsables: !!attrs?.responsables,
+        assignedDriversType: typeof attrs?.assignedDrivers,
+        assignedDriversIsArray: Array.isArray(attrs?.assignedDrivers),
+        assignedDriversRaw: attrs?.assignedDrivers,
+        responsablesRaw: attrs?.responsables,
+        stockQuantity: attrs?.stockQuantity,
+      });
+    }
+  }
+  
   const vehicle = payload?.data ? normalizeVehicle(payload.data) : null;
   if (!vehicle) {
     throw new Error("No pudimos normalizar la respuesta de Strapi.");
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log("✅ Vehículo normalizado:", {
+      assignedDrivers: vehicle.assignedDrivers,
+      responsables: vehicle.responsables,
+      stockQuantity: vehicle.stockQuantity,
+    });
   }
 
   return vehicle;

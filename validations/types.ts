@@ -148,6 +148,44 @@ export interface FleetVehicleRawAttributes {
   documentId?: string;
   image?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
   imageAlt?: string | null;
+  stockQuantity?: number;
+  nextMaintenanceDate?: string;
+  placa?: string;
+  assignedDrivers?: {
+    data?: Array<{
+      id: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+        avatar?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+      };
+    }>;
+  };
+  responsables?: {
+    data?: Array<{
+      id: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+        avatar?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+      };
+    }>;
+  };
+  interestedPersons?: {
+    data?: Array<{
+      id: number;
+      documentId?: string;
+      attributes?: {
+        fullName?: string;
+        email?: string;
+        phone?: string;
+        status?: string;
+        avatar?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+      };
+    }>;
+  };
 }
 
 export type FleetVehicleRaw =
@@ -175,6 +213,41 @@ export interface FleetVehicleCard {
   mileage?: number;
   fuelType?: string;
   transmission?: string;
+  stockQuantity?: number;
+  nextMaintenanceDate?: string;
+  placa?: string;
+  assignedDrivers?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  responsables?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  interestedPersons?: Array<{
+    id: number;
+    documentId?: string;
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    status?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
 }
 
 export interface FleetVehicleUpdatePayload {
@@ -191,6 +264,12 @@ export interface FleetVehicleUpdatePayload {
   transmission?: string | null;
   image?: number | null;
   imageAlt?: string | null;
+  responsables?: number[];
+  assignedDrivers?: number[];
+  stockQuantity?: number | null;
+  nextMaintenanceDate?: string | null;
+  placa?: string | null;
+  interestedPersons?: number[];
 }
 
 export interface VehicleStatus {
@@ -236,6 +315,7 @@ export interface FleetDocument {
   id: number;
   documentId?: string;
   documentType: FleetDocumentType;
+  otherDescription?: string;
   files?: Array<{
     id?: number;
     url?: string;
@@ -263,10 +343,11 @@ export interface FleetDocumentPayload {
   documentType: FleetDocumentType;
   files: number[];
   authorDocumentId?: string;
+  otherDescription?: string;
 }
 
 export type ReminderType = "unique" | "recurring";
-export type RecurrencePattern = "daily" | "weekly" | "monthly" | "yearly";
+export type RecurrencePattern = "daily" | "weekly" | "biweekly" | "monthly" | "yearly";
 
 export interface FleetReminder {
   id: number;

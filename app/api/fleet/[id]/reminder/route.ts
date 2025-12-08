@@ -270,7 +270,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     // Si es recurrente, validar recurrencePattern
     if (body.data.reminderType === 'recurring') {
-      if (!body.data.recurrencePattern || !['daily', 'weekly', 'monthly', 'yearly'].includes(body.data.recurrencePattern)) {
+      if (!body.data.recurrencePattern || !['daily', 'weekly', 'biweekly', 'monthly', 'yearly'].includes(body.data.recurrencePattern)) {
         return NextResponse.json(
           { error: "Patrón de recurrencia requerido para recordatorios recurrentes." },
           { status: 400 }

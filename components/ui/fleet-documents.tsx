@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { FileText, Trash2, Download, Upload, X } from "lucide-react";
+import { FileText, Trash2, Download, Upload, X, Plus } from "lucide-react";
 import Image from "next/image";
 import { Card } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -17,6 +17,7 @@ export interface FleetDocumentsProps {
   isLoading?: boolean;
   onDelete?: (documentId: number | string) => Promise<void>;
   vehicleId: string;
+  onAddClick?: () => void;
 }
 
 const DOCUMENT_TYPE_LABELS: Record<FleetDocumentType, string> = {
@@ -93,7 +94,12 @@ function DocumentItem({
             <p className={`${typography.body.small} font-semibold`}>
               {DOCUMENT_TYPE_LABELS[document.documentType]}
             </p>
-            <p className={`${typography.body.small} text-muted-foreground`}>
+            {document.documentType === "otros" && document.otherDescription && (
+              <p className={`${typography.body.small} text-foreground mt-1.5 italic`}>
+                {document.otherDescription}
+              </p>
+            )}
+            <p className={`${typography.body.small} text-muted-foreground ${document.documentType === "otros" && document.otherDescription ? "mt-1.5" : "mt-1"}`}>
               Subido por {authorName} el {formattedDate}
             </p>
           </div>
@@ -148,7 +154,7 @@ function DocumentItem({
   );
 }
 
-export function FleetDocuments({ documents, isLoading, onDelete, vehicleId }: FleetDocumentsProps) {
+export function FleetDocuments({ documents, isLoading, onDelete, vehicleId, onAddClick }: FleetDocumentsProps) {
   if (isLoading) {
     return (
       <div className={`flex flex-col ${spacing.gap.small} py-4`}>
@@ -159,12 +165,20 @@ export function FleetDocuments({ documents, isLoading, onDelete, vehicleId }: Fl
 
   if (documents.length === 0) {
     return (
-      <div className={`flex flex-col items-center justify-center ${spacing.gap.small} py-8 text-center`}>
-        <FileText className="h-8 w-8 text-muted-foreground" />
-        <p className={typography.body.small}>Aún no hay documentos registrados para este vehículo</p>
-        <p className={`${typography.body.small} text-muted-foreground`}>
-          Sé el primero en subir un documento del vehículo
+      <div className="flex flex-col items-center justify-center py-16 min-h-[300px] border-2 border-dashed border-border rounded-lg">
+        <p className={`${typography.body.base} text-muted-foreground mb-6`}>
+          Añade un documento a tu vehículo
         </p>
+        {onAddClick && (
+          <Button
+            onClick={onAddClick}
+            size="lg"
+            className="h-16 w-16 rounded-full"
+            variant="default"
+          >
+            <Plus className="h-8 w-8" />
+          </Button>
+        )}
       </div>
     );
   }

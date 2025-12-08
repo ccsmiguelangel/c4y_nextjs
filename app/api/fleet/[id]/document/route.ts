@@ -136,7 +136,7 @@ export async function GET(_: Request, context: RouteContext) {
       filters: {
         vehicle: { id: { $eq: vehicleId } },
       },
-      fields: ["id", "documentId", "documentType", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "documentType", "otherDescription", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         files: {
           fields: ["id", "url", "name", "mime", "size", "alternativeText"],
@@ -371,12 +371,18 @@ export async function POST(request: Request, context: RouteContext) {
       files: number[];
       authorDocumentId: string;
       vehicle: number;
+      otherDescription?: string;
     } = {
       documentType: body.data.documentType,
       files: body.data.files,
       authorDocumentId: authorDocumentId,
       vehicle: vehicleId,
     };
+
+    // Agregar otherDescription si está presente
+    if (body.data.otherDescription) {
+      documentData.otherDescription = body.data.otherDescription;
+    }
 
     // Verificar que el tipo de contenido existe antes de crear
     const contentTypeCheck = await fetch(
@@ -440,7 +446,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     // Obtener el documento completo con archivos normalizados
     const getDocumentQuery = qs.stringify({
-      fields: ["id", "documentId", "documentType", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "documentType", "otherDescription", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         files: {
           fields: ["id", "url", "name", "mime", "size", "alternativeText"],

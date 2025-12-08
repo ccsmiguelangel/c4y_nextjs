@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import type { ChangeEvent } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Camera, Edit2, Trash2, X, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Camera, Edit2, Trash2, X, Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import Image from "next/image";
 import useEmblaCarousel from "embla-carousel-react";
 import { Card } from "@/components_shadcn/ui/card";
@@ -24,6 +24,7 @@ export interface VehicleStatusTimelineProps {
   onEdit?: (statusId: number | string, editComment: string, imageIds?: number[], newImages?: File[]) => Promise<void>;
   onDelete?: (statusId: number | string) => Promise<void>;
   vehicleId: string;
+  onAddClick?: () => void;
 }
 
 function StatusItem({
@@ -492,7 +493,7 @@ function StatusItem({
   );
 }
 
-export function VehicleStatusTimeline({ statuses, isLoading, loadingStatusId, onEdit, onDelete, vehicleId }: VehicleStatusTimelineProps) {
+export function VehicleStatusTimeline({ statuses, isLoading, loadingStatusId, onEdit, onDelete, vehicleId, onAddClick }: VehicleStatusTimelineProps) {
   if (isLoading) {
     return (
       <div className={`flex flex-col ${spacing.gap.small} py-4`}>
@@ -503,12 +504,20 @@ export function VehicleStatusTimeline({ statuses, isLoading, loadingStatusId, on
 
   if (statuses.length === 0) {
     return (
-      <div className={`flex flex-col items-center justify-center ${spacing.gap.small} py-8 text-center`}>
-        <Camera className="h-8 w-8 text-muted-foreground" />
-        <p className={typography.body.small}>Aún no hay estados registrados para este vehículo</p>
-        <p className={`${typography.body.small} text-muted-foreground`}>
-          Sé el primero en registrar el estado del vehículo
+      <div className="flex flex-col items-center justify-center py-16 min-h-[300px] border-2 border-dashed border-border rounded-lg">
+        <p className={`${typography.body.base} text-muted-foreground mb-6`}>
+          Añade un estado a tu vehículo
         </p>
+        {onAddClick && (
+          <Button
+            onClick={onAddClick}
+            size="lg"
+            className="h-16 w-16 rounded-full"
+            variant="default"
+          >
+            <Plus className="h-8 w-8" />
+          </Button>
+        )}
       </div>
     );
   }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { MessageSquare, Edit2, Trash2, X, Check } from "lucide-react";
+import { MessageSquare, Edit2, Trash2, X, Check, Plus } from "lucide-react";
 import Image from "next/image";
 import { Card } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -36,6 +36,7 @@ interface NotesTimelineProps {
   onEdit?: (noteId: number | string, editContent: string) => Promise<void>;
   onDelete?: (noteId: number | string) => Promise<void>;
   vehicleId: string;
+  onAddClick?: () => void;
 }
 
 function NoteItem({
@@ -231,7 +232,7 @@ function NoteItem({
   );
 }
 
-export function NotesTimeline({ notes, isLoading, onEdit, onDelete, vehicleId }: NotesTimelineProps) {
+export function NotesTimeline({ notes, isLoading, onEdit, onDelete, vehicleId, onAddClick }: NotesTimelineProps) {
   if (isLoading) {
     return (
       <div className={`flex flex-col ${spacing.gap.small} py-4`}>
@@ -242,12 +243,20 @@ export function NotesTimeline({ notes, isLoading, onEdit, onDelete, vehicleId }:
 
   if (notes.length === 0) {
     return (
-      <div className={`flex flex-col items-center justify-center ${spacing.gap.small} py-8 text-center`}>
-        <MessageSquare className="h-8 w-8 text-muted-foreground" />
-        <p className={typography.body.small}>Aún no hay notas para este vehículo</p>
-        <p className={`${typography.body.small} text-muted-foreground`}>
-          Sé el primero en agregar una nota
+      <div className="flex flex-col items-center justify-center py-16 min-h-[300px] border-2 border-dashed border-border rounded-lg">
+        <p className={`${typography.body.base} text-muted-foreground mb-6`}>
+          Añade una nota a tu vehículo
         </p>
+        {onAddClick && (
+          <Button
+            onClick={onAddClick}
+            size="lg"
+            className="h-16 w-16 rounded-full"
+            variant="default"
+          >
+            <Plus className="h-8 w-8" />
+          </Button>
+        )}
       </div>
     );
   }

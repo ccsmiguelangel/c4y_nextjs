@@ -25,6 +25,7 @@ export interface FleetRemindersProps {
 const RECURRENCE_LABELS: Record<string, string> = {
   daily: "Diario",
   weekly: "Semanal",
+  biweekly: "Bisemanal",
   monthly: "Mensual",
   yearly: "Anual",
 };
