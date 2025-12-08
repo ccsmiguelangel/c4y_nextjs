@@ -136,6 +136,50 @@
   [data-radix-scroll-area-viewport] * {
     will-change: scroll-position;
   }
+
+  /* Icono de calendario en inputs de tipo date - Modo oscuro */
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark .date-input-dark::-webkit-calendar-picker-indicator,
+  input[type="date"].date-input-dark.dark::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.5) !important;
+    cursor: pointer;
+    opacity: 1 !important;
+  }
+
+  .dark input[type="date"]::-webkit-inner-spin-button,
+  .dark input[type="date"]::-webkit-clear-button,
+  .dark .date-input-dark::-webkit-inner-spin-button,
+  .dark .date-input-dark::-webkit-clear-button {
+    filter: invert(1) brightness(1.5) !important;
+  }
+
+  /* Para Firefox y otros navegadores */
+  .dark input[type="date"],
+  .dark .date-input-dark {
+    color-scheme: dark;
+  }
+
+  /* Asegurar que funcione también sin la clase .dark (si el modo oscuro se aplica de otra manera) */
+  @media (prefers-color-scheme: dark) {
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    .date-input-dark::-webkit-calendar-picker-indicator {
+      filter: invert(1) brightness(1.5) !important;
+      cursor: pointer;
+      opacity: 1 !important;
+    }
+
+    input[type="date"]::-webkit-inner-spin-button,
+    input[type="date"]::-webkit-clear-button,
+    .date-input-dark::-webkit-inner-spin-button,
+    .date-input-dark::-webkit-clear-button {
+      filter: invert(1) brightness(1.5) !important;
+    }
+
+    input[type="date"],
+    .date-input-dark {
+      color-scheme: dark;
+    }
+  }
 }
 
 @layer utilities {

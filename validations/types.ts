@@ -265,3 +265,54 @@ export interface FleetDocumentPayload {
   authorDocumentId?: string;
 }
 
+export type ReminderType = "unique" | "recurring";
+export type RecurrencePattern = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface FleetReminder {
+  id: number;
+  documentId?: string;
+  title: string;
+  description?: string;
+  reminderType: ReminderType;
+  scheduledDate: string;
+  recurrencePattern?: RecurrencePattern;
+  recurrenceEndDate?: string;
+  isActive: boolean;
+  lastTriggered?: string;
+  nextTrigger: string;
+  authorDocumentId?: string;
+  createdAt: string;
+  updatedAt: string;
+  author?: {
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  };
+  assignedUsers?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+}
+
+export interface FleetReminderPayload {
+  title: string;
+  description?: string;
+  reminderType: ReminderType;
+  scheduledDate: string;
+  recurrencePattern?: RecurrencePattern;
+  recurrenceEndDate?: string;
+  assignedUserIds?: number[];
+  authorDocumentId?: string;
+}
+

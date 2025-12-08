@@ -10,6 +10,7 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Input } from "@/components_shadcn/ui/input";
 import { Label } from "@/components_shadcn/ui/label";
+import { Checkbox } from "@/components_shadcn/ui/checkbox";
 import {
   ArrowLeft,
   MoreVertical,
@@ -22,6 +23,7 @@ import {
   Upload,
   ImagePlus,
   FileText,
+  Plus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -30,6 +32,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components_shadcn/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
+import { MultiSelectCombobox } from "@/components_shadcn/ui/multi-select-combobox";
+import { Calendar as CalendarComponent } from "@/components_shadcn/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components_shadcn/ui/popover";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { es as dayPickerEs } from "react-day-picker/locale";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,10 +49,12 @@ import {
   AlertDialogTitle,
 } from "@/components_shadcn/ui/alert-dialog";
 import { spacing, typography } from "@/lib/design-system";
+import { strapiImages } from "@/lib/strapi-images";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { NotesTimeline, type FleetNote } from "@/components/ui/notes-timeline";
 import { VehicleStatusTimeline, type VehicleStatusTimelineProps } from "@/components/ui/vehicle-status-timeline";
 import { FleetDocuments } from "@/components/ui/fleet-documents";
+import { FleetReminders } from "@/components/ui/fleet-reminders";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -57,6 +67,9 @@ import type {
   VehicleStatus,
   FleetDocument,
   FleetDocumentType,
+  FleetReminder,
+  ReminderType,
+  RecurrencePattern,
 } from "@/validations/types";
 
 const getStatusBadge = (status: FleetVehicleCondition) => {
@@ -129,6 +142,22 @@ export default function FleetDetailsPage() {
   const [isSavingDocument, setIsSavingDocument] = useState(false);
   const [documentType, setDocumentType] = useState<FleetDocumentType>("poliza_seguro");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [vehicleReminders, setVehicleReminders] = useState<FleetReminder[]>([]);
+  const [isLoadingReminders, setIsLoadingReminders] = useState(false);
+  const [isSavingReminder, setIsSavingReminder] = useState(false);
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderDescription, setReminderDescription] = useState("");
+  const [reminderType, setReminderType] = useState<ReminderType>("unique");
+  const [reminderScheduledDate, setReminderScheduledDate] = useState("");
+  const [reminderScheduledTime, setReminderScheduledTime] = useState("");
+  const [isAllDay, setIsAllDay] = useState(false);
+  const [reminderRecurrencePattern, setReminderRecurrencePattern] = useState<RecurrencePattern>("daily");
+  const [reminderRecurrenceEndDate, setReminderRecurrenceEndDate] = useState("");
+  const [availableUsers, setAvailableUsers] = useState<Array<{ id: number; documentId?: string; displayName?: string; email?: string; avatar?: { url?: string; alternativeText?: string } }>>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [showReminderForm, setShowReminderForm] = useState(false);
+  const [editingReminderId, setEditingReminderId] = useState<number | string | null>(null);
   const previewObjectUrlRef = useRef<string | null>(null);
   const statusImagePreviewRefs = useRef<string[]>([]);
   const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
@@ -290,6 +319,8 @@ export default function FleetDetailsPage() {
     loadNotes();
     loadVehicleStatuses();
     loadVehicleDocuments();
+    loadVehicleReminders();
+    loadAvailableUsers();
     loadCurrentUserProfile();
   }, [vehicleId, syncFormWithVehicle, loadNotes, loadVehicleStatuses, loadCurrentUserProfile]);
 
@@ -1038,6 +1069,427 @@ export default function FleetDetailsPage() {
       throw error;
     }
   };
+
+  // Funciones para recordatorios
+  const loadAvailableUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const response = await fetch(`/api/user-profiles`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("No pudimos obtener los usuarios");
+      }
+      const { data } = (await response.json()) as { data: Array<{ id: number; documentId?: string; displayName?: string; email?: string; avatar?: { url?: string; alternativeText?: string } }> };
+      setAvailableUsers(data || []);
+    } catch (error) {
+      console.error("Error cargando usuarios:", error);
+      toast.error("Error al cargar usuarios", {
+        description: error instanceof Error ? error.message : "Error desconocido",
+      });
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const loadVehicleReminders = async () => {
+    setIsLoadingReminders(true);
+    try {
+      const response = await fetch(`/api/fleet/${vehicleId}/reminder`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("No pudimos obtener los recordatorios");
+      }
+      const { data } = (await response.json()) as { data: FleetReminder[] };
+      setVehicleReminders(data || []);
+    } catch (error) {
+      console.error("Error cargando recordatorios:", error);
+      toast.error("Error al cargar recordatorios", {
+        description: error instanceof Error ? error.message : "Error desconocido",
+      });
+    } finally {
+      setIsLoadingReminders(false);
+    }
+  };
+
+  const handleSaveReminder = async () => {
+    if (!reminderTitle?.trim() || !reminderScheduledDate) {
+      toast.error("Error", {
+        description: "El título y la fecha programada son requeridos",
+      });
+      return;
+    }
+
+    if (!selectedUserIds || selectedUserIds.length === 0) {
+      toast.error("Error", {
+        description: "Debes asignar al menos un usuario al recordatorio",
+      });
+      return;
+    }
+    
+    // Combinar fecha y hora (si es todo el día, usar 00:00)
+    const timeToUse = isAllDay ? "00:00" : (reminderScheduledTime || "00:00");
+    const scheduledDateTime = `${reminderScheduledDate}T${timeToUse}:00`;
+
+    if (reminderType === "recurring" && !reminderRecurrencePattern) {
+      toast.error("Error", {
+        description: "El patrón de recurrencia es requerido para recordatorios recurrentes",
+      });
+      return;
+    }
+
+    setIsSavingReminder(true);
+    setErrorMessage(null);
+    try {
+      const requestBody: { data: { title: string; description?: string; reminderType: ReminderType; scheduledDate: string; recurrencePattern?: RecurrencePattern; recurrenceEndDate?: string; assignedUserIds: number[]; authorDocumentId?: string; isAllDay?: boolean } } = {
+        data: {
+          title: reminderTitle?.trim() || "",
+          reminderType: reminderType,
+          scheduledDate: scheduledDateTime,
+          isAllDay: isAllDay,
+          assignedUserIds: selectedUserIds,
+        },
+      };
+
+      if (reminderDescription.trim()) {
+        requestBody.data.description = reminderDescription.trim();
+      }
+
+      if (reminderType === "recurring") {
+        requestBody.data.recurrencePattern = reminderRecurrencePattern;
+        if (reminderRecurrenceEndDate) {
+          requestBody.data.recurrenceEndDate = reminderRecurrenceEndDate;
+        }
+      }
+
+      // Si estamos editando, usar PATCH
+      if (editingReminderId) {
+        const reminderIdStr = String(editingReminderId);
+        const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          let errorData;
+          try {
+            const errorText = await response.text();
+            errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+          } catch {
+            errorData = { error: `Error ${response.status}: ${response.statusText}` };
+          }
+          
+          throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
+        }
+
+        const { data: updatedReminder } = (await response.json()) as { data: FleetReminder };
+        
+        // Recargar recordatorios
+        await loadVehicleReminders();
+        
+        // Limpiar formulario y estado de edición
+        setReminderTitle("");
+        setReminderDescription("");
+        setReminderType("unique");
+        setReminderScheduledDate("");
+        setReminderScheduledTime("");
+        setIsAllDay(false);
+        setReminderRecurrencePattern("daily");
+        setReminderRecurrenceEndDate("");
+        setSelectedUserIds([]);
+        setEditingReminderId(null);
+        
+        // Ocultar el formulario después de guardar
+        setShowReminderForm(false);
+        
+        toast.success("Recordatorio actualizado", {
+          description: "El recordatorio ha sido actualizado correctamente",
+        });
+      } else {
+        // Crear nuevo recordatorio
+        if (currentUserDocumentId) {
+          requestBody.data.authorDocumentId = currentUserDocumentId;
+        }
+
+        const response = await fetch(`/api/fleet/${vehicleId}/reminder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          let errorData;
+          try {
+            const errorText = await response.text();
+            errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+          } catch {
+            errorData = { error: `Error ${response.status}: ${response.statusText}` };
+          }
+          
+          if (response.status === 405) {
+            throw new Error("El método POST no está permitido en esta ruta. Por favor, reinicia el servidor de desarrollo.");
+          }
+          
+          throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
+        }
+
+        const { data: createdReminder } = (await response.json()) as { data: FleetReminder };
+        
+        // Recargar recordatorios
+        await loadVehicleReminders();
+        
+        // Limpiar formulario
+        setReminderTitle("");
+        setReminderDescription("");
+        setReminderType("unique");
+        setReminderScheduledDate("");
+        setReminderRecurrencePattern("daily");
+        setReminderRecurrenceEndDate("");
+        setSelectedUserIds([]);
+        
+        // Ocultar el formulario después de guardar
+        setShowReminderForm(false);
+        
+        toast.success("Recordatorio creado", {
+          description: "El recordatorio ha sido creado correctamente",
+        });
+      }
+    } catch (error) {
+      console.error("Error guardando recordatorio:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al guardar recordatorio", {
+        description: errorMessage,
+      });
+    } finally {
+      setIsSavingReminder(false);
+    }
+  };
+
+  const handleDeleteReminder = async (reminderId: number | string) => {
+    try {
+      const reminderIdStr = String(reminderId);
+      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      setVehicleReminders((prev) => prev.filter((r) => r.id !== reminderId && r.documentId !== reminderId));
+      toast.success("Recordatorio eliminado", {
+        description: "El recordatorio ha sido eliminado",
+      });
+    } catch (error) {
+      console.error("Error eliminando recordatorio:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al eliminar recordatorio", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  const handleToggleReminderActive = async (reminderId: number | string, isActive: boolean) => {
+    const reminderIdStr = String(reminderId);
+    const newActiveState = !isActive;
+    
+    console.log("🔄 Cambiando estado del recordatorio:", {
+      reminderId: reminderIdStr,
+      currentState: isActive,
+      newState: newActiveState,
+    });
+    
+    try {
+      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            isActive: newActiveState,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          const errorText = await response.text();
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: `Error ${response.status}: ${response.statusText}` };
+        }
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      const { data } = (await response.json()) as { data: FleetReminder };
+      
+      console.log("✅ Recordatorio actualizado:", data);
+      
+      // Actualizar el estado local con el recordatorio actualizado
+      setVehicleReminders((prev) => {
+        const updated = prev.map((r) => {
+          // Comparar por id numérico o documentId
+          const matchesById = r.id && data.id && r.id === data.id;
+          const matchesByDocumentId = r.documentId && data.documentId && r.documentId === data.documentId;
+          const matchesByReminderId = String(r.id) === reminderIdStr || r.documentId === reminderIdStr;
+          
+          if (matchesById || matchesByDocumentId || matchesByReminderId) {
+            console.log("🔄 Actualizando recordatorio en estado local:", {
+              old: { id: r.id, documentId: r.documentId, isActive: r.isActive },
+              new: { id: data.id, documentId: data.documentId, isActive: data.isActive },
+            });
+            return { ...data };
+          }
+          return r;
+        });
+        
+        console.log("📊 Estado actualizado. Total recordatorios:", updated.length);
+        return updated;
+      });
+      
+      toast.success(newActiveState ? "Recordatorio activado" : "Recordatorio desactivado", {
+        description: `El recordatorio ha sido ${newActiveState ? "activado" : "desactivado"} correctamente`,
+      });
+    } catch (error) {
+      console.error("❌ Error cambiando estado del recordatorio:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al cambiar estado", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  const handleEditReminder = (reminder: FleetReminder) => {
+    console.log("🔍 Editando recordatorio:", reminder);
+    
+    if (!reminder) {
+      console.error("❌ No se recibió el recordatorio");
+      return;
+    }
+    
+    const reminderId = reminder.documentId || String(reminder.id);
+    
+    // Función helper para convertir fecha a formato datetime-local (hora local)
+    const formatDateTimeLocal = (dateString: string): string => {
+      if (!dateString) {
+        console.warn("⚠️ No hay fecha programada");
+        return "";
+      }
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        console.warn("⚠️ Fecha inválida:", dateString);
+        return "";
+      }
+      
+      // Obtener año, mes, día, hora y minutos en hora local
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      
+      const formatted = `${year}-${month}-${day}T${hours}:${minutes}`;
+      console.log("📅 Fecha formateada:", formatted, "de", dateString);
+      return formatted;
+    };
+    
+    // Función helper para convertir fecha a formato date (hora local)
+    const formatDateLocal = (dateString: string): string => {
+      if (!dateString) return "";
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "";
+      
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      
+      return `${year}-${month}-${day}`;
+    };
+    
+    // Función helper para convertir hora a formato time (hora local)
+    const formatTimeLocal = (dateString: string): string => {
+      if (!dateString) return "";
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return "";
+      
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      
+      return `${hours}:${minutes}`;
+    };
+    
+    // Preparar todos los valores antes de actualizar los estados
+    const title = reminder.title || "";
+    const description = reminder.description || "";
+    const type = (reminder.reminderType || "unique") as ReminderType;
+    const scheduledDateValue = formatDateLocal(reminder.scheduledDate);
+    const scheduledTimeValue = formatTimeLocal(reminder.scheduledDate);
+    const allDayValue = scheduledTimeValue === "00:00";
+    const recurrencePattern = (reminder.recurrencePattern || "daily") as RecurrencePattern;
+    const recurrenceEndDate = formatDateLocal(reminder.recurrenceEndDate || "");
+    
+    // Mapear usuarios asignados
+    const userIds = reminder.assignedUsers?.map((u) => {
+      if (u.id) return u.id;
+      if (u.documentId && availableUsers.length > 0) {
+        const foundUser = availableUsers.find(au => au.documentId === u.documentId);
+        if (foundUser?.id) return foundUser.id;
+      }
+      return null;
+    }).filter((id): id is number => id !== null) || [];
+    
+    console.log("📝 Datos a llenar:", { 
+      title, 
+      description, 
+      type, 
+      scheduledDate: scheduledDateValue,
+      scheduledTime: scheduledTimeValue,
+      isAllDay: allDayValue,
+      recurrencePattern,
+      recurrenceEndDate,
+      userIds 
+    });
+    
+    // Actualizar todos los estados de una vez usando React.startTransition o simplemente en secuencia
+    setEditingReminderId(reminderId);
+    setReminderTitle(title);
+    setReminderDescription(description);
+    setReminderType(type);
+    setReminderScheduledDate(scheduledDateValue);
+    setReminderScheduledTime(scheduledTimeValue);
+    setIsAllDay(allDayValue);
+    setReminderRecurrencePattern(recurrencePattern);
+    setReminderRecurrenceEndDate(recurrenceEndDate);
+    setSelectedUserIds(userIds);
+    
+    // Mostrar el formulario al final
+    setShowReminderForm(true);
+    
+    console.log("✅ Formulario de edición configurado");
+  };
+  
+  // Actualizar usuarios asignados cuando availableUsers se cargue y estemos editando
+  useEffect(() => {
+    if (editingReminderId && availableUsers.length > 0) {
+      const reminder = vehicleReminders.find(
+        r => (r.documentId || String(r.id)) === editingReminderId
+      );
+      
+      if (reminder?.assignedUsers && reminder.assignedUsers.length > 0) {
+        const userIds = reminder.assignedUsers.map((u) => {
+          if (u.id) return u.id;
+          if (u.documentId) {
+            const foundUser = availableUsers.find(au => au.documentId === u.documentId);
+            if (foundUser?.id) return foundUser.id;
+          }
+          return null;
+        }).filter((id): id is number => id !== null);
+        
+        setSelectedUserIds(userIds);
+      }
+    }
+  }, [availableUsers, editingReminderId, vehicleReminders]);
 
   // Limpiar previews al desmontar
   useEffect(() => {
@@ -1903,6 +2355,361 @@ export default function FleetDetailsPage() {
                 {isSavingDocument ? "Guardando..." : "Guardar Documento"}
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Card de Recordatorios del Vehículo */}
+        <Card 
+          className="shadow-sm backdrop-blur-sm border rounded-lg"
+          style={{
+            backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
+            borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',
+          } as React.CSSProperties}
+        >
+          <CardHeader className="px-6 pt-6 pb-4 flex flex-row items-center justify-between">
+            <CardTitle className={typography.h4}>Recordatorios del Vehículo</CardTitle>
+            {vehicleReminders.length > 0 && !showReminderForm && (
+              <Button
+                onClick={() => setShowReminderForm(true)}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar Recordatorio
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+            {/* Estado vacío con botón + */}
+            {vehicleReminders.length === 0 && !showReminderForm && !isLoadingReminders && (
+              <div className="flex flex-col items-center justify-center py-16 min-h-[300px] border-2 border-dashed border-border rounded-lg">
+                <p className={`${typography.body.base} text-muted-foreground mb-6`}>
+                  Añade un recordatorio a tu vehículo
+                </p>
+                <Button
+                  onClick={() => setShowReminderForm(true)}
+                  size="lg"
+                  className="h-16 w-16 rounded-full"
+                  variant="default"
+                >
+                  <Plus className="h-8 w-8" />
+                </Button>
+              </div>
+            )}
+
+            {/* Lista de recordatorios */}
+            {vehicleReminders.length > 0 && (
+              <ScrollAreaPrimitive.Root className="relative overflow-hidden h-[600px]">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <FleetReminders 
+                    reminders={vehicleReminders} 
+                    isLoading={isLoadingReminders}
+                    onEdit={handleEditReminder}
+                    onDelete={handleDeleteReminder}
+                    onToggleActive={handleToggleReminderActive}
+                    vehicleId={vehicleId}
+                  />
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.ScrollAreaScrollbar
+                  orientation="vertical"
+                  className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+                >
+                  <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+                </ScrollAreaPrimitive.ScrollAreaScrollbar>
+                <ScrollAreaPrimitive.Corner />
+              </ScrollAreaPrimitive.Root>
+            )}
+
+            {/* Formulario para agregar nuevo recordatorio */}
+            {showReminderForm && (
+            <div className={`flex flex-col ${spacing.gap.small} ${vehicleReminders.length > 0 ? 'pt-4 border-t border-border' : ''}`}>
+              {/* Título del formulario */}
+              {editingReminderId && (
+                <h3 className={`${typography.h4} mb-2`}>
+                  Editar Recordatorio
+                </h3>
+              )}
+              {/* Título */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label htmlFor="reminder-title">Título del Recordatorio</Label>
+                <Input
+                  id="reminder-title"
+                  value={reminderTitle}
+                  onChange={(e) => setReminderTitle(e.target.value)}
+                  placeholder="Ej: Revisar mantenimiento"
+                />
+              </div>
+
+              {/* Descripción */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label htmlFor="reminder-description">Descripción (opcional)</Label>
+                <Textarea
+                  id="reminder-description"
+                  value={reminderDescription}
+                  onChange={(e) => setReminderDescription(e.target.value)}
+                  placeholder="Añade una descripción del recordatorio..."
+                  rows={3}
+                  className="min-h-20 resize-y"
+                />
+              </div>
+
+              {/* Tipo de recordatorio y Fecha programada en dos columnas */}
+              <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${spacing.gap.small}`}>
+                {/* Tipo de recordatorio */}
+                <div className={`flex flex-col ${spacing.gap.small}`}>
+                  <Label htmlFor="reminder-type">Tipo de Recordatorio</Label>
+                  <Select value={reminderType} onValueChange={(value: ReminderType) => setReminderType(value)}>
+                    <SelectTrigger id="reminder-type">
+                      <SelectValue placeholder="Selecciona el tipo" />
+                    </SelectTrigger>
+                    <SelectContent align="end" side="bottom" avoidCollisions={false}>
+                      <SelectItem value="unique">Único</SelectItem>
+                      <SelectItem value="recurring">Recurrente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Fecha programada */}
+                <div className={`flex flex-col ${spacing.gap.small}`}>
+                  <Label htmlFor="reminder-scheduled-date">Fecha y Hora Programada</Label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "flex-1 justify-start text-left font-normal h-10 pl-3",
+                              !reminderScheduledDate && "text-muted-foreground"
+                            )}
+                          >
+                            <Calendar className="mr-2 h-4 w-4" />
+                            {reminderScheduledDate ? (
+                              format(new Date(reminderScheduledDate + "T00:00:00"), "d 'de' MMMM, yyyy", { locale: es })
+                            ) : (
+                              <span>Selecciona una fecha</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarComponent
+                            mode="single"
+                            selected={reminderScheduledDate ? new Date(reminderScheduledDate + "T00:00:00") : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, "0");
+                                const day = String(date.getDate()).padStart(2, "0");
+                                setReminderScheduledDate(`${year}-${month}-${day}`);
+                              }
+                            }}
+                            initialFocus
+                            locale={dayPickerEs}
+                            captionLayout="dropdown"
+                            fromYear={2020}
+                            toYear={2030}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <div className="flex gap-2 flex-1 items-center">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="12"
+                          value={(() => {
+                            if (!reminderScheduledTime) return "";
+                            const [hours] = reminderScheduledTime.split(":");
+                            const hour24 = parseInt(hours, 10);
+                            const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                            return hour12.toString();
+                          })()}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Validar que esté entre 1 y 12
+                            if (value === "" || (parseInt(value, 10) >= 1 && parseInt(value, 10) <= 12)) {
+                              const currentMinutes = reminderScheduledTime ? reminderScheduledTime.split(":")[1] || "00" : "00";
+                              const currentHour24 = reminderScheduledTime ? parseInt(reminderScheduledTime.split(":")[0], 10) : 0;
+                              const isPM = currentHour24 >= 12;
+                              
+                              if (value === "") {
+                                setReminderScheduledTime(`00:${currentMinutes}`);
+                              } else {
+                                const hour12 = parseInt(value, 10);
+                                const hour24 = hour12 === 12 ? (isPM ? 12 : 0) : (isPM ? hour12 + 12 : hour12);
+                                setReminderScheduledTime(`${String(hour24).padStart(2, "0")}:${currentMinutes}`);
+                              }
+                              if (!reminderScheduledTime) {
+                                setIsAllDay(false);
+                              }
+                            }
+                          }}
+                          placeholder="Hora"
+                          disabled={isAllDay}
+                          className="w-20 h-10"
+                        />
+                        <span className="text-muted-foreground">:</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={(() => {
+                            if (!reminderScheduledTime) return "";
+                            return reminderScheduledTime.split(":")[1] || "00";
+                          })()}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // Validar que esté entre 0 y 59
+                            if (value === "" || (parseInt(value, 10) >= 0 && parseInt(value, 10) <= 59)) {
+                              const hours = reminderScheduledTime ? reminderScheduledTime.split(":")[0] : "00";
+                              const minutes = value === "" ? "00" : String(parseInt(value, 10)).padStart(2, "0");
+                              setReminderScheduledTime(`${hours}:${minutes}`);
+                            }
+                          }}
+                          placeholder="Min"
+                          disabled={isAllDay}
+                          className="w-20 h-9"
+                        />
+                        <Select
+                          value={(() => {
+                            if (!reminderScheduledTime) return "AM";
+                            const hour24 = parseInt(reminderScheduledTime.split(":")[0], 10);
+                            return hour24 >= 12 ? "PM" : "AM";
+                          })()}
+                          onValueChange={(value) => {
+                            const [hours, minutes] = reminderScheduledTime ? reminderScheduledTime.split(":") : ["0", "00"];
+                            const hour24 = parseInt(hours, 10);
+                            const hour12 = hour24 === 0 ? 12 : hour24 > 12 ? hour24 - 12 : hour24;
+                            const newHour24 = value === "PM" 
+                              ? (hour12 === 12 ? 12 : hour12 + 12)
+                              : (hour12 === 12 ? 0 : hour12);
+                            setReminderScheduledTime(`${String(newHour24).padStart(2, "0")}:${minutes || "00"}`);
+                          }}
+                          disabled={isAllDay}
+                        >
+                          <SelectTrigger className="w-24 h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AM">AM</SelectItem>
+                            <SelectItem value="PM">PM</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="reminder-all-day"
+                        checked={isAllDay}
+                        onCheckedChange={(checked) => {
+                          setIsAllDay(checked === true);
+                          if (checked === true) {
+                            setReminderScheduledTime("00:00");
+                          }
+                        }}
+                        className="h-4 w-4 border-2 border-border"
+                      />
+                      <Label
+                        htmlFor="reminder-all-day"
+                        className="text-sm font-normal cursor-pointer select-none"
+                      >
+                        Todo el día
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Campos para recordatorios recurrentes */}
+              {reminderType === "recurring" && (
+                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${spacing.gap.small}`}>
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="reminder-recurrence-pattern">Patrón de Recurrencia</Label>
+                    <Select value={reminderRecurrencePattern} onValueChange={(value: RecurrencePattern) => setReminderRecurrencePattern(value)}>
+                      <SelectTrigger id="reminder-recurrence-pattern">
+                        <SelectValue placeholder="Selecciona el patrón" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="daily">Diario</SelectItem>
+                        <SelectItem value="weekly">Semanal</SelectItem>
+                        <SelectItem value="monthly">Mensual</SelectItem>
+                        <SelectItem value="yearly">Anual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className={`flex flex-col ${spacing.gap.small}`}>
+                    <Label htmlFor="reminder-recurrence-end-date">Fecha de Finalización (opcional)</Label>
+                    <Input
+                      id="reminder-recurrence-end-date"
+                      type="date"
+                      value={reminderRecurrenceEndDate}
+                      onChange={(e) => setReminderRecurrenceEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Selector de usuarios asignados */}
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <Label>Usuarios Asignados</Label>
+                {isLoadingUsers ? (
+                  <div className="border rounded-lg p-4">
+                    <p className={typography.body.small}>Cargando usuarios...</p>
+                  </div>
+                ) : (
+                  <MultiSelectCombobox
+                    options={availableUsers.map((user) => ({
+                      value: user.id,
+                      label: user.displayName || user.email || "Usuario",
+                      email: user.email,
+                      avatar: user.avatar,
+                    }))}
+                    selectedValues={selectedUserIds}
+                    onSelectionChange={(values) => setSelectedUserIds(values as number[])}
+                    placeholder="Selecciona usuarios..."
+                    searchPlaceholder="Buscar usuarios..."
+                    emptyMessage="No se encontraron usuarios."
+                    disabled={isSavingReminder}
+                  />
+                )}
+              </div>
+              
+              <div className="flex gap-2 mt-4">
+                <Button 
+                  onClick={() => {
+                    setShowReminderForm(false);
+                    setReminderTitle("");
+                    setReminderDescription("");
+                    setReminderScheduledDate("");
+                    setReminderScheduledTime("");
+                    setIsAllDay(false);
+                    setReminderType("unique");
+                    setReminderRecurrencePattern("daily");
+                    setReminderRecurrenceEndDate("");
+                    setSelectedUserIds([]);
+                    setEditingReminderId(null);
+                  }}
+                  variant="outline" 
+                  size="lg" 
+                  className="flex-1"
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleSaveReminder} 
+                  variant="default" 
+                  size="lg" 
+                  className="flex-1"  
+                  disabled={!reminderTitle?.trim() || !reminderScheduledDate || !selectedUserIds || selectedUserIds.length === 0 || isSavingReminder}
+                >
+                  {isSavingReminder 
+                    ? (editingReminderId ? "Actualizando..." : "Guardando...") 
+                    : (editingReminderId ? "Actualizar Recordatorio" : "Crear Recordatorio")}
+                </Button>
+              </div>
+            </div>
+            )}
           </CardContent>
         </Card>
       </section>
