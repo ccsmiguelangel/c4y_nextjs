@@ -76,6 +76,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       updateData.isActive = body.data.isActive;
     }
     
+    if ((body.data as any).isCompleted !== undefined) {
+      updateData.isCompleted = (body.data as any).isCompleted;
+    }
+    
     if (body.data.assignedUserIds !== undefined) {
       updateData.assignedUsers = body.data.assignedUserIds || [];
     }
@@ -116,7 +120,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     // Obtener el recordatorio actualizado completo
     const reminderQuery = qs.stringify({
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],

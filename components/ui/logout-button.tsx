@@ -3,9 +3,12 @@
 import { Button } from "@/components_shadcn/ui/button";
 import { actions } from "@/actions";
 import { LogOut } from "lucide-react";
+import { clearThemeCookie } from "@/lib/theme-provider";
 
 export function LogoutButton() {
   const handleLogout = async () => {
+    // Limpiar la cookie del tema en el cliente también
+    clearThemeCookie();
     await actions.auth.logoutAction();
   };
 

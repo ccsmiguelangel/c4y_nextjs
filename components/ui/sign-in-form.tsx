@@ -72,11 +72,13 @@ export function SignInForm({ data }: SignInFormProps) {
 
   return (
     <>
-      <Card className="w-full py-8 px-8 bg-white">
+      <Card className="w-full py-8 px-8 bg-card">
         <CardHeader className="space-y-2 pb-6">
-          <CardTitle className="text-3xl font-bold text-primary text-center">{header.title}</CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary text-center">
+            {header?.title || "Iniciar Sesión"}
+          </CardTitle>
           <CardDescription className="text-base text-center">
-            {header.subtitle}
+            {header?.subtitle || "Ingresa tus datos para iniciar sesión en tu cuenta"}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
@@ -92,7 +94,7 @@ export function SignInForm({ data }: SignInFormProps) {
                       <Input 
                         placeholder={email_placeholder} 
                         type="email" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                        className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
                         {...field} 
                       />
                     </FormControl>
@@ -110,7 +112,7 @@ export function SignInForm({ data }: SignInFormProps) {
                       <Input 
                         placeholder={password_placeholder} 
                         type="password" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                        className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
                         {...field} 
                       />
                     </FormControl>
@@ -148,9 +150,9 @@ export function SignInForm({ data }: SignInFormProps) {
       </Card>
     {singupLink && (
       <p className="text-base text-muted-foreground text-center pt-4">
-        {singup_previous_link_text}{" "}
+        {singup_previous_link_text || "¿No tienes una cuenta?"}{" "}
         <Link href={singupLink.href} className="text-primary hover:underline font-medium">
-          {singupLink.label}
+          {singupLink.label || "Regístrate"}
         </Link>
       </p>
     )}

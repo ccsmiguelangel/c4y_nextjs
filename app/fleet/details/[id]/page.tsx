@@ -60,6 +60,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Skeleton } from "@/components_shadcn/ui/skeleton";
 import { Camera, X } from "lucide-react";
+import { emitReminderCreated, emitReminderUpdated, emitReminderDeleted, emitReminderToggleCompleted, emitReminderToggleActive } from "@/lib/reminder-events";
 import type {
   FleetVehicleCard,
   FleetVehicleCondition,
@@ -120,7 +121,6 @@ export default function FleetDetailsPage() {
     model: "",
     year: "",
     imageAlt: "",
-    stockQuantity: "",
     nextMaintenanceDate: "",
     placa: "",
   });
@@ -131,6 +131,7 @@ export default function FleetDetailsPage() {
   const [maintenanceRecurrenceEndDate, setMaintenanceRecurrenceEndDate] = useState("");
   const [selectedResponsables, setSelectedResponsables] = useState<number[]>([]);
   const [selectedAssignedDrivers, setSelectedAssignedDrivers] = useState<number[]>([]);
+  const [selectedInterestedDrivers, setSelectedInterestedDrivers] = useState<number[]>([]);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
@@ -202,7 +203,6 @@ export default function FleetDetailsPage() {
         model: data.model,
         year: data.year.toString(),
         imageAlt: data.imageAlt ?? "",
-        stockQuantity: (data as any).stockQuantity?.toString() ?? "",
         nextMaintenanceDate: data.nextMaintenanceDate ? new Date(data.nextMaintenanceDate).toISOString().split('T')[0] : "",
         placa: (data as any).placa ?? "",
       });
@@ -247,6 +247,15 @@ export default function FleetDetailsPage() {
         setSelectedAssignedDrivers(assignedDriversIds);
       } else {
         setSelectedAssignedDrivers([]);
+      }
+      
+      if (data.interestedDrivers && data.interestedDrivers.length > 0) {
+        const interestedDriversIds = data.interestedDrivers
+          .map((d) => d.id)
+          .filter((id): id is number => typeof id === 'number' && !isNaN(id));
+        setSelectedInterestedDrivers(interestedDriversIds);
+      } else {
+        setSelectedInterestedDrivers([]);
       }
       
       // Si no hay datos normalizados, intentar cargar desde la API raw como fallback
@@ -318,7 +327,6 @@ export default function FleetDetailsPage() {
         console.log("📥 Datos recibidos en loadVehicle:", {
           assignedDrivers: data.assignedDrivers,
           responsables: data.responsables,
-          stockQuantity: data.stockQuantity,
         });
       }
       
@@ -559,20 +567,23 @@ export default function FleetDetailsPage() {
         model: formData.model,
         year: Number(formData.year) || vehicleData.year,
         imageAlt: formData.imageAlt || null,
-        stockQuantity: formData.stockQuantity ? Number(formData.stockQuantity) : null,
         placa: formData.placa || null,
         nextMaintenanceDate: maintenanceScheduledDate ? (() => {
           const timeToUse = maintenanceIsAllDay ? "00:00" : (maintenanceScheduledTime || "00:00");
           return `${maintenanceScheduledDate}T${timeToUse}:00`;
         })() : null,
-        responsables: selectedResponsables.length > 0 ? selectedResponsables : [],
-        assignedDrivers: selectedAssignedDrivers.length > 0 ? selectedAssignedDrivers : [],
+        responsables: selectedResponsables,
+        assignedDrivers: selectedAssignedDrivers,
+        interestedDrivers: selectedInterestedDrivers,
       };
 
       console.log("📤 Enviando payload:", {
         responsables: payload.responsables,
         assignedDrivers: payload.assignedDrivers,
-        stockQuantity: payload.stockQuantity,
+        selectedResponsables,
+        selectedAssignedDrivers,
+        responsablesLength: selectedResponsables.length,
+        assignedDriversLength: selectedAssignedDrivers.length,
       });
 
       if (uploadedImageId !== null) {
@@ -589,12 +600,38 @@ export default function FleetDetailsPage() {
       });
 
       if (!response.ok) {
-        throw new Error("save_failed");
+        let errorMessage = "No se pudo guardar los cambios";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.error || errorMessage;
+        } catch {
+          // Si no se puede parsear el JSON, usar el mensaje por defecto
+          errorMessage = `Error ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       // Sincronizar fecha de mantenimiento con recordatorios
       if (maintenanceScheduledDate) {
         await syncMaintenanceReminder(maintenanceScheduledDate, maintenanceScheduledTime, maintenanceIsAllDay, maintenanceRecurrencePattern, maintenanceRecurrenceEndDate);
+      } else {
+        // Si se eliminó la fecha de mantenimiento, eliminar el recordatorio de mantenimiento correspondiente
+        const maintenanceReminder = vehicleReminders.find(
+          (r) => r.title.toLowerCase().includes("mantenimiento") || r.title === "Mantenimiento completo del vehículo"
+        );
+        
+        if (maintenanceReminder) {
+          const reminderId = maintenanceReminder.documentId || String(maintenanceReminder.id);
+          try {
+            await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+              method: "DELETE",
+            });
+            await loadVehicleReminders();
+            console.log("✅ Recordatorio de mantenimiento eliminado al quitar la fecha");
+          } catch (error) {
+            console.error("Error eliminando recordatorio de mantenimiento:", error);
+          }
+        }
       }
 
       // Recargar el vehículo completo para obtener todas las relaciones actualizadas
@@ -1525,8 +1562,34 @@ export default function FleetDetailsPage() {
 
         const { data: updatedReminder } = (await response.json()) as { data: FleetReminder };
         
+        // Si es un recordatorio de mantenimiento, actualizar también el nextMaintenanceDate del vehículo
+        const isMaintenanceReminder = updatedReminder.title.toLowerCase().includes("mantenimiento") || 
+                                      updatedReminder.title === "Mantenimiento completo del vehículo";
+        
+        if (isMaintenanceReminder && vehicleId) {
+          try {
+            const maintenanceDate = updatedReminder.scheduledDate;
+            await fetch(`/api/fleet/${vehicleId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data: {
+                  nextMaintenanceDate: maintenanceDate,
+                },
+              }),
+            });
+            // Recargar el vehículo para actualizar la UI
+            await loadVehicle();
+          } catch (error) {
+            console.error("Error actualizando fecha de mantenimiento del vehículo:", error);
+          }
+        }
+        
         // Recargar recordatorios
         await loadVehicleReminders();
+        
+        // Emitir evento de actualización
+        emitReminderUpdated(updatedReminder);
         
         // Limpiar formulario y estado de edición
         setReminderTitle("");
@@ -1576,8 +1639,34 @@ export default function FleetDetailsPage() {
 
         const { data: createdReminder } = (await response.json()) as { data: FleetReminder };
         
+        // Si es un recordatorio de mantenimiento, actualizar también el nextMaintenanceDate del vehículo
+        const isMaintenanceReminder = createdReminder.title.toLowerCase().includes("mantenimiento") || 
+                                      createdReminder.title === "Mantenimiento completo del vehículo";
+        
+        if (isMaintenanceReminder && vehicleId) {
+          try {
+            const maintenanceDate = createdReminder.scheduledDate;
+            await fetch(`/api/fleet/${vehicleId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data: {
+                  nextMaintenanceDate: maintenanceDate,
+                },
+              }),
+            });
+            // Recargar el vehículo para actualizar la UI
+            await loadVehicle();
+          } catch (error) {
+            console.error("Error actualizando fecha de mantenimiento del vehículo:", error);
+          }
+        }
+        
         // Recargar recordatorios
         await loadVehicleReminders();
+        
+        // Emitir evento de creación
+        emitReminderCreated(createdReminder);
         
         // Limpiar formulario
         setReminderTitle("");
@@ -1609,6 +1698,15 @@ export default function FleetDetailsPage() {
   const handleDeleteReminder = async (reminderId: number | string) => {
     try {
       const reminderIdStr = String(reminderId);
+      
+      // Buscar el recordatorio antes de eliminarlo para verificar si es de mantenimiento
+      const reminderToDelete = vehicleReminders.find(
+        (r) => String(r.id) === reminderIdStr || r.documentId === reminderIdStr
+      );
+      
+      const isMaintenanceReminder = reminderToDelete?.title.toLowerCase().includes("mantenimiento") || 
+                                    reminderToDelete?.title === "Mantenimiento completo del vehículo";
+      
       const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
         method: "DELETE",
       });
@@ -1619,9 +1717,45 @@ export default function FleetDetailsPage() {
       }
 
       setVehicleReminders((prev) => prev.filter((r) => r.id !== reminderId && r.documentId !== reminderId));
-      toast.success("Recordatorio eliminado", {
-        description: "El recordatorio ha sido eliminado",
-      });
+      
+      // Emitir evento de eliminación
+      emitReminderDeleted(reminderId);
+      
+      // Si es un recordatorio de mantenimiento, eliminar también el nextMaintenanceDate del vehículo
+      if (isMaintenanceReminder && vehicleId) {
+        try {
+          const updateResponse = await fetch(`/api/fleet/${vehicleId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              data: {
+                nextMaintenanceDate: null,
+              },
+            }),
+          });
+
+          if (updateResponse.ok) {
+            // Recargar el vehículo para actualizar la UI
+            await loadVehicle();
+            toast.success("Recordatorio eliminado", {
+              description: "El recordatorio de mantenimiento y la fecha han sido eliminados",
+            });
+          } else {
+            toast.success("Recordatorio eliminado", {
+              description: "El recordatorio ha sido eliminado",
+            });
+          }
+        } catch (updateError) {
+          console.error("Error actualizando vehículo:", updateError);
+          toast.success("Recordatorio eliminado", {
+            description: "El recordatorio ha sido eliminado",
+          });
+        }
+      } else {
+        toast.success("Recordatorio eliminado", {
+          description: "El recordatorio ha sido eliminado",
+        });
+      }
     } catch (error) {
       console.error("Error eliminando recordatorio:", error);
       const errorMessage = error instanceof Error ? error.message : "Error desconocido";
@@ -1690,11 +1824,88 @@ export default function FleetDetailsPage() {
         return updated;
       });
       
+      // Emitir evento de cambio de estado activo
+      emitReminderToggleActive(reminderId, newActiveState);
+      
       toast.success(newActiveState ? "Recordatorio activado" : "Recordatorio desactivado", {
         description: `El recordatorio ha sido ${newActiveState ? "activado" : "desactivado"} correctamente`,
       });
     } catch (error) {
       console.error("❌ Error cambiando estado del recordatorio:", error);
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      toast.error("Error al cambiar estado", {
+        description: errorMessage,
+      });
+      throw error;
+    }
+  };
+
+  const handleToggleReminderCompleted = async (reminderId: number | string, isCompleted: boolean) => {
+    const reminderIdStr = String(reminderId);
+    const newCompletedState = !isCompleted;
+    
+    console.log("🔄 Cambiando estado de completado del recordatorio:", {
+      reminderId: reminderIdStr,
+      currentState: isCompleted,
+      newState: newCompletedState,
+    });
+    
+    try {
+      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            isCompleted: newCompletedState,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          const errorText = await response.text();
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: `Error ${response.status}: ${response.statusText}` };
+        }
+        throw new Error(errorData.error || `Error ${response.status}`);
+      }
+
+      const { data } = (await response.json()) as { data: FleetReminder };
+      
+      console.log("✅ Recordatorio actualizado:", data);
+      
+      // Actualizar el estado local con el recordatorio actualizado
+      setVehicleReminders((prev) => {
+        const updated = prev.map((r) => {
+          // Comparar por id numérico o documentId
+          const matchesById = r.id && data.id && r.id === data.id;
+          const matchesByDocumentId = r.documentId && data.documentId && r.documentId === data.documentId;
+          const matchesByReminderId = String(r.id) === reminderIdStr || r.documentId === reminderIdStr;
+          
+          if (matchesById || matchesByDocumentId || matchesByReminderId) {
+            console.log("🔄 Actualizando recordatorio en estado local:", {
+              old: { id: r.id, documentId: r.documentId, isCompleted: r.isCompleted },
+              new: { id: data.id, documentId: data.documentId, isCompleted: data.isCompleted },
+            });
+            return { ...data };
+          }
+          return r;
+        });
+        
+        console.log("📊 Estado actualizado. Total recordatorios:", updated.length);
+        return updated;
+      });
+      
+      // Emitir evento de cambio de estado completado
+      emitReminderToggleCompleted(reminderId, newCompletedState);
+      
+      toast.success(newCompletedState ? "Recordatorio marcado como completado" : "Recordatorio marcado como pendiente", {
+        description: `El recordatorio ha sido ${newCompletedState ? "marcado como completado" : "marcado como pendiente"} correctamente`,
+      });
+    } catch (error) {
+      console.error("❌ Error cambiando estado de completado del recordatorio:", error);
       const errorMessage = error instanceof Error ? error.message : "Error desconocido";
       toast.error("Error al cambiar estado", {
         description: errorMessage,
@@ -2064,7 +2275,7 @@ export default function FleetDetailsPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       variant="destructive"
-                      className="cursor-pointer text-destructive focus:text-destructive hover:text-destructive"
+                      className="cursor-pointer text-primary focus:text-primary hover:text-primary"
                       onClick={() => setIsDeleteDialogOpen(true)}
                       disabled={isDeleting}
                     >
@@ -2311,17 +2522,6 @@ export default function FleetDetailsPage() {
                 </div>
                 <div className={`grid gap-4 md:grid-cols-2`}>
                   <div className={`flex flex-col ${spacing.gap.small}`}>
-                    <Label htmlFor="stockQuantity">Cantidad en stock</Label>
-                    <Input
-                      id="stockQuantity"
-                      type="number"
-                      min="0"
-                      value={formData.stockQuantity}
-                      onChange={(e) => setFormData({ ...formData, stockQuantity: e.target.value })}
-                      placeholder="0"
-                    />
-                  </div>
-                  <div className={`flex flex-col ${spacing.gap.small}`}>
                     <Label htmlFor="placa">Placa</Label>
                     <Input
                       id="placa"
@@ -2555,7 +2755,7 @@ export default function FleetDetailsPage() {
                   </div>
                 </div>
                 {/* Mostrar responsables y conductores actuales */}
-                {(vehicleData.responsables && vehicleData.responsables.length > 0) || (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) ? (
+                {(vehicleData.responsables && vehicleData.responsables.length > 0) || (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) || (vehicleData.interestedDrivers && vehicleData.interestedDrivers.length > 0) ? (
                   <div className={`flex flex-col ${spacing.gap.small} p-4 bg-muted/50 rounded-lg border`}>
                     <p className={`${typography.body.small} font-semibold text-muted-foreground mb-2`}>
                       Asignaciones actuales:
@@ -2565,7 +2765,14 @@ export default function FleetDetailsPage() {
                         <p className={`${typography.body.small} text-muted-foreground`}>Responsables actuales:</p>
                         <div className="flex flex-wrap gap-2">
                           {vehicleData.responsables.map((resp) => (
-                            <div key={resp.id} className="flex items-center gap-2">
+                            <div 
+                              key={resp.id} 
+                              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/users/details/${resp.documentId || resp.id}`);
+                              }}
+                            >
                               {resp.avatar?.url ? (
                                 <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
                                   <Image
@@ -2577,7 +2784,7 @@ export default function FleetDetailsPage() {
                                   />
                                 </div>
                               ) : (
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
                                   <span className="text-xs font-medium text-muted-foreground">
                                     {(resp.displayName || resp.email || `U${resp.id}`).charAt(0).toUpperCase()}
                                   </span>
@@ -2596,7 +2803,14 @@ export default function FleetDetailsPage() {
                         <p className={`${typography.body.small} text-muted-foreground`}>Conductores asignados actualmente:</p>
                         <div className="flex flex-wrap gap-2">
                           {vehicleData.assignedDrivers.map((driver) => (
-                            <div key={driver.id} className="flex items-center gap-2">
+                            <div 
+                              key={driver.id} 
+                              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/users/details/${driver.documentId || driver.id}`);
+                              }}
+                            >
                               {driver.avatar?.url ? (
                                 <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
                                   <Image
@@ -2608,7 +2822,45 @@ export default function FleetDetailsPage() {
                                   />
                                 </div>
                               ) : (
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                              <span className="text-sm">
+                                {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {vehicleData.interestedDrivers && vehicleData.interestedDrivers.length > 0 && (
+                      <div className={`flex flex-col ${spacing.gap.small}`}>
+                        <p className={`${typography.body.small} text-muted-foreground`}>Conductores interesados actualmente:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {vehicleData.interestedDrivers.map((driver) => (
+                            <div 
+                              key={driver.id} 
+                              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/users/details/${driver.documentId || driver.id}`);
+                              }}
+                            >
+                              {driver.avatar?.url ? (
+                                <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                  <Image
+                                    src={strapiImages.getURL(driver.avatar.url)}
+                                    alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                                    fill
+                                    className="object-cover"
+                                    sizes="24px"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
                                   <span className="text-xs font-medium text-muted-foreground">
                                     {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
                                   </span>
@@ -2678,18 +2930,30 @@ export default function FleetDetailsPage() {
                     />
                   </div>
                   <div className={`flex flex-col ${spacing.gap.small}`}>
-                    <Label>Vehículos disponibles</Label>
-                    <div className="flex h-10 w-full items-center rounded-md border border-input bg-muted px-3 py-2 text-sm font-medium text-foreground">
-                      {(() => {
-                        const stock = Number(formData.stockQuantity) || 0;
-                        const assigned = selectedAssignedDrivers.length;
-                        const available = Math.max(0, stock - assigned);
-                        return `${available} vehículo${available !== 1 ? 's' : ''} disponible${available !== 1 ? 's' : ''}`;
-                      })()}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Cálculo: {formData.stockQuantity || 0} (stock) - {selectedAssignedDrivers.length} (asignados) = {Math.max(0, (Number(formData.stockQuantity) || 0) - selectedAssignedDrivers.length)} (disponibles)
-                    </p>
+                    <Label>Conductores interesados</Label>
+                    <MultiSelectCombobox
+                      options={availableUsers.map((user) => ({
+                        value: user.id,
+                        label: user.displayName || user.email || "Usuario",
+                        email: user.email,
+                        avatar: user.avatar,
+                      }))}
+                      selectedValues={selectedInterestedDrivers}
+                      onSelectionChange={(values) => {
+                        const numericValues = values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id));
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log("🔄 Conductores interesados seleccionados cambiados:", {
+                            values,
+                            numericValues,
+                            selectedInterestedDrivers,
+                          });
+                        }
+                        setSelectedInterestedDrivers(numericValues);
+                      }}
+                      placeholder="Selecciona conductores interesados..."
+                      emptyMessage="No hay usuarios disponibles"
+                      disabled={isLoadingUsers}
+                    />
                   </div>
                 </div>
                 <div className={`flex flex-col md:flex-row ${spacing.gap.small} mt-4`}>
@@ -2787,15 +3051,6 @@ export default function FleetDetailsPage() {
                     </div>
                   </div>
                 )}
-                {vehicleData.stockQuantity !== undefined && (
-                  <div className={`flex items-center ${spacing.gap.medium}`}>
-                    <Car className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="flex-1">
-                      <p className={`${typography.body.small} text-muted-foreground`}>Cantidad en stock</p>
-                      <p className={typography.body.base}>{vehicleData.stockQuantity}</p>
-                    </div>
-                  </div>
-                )}
                 {(vehicleData as any).placa && (
                   <div className={`flex items-center ${spacing.gap.medium}`}>
                     <Car className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -2823,7 +3078,11 @@ export default function FleetDetailsPage() {
                     {vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0 ? (
                       <div className="flex flex-wrap gap-3">
                         {vehicleData.assignedDrivers.map((driver) => (
-                          <div key={driver.id} className="flex items-center gap-2">
+                          <div 
+                            key={driver.id} 
+                            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => router.push(`/users/details/${driver.documentId || driver.id}`)}
+                          >
                             {driver.avatar?.url ? (
                               <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
                                 <Image
@@ -2835,7 +3094,7 @@ export default function FleetDetailsPage() {
                                 />
                               </div>
                             ) : (
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
                                 <span className="text-xs font-medium text-muted-foreground">
                                   {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
                                 </span>
@@ -2859,7 +3118,11 @@ export default function FleetDetailsPage() {
                     {vehicleData.responsables && vehicleData.responsables.length > 0 ? (
                       <div className="flex flex-wrap gap-3">
                         {vehicleData.responsables.map((resp) => (
-                          <div key={resp.id} className="flex items-center gap-2">
+                          <div 
+                            key={resp.id} 
+                            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => router.push(`/users/details/${resp.documentId || resp.id}`)}
+                          >
                             {resp.avatar?.url ? (
                               <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
                                 <Image
@@ -2871,7 +3134,7 @@ export default function FleetDetailsPage() {
                                 />
                               </div>
                             ) : (
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
                                 <span className="text-xs font-medium text-muted-foreground">
                                   {(resp.displayName || resp.email || `U${resp.id}`).charAt(0).toUpperCase()}
                                 </span>
@@ -2888,20 +3151,46 @@ export default function FleetDetailsPage() {
                     )}
                   </div>
                 </div>
-                {vehicleData.stockQuantity !== undefined && (
-                  <div className={`flex items-center ${spacing.gap.medium}`}>
-                    <Car className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="flex-1">
-                      <p className={`${typography.body.small} text-muted-foreground`}>Vehículos disponibles</p>
-                      <p className={`${typography.body.large} font-semibold`}>
-                        {Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0))} disponible{Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0)) !== 1 ? 's' : ''}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {vehicleData.stockQuantity} (stock) - {vehicleData.assignedDrivers?.length || 0} (asignados) = {Math.max(0, vehicleData.stockQuantity - (vehicleData.assignedDrivers?.length || 0))} (disponibles)
-                      </p>
-                    </div>
+                <div className={`flex items-start ${spacing.gap.medium}`}>
+                  <Car className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+                  <div className="flex-1">
+                    <p className={`${typography.body.small} text-muted-foreground mb-2`}>Conductores interesados</p>
+                    {vehicleData.interestedDrivers && vehicleData.interestedDrivers.length > 0 ? (
+                      <div className="flex flex-wrap gap-3">
+                        {vehicleData.interestedDrivers.map((driver) => (
+                          <div 
+                            key={driver.id} 
+                            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => router.push(`/users/details/${driver.documentId || driver.id}`)}
+                          >
+                            {driver.avatar?.url ? (
+                              <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                                <Image
+                                  src={strapiImages.getURL(driver.avatar.url)}
+                                  alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                                  fill
+                                  className="object-cover"
+                                  sizes="32px"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
+                                <span className="text-xs font-medium text-muted-foreground">
+                                  {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
+                            <span className="text-sm font-medium">
+                              {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">No hay conductores interesados</p>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             )}
           </CardContent>
@@ -3220,7 +3509,7 @@ export default function FleetDetailsPage() {
                   <SelectTrigger id="document-type">
                     <SelectValue placeholder="Selecciona el tipo de documento" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="end">
                     <SelectItem value="poliza_seguro">Póliza de Seguro del Vehículo</SelectItem>
                     <SelectItem value="ficha_tecnica">Ficha Técnica del Vehículo</SelectItem>
                     <SelectItem value="tarjeta_propiedad">Tarjeta de Propiedad Vehicular</SelectItem>
@@ -3399,6 +3688,7 @@ export default function FleetDetailsPage() {
                     onEdit={handleEditReminder}
                     onDelete={handleDeleteReminder}
                     onToggleActive={handleToggleReminderActive}
+                    onToggleCompleted={handleToggleReminderCompleted}
                     vehicleId={vehicleId}
                   />
                 </ScrollAreaPrimitive.Viewport>

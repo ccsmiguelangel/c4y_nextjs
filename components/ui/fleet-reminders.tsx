@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Bell, Trash2, Edit2, Calendar, Repeat, CalendarCheck, X, Check, Users, Pause } from "lucide-react";
+import { Bell, Trash2, Edit2, Calendar, Repeat, CalendarCheck, X, Check, Users, Pause, CheckCircle2, Circle, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { Card } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -19,7 +19,10 @@ export interface FleetRemindersProps {
   onEdit?: (reminder: FleetReminder) => void;
   onDelete?: (reminderId: number | string) => Promise<void>;
   onToggleActive?: (reminderId: number | string, isActive: boolean) => Promise<void>;
+  onToggleCompleted?: (reminderId: number | string, isCompleted: boolean) => Promise<void>;
   vehicleId: string;
+  showCompletedButton?: boolean;
+  forceShowCompleted?: boolean;
 }
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -35,11 +38,13 @@ function ReminderItem({
   onEdit,
   onDelete,
   onToggleActive,
+  onToggleCompleted,
 }: {
   reminder: FleetReminder;
   onEdit?: (reminder: FleetReminder) => void;
   onDelete?: (reminderId: number | string) => Promise<void>;
   onToggleActive?: (reminderId: number | string, isActive: boolean) => Promise<void>;
+  onToggleCompleted?: (reminderId: number | string, isCompleted: boolean) => Promise<void>;
 }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
@@ -71,6 +76,9 @@ function ReminderItem({
     : `${format(nextTriggerDate, "d 'de' MMMM, yyyy 'a las'", { locale: es })} ${formatTime12Hour(nextTriggerDate)}`;
   
   const authorName = reminder.author?.displayName || reminder.author?.email || "Usuario";
+
+  // Usar el campo isCompleted del recordatorio
+  const isCompleted = reminder.isCompleted || false;
 
   const handleDelete = async () => {
     if (!onDelete) return;
@@ -118,10 +126,52 @@ function ReminderItem({
     }
   };
 
+  const handleToggleCompleted = async () => {
+    if (!onToggleCompleted) {
+      console.warn("⚠️ onToggleCompleted no está definido");
+      return;
+    }
+    
+    console.log("🔄 Toggle completado clickeado:", {
+      reminderId,
+      currentState: isCompleted,
+      newState: !isCompleted,
+    });
+    
+    try {
+      await onToggleCompleted(reminderId, isCompleted);
+      console.log("✅ Estado de completado cambiado exitosamente");
+    } catch (error) {
+      console.error("❌ Error cambiando estado de completado del recordatorio:", error);
+    }
+  };
+
   return (
     <Card className="shadow-sm ring-1 ring-inset ring-border/50 relative">
       {/* Iconos de acciones */}
       <div className="absolute top-2 right-2 flex gap-1 z-10">
+        {/* Icono de completado - clickeable para toggle */}
+        {onToggleCompleted && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={handleToggleCompleted}
+            disabled={isDeleting || isToggling}
+            title={isCompleted ? "Marcar como pendiente" : "Marcar como completado"}
+          >
+            {isCompleted ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : (
+              <Circle className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+        )}
+        {!onToggleCompleted && isCompleted && (
+          <div className="flex items-center justify-center h-7 w-7 rounded-full bg-green-500/10" title="Completado">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+          </div>
+        )}
         {onEdit && (
           <Button
             variant="ghost"
@@ -289,7 +339,12 @@ function ReminderItem({
   );
 }
 
-export function FleetReminders({ reminders, isLoading, onEdit, onDelete, onToggleActive, vehicleId }: FleetRemindersProps) {
+export function FleetReminders({ reminders, isLoading, onEdit, onDelete, onToggleActive, onToggleCompleted, vehicleId, showCompletedButton = true, forceShowCompleted = false }: FleetRemindersProps) {
+  const [showCompleted, setShowCompleted] = useState(false);
+  
+  // Si forceShowCompleted es true, usar ese valor, sino usar el estado interno
+  const shouldShowCompleted = forceShowCompleted || showCompleted;
+
   if (isLoading) {
     return (
       <div className={`flex flex-col ${spacing.gap.small} py-4`}>
@@ -297,6 +352,10 @@ export function FleetReminders({ reminders, isLoading, onEdit, onDelete, onToggl
       </div>
     );
   }
+
+  // Separar recordatorios activos y completados
+  const activeReminders = reminders.filter((r) => !r.isCompleted);
+  const completedReminders = reminders.filter((r) => r.isCompleted);
 
   if (reminders.length === 0) {
     return (
@@ -312,15 +371,78 @@ export function FleetReminders({ reminders, isLoading, onEdit, onDelete, onToggl
 
   return (
     <div className={`flex flex-col ${spacing.gap.base} py-2`}>
-      {reminders.map((reminder) => (
-        <ReminderItem
-          key={reminder.id || reminder.documentId}
-          reminder={reminder}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onToggleActive={onToggleActive}
-        />
-      ))}
+      {/* Recordatorios activos/pendientes */}
+      {activeReminders.length > 0 && (
+        <div className={`flex flex-col ${spacing.gap.base}`}>
+          {activeReminders.map((reminder) => (
+            <ReminderItem
+              key={reminder.id || reminder.documentId}
+              reminder={reminder}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onToggleActive={onToggleActive}
+              onToggleCompleted={onToggleCompleted}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Recordatorios completados - solo mostrar si hay completados */}
+      {completedReminders.length > 0 && (
+        <div className={`flex flex-col ${spacing.gap.base} mt-4`}>
+          {shouldShowCompleted && (
+            <div className={`flex flex-col ${spacing.gap.base}`}>
+              {completedReminders.map((reminder) => (
+                <ReminderItem
+                  key={reminder.id || reminder.documentId}
+                  reminder={reminder}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onToggleActive={onToggleActive}
+                  onToggleCompleted={onToggleCompleted}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Botón para mostrar/ocultar completados - solo si showCompletedButton es true */}
+          {showCompletedButton && (
+            <div className="flex justify-center pt-2 border-t border-border">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowCompleted(!showCompleted)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {showCompleted ? (
+                  <>
+                    <EyeOff className="h-4 w-4 mr-2" />
+                    Ocultar completados ({completedReminders.length})
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4 mr-2" />
+                    Ver completados ({completedReminders.length})
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Mensaje si no hay recordatorios activos pero sí completados - solo si no se están mostrando los completados */}
+      {activeReminders.length === 0 && completedReminders.length > 0 && !shouldShowCompleted && (
+        <div className={`flex flex-col items-center justify-center ${spacing.gap.small} py-8 text-center`}>
+          <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
+          <p className={typography.body.small}>Todos los recordatorios están completados</p>
+          {showCompletedButton && (
+            <p className={`${typography.body.small} text-muted-foreground`}>
+              Usa el botón de abajo para ver los recordatorios completados
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

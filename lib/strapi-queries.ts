@@ -32,14 +32,7 @@ export const QUERY_SINGIN = {
     sections: {
       on: {
         "layout.singin-form": {
-          populate: {
-            header: {
-              populate: true,
-            },
-            singup_link: {
-              populate: true,
-            },
-          },
+          populate: "*",
         },
       },
     },
@@ -58,14 +51,7 @@ export const QUERY_SINGUP = {
     sections: {
       on: {
         "layout.singup-form": {
-          populate: {
-            header: {
-              populate: true,
-            },
-            singin_link: {
-              populate: true,
-            },
-          },
+          populate: "*",
         },
       },
     },

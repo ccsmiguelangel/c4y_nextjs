@@ -135,7 +135,7 @@ export async function GET(_: Request, context: RouteContext) {
       filters: {
         vehicle: { id: { $eq: vehicleId } },
       },
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],
@@ -431,7 +431,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     // Obtener el recordatorio completo con autor y usuarios asignados
     const getReminderQuery = qs.stringify({
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],

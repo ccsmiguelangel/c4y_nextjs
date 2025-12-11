@@ -7,7 +7,7 @@ import { STRAPI_BASE_URL_HOSTNAME } from "@/lib/config"
 import { STRAPI_BASE_URL_PORT, STRAPI_BASE_URL_PROTOCOL } from "@/lib/config"
 
 import { SignUpFormSchema, SignInFormSchema, type FormState } from "@/validations/auth"
-import { registerUserService, loginUserService } from "@/lib/strapi"
+import { registerUserService, loginUserService, createUserProfile } from "@/lib/strapi"
 
 const cookieConfig = {
   maxAge: 60 * 60 * 24 * 7, // 1 week,
@@ -20,6 +20,7 @@ const cookieConfig = {
 export async function registerUserAction(prevState: FormState, formData: FormData): Promise<FormState> {
 
   const fields = {
+    fullName: formData.get('fullName') as string,
     username: formData.get('username') as string,
     password: formData.get('password') as string,
     email: formData.get('email') as string,
@@ -41,7 +42,11 @@ export async function registerUserAction(prevState: FormState, formData: FormDat
     }
   }
 
-  const response = await registerUserService(validatedFields.data)
+  const response = await registerUserService({
+    username: validatedFields.data.username,
+    email: validatedFields.data.email,
+    password: validatedFields.data.password,
+  })
 
   if (!response || response.error) {
     return {
@@ -51,6 +56,15 @@ export async function registerUserAction(prevState: FormState, formData: FormDat
       zodErrors: null,
       data: fields
     }
+  }
+
+  // Crear el user-profile con rol "driver" automáticamente
+  if (response.user && response.user.id) {
+    await createUserProfile(
+      response.user.id,
+      validatedFields.data.fullName,
+      validatedFields.data.email
+    )
   }
 
   const cookieStore = await cookies()
@@ -101,5 +115,7 @@ export async function loginUserAction(prevState: FormState, formData: FormData):
 export async function logoutAction() {
   const cookieStore = await cookies()
   cookieStore.delete('jwt')
+  // Limpiar la cookie del tema para que no persista después del logout
+  cookieStore.delete('admin-theme')
   redirect('/signin')
 }

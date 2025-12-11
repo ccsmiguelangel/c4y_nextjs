@@ -221,14 +221,14 @@ function StatusItem({
   };
 
   return (
-    <div className="relative flex gap-4">
+    <div className="relative flex gap-4 items-start">
       {/* Línea vertical del timeline */}
       {!isLast && (
         <div className="absolute left-[11px] top-8 bottom-0 w-0.5 bg-border" />
       )}
       
       {/* Punto del timeline */}
-      <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-2 ring-background">
+      <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-2 ring-background mt-3">
         <div className="h-2 w-2 rounded-full bg-primary" />
       </div>
 

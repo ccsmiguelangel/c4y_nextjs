@@ -393,4 +393,68 @@
     background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.4) 0%, transparent 70%);
     filter: blur(30px);
   }
+
+  /* ========================================================================
+     SONNER TOAST - Personalización con fondo sólido
+     ======================================================================== */
+
+  /* Toast de éxito - fondo sólido */
+  [data-sonner-toast][data-type="success"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--card-foreground) !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  [data-sonner-toast][data-type="success"] [data-icon] {
+    color: var(--primary) !important;
+  }
+
+  /* Toast de error - fondo sólido */
+  [data-sonner-toast][data-type="error"] {
+    background: var(--card) !important;
+    border: 1px solid var(--destructive) !important;
+    color: var(--card-foreground) !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  [data-sonner-toast][data-type="error"] [data-icon] {
+    color: var(--destructive) !important;
+  }
+
+  /* Toast de información - fondo sólido */
+  [data-sonner-toast][data-type="info"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--card-foreground) !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  [data-sonner-toast][data-type="info"] [data-icon] {
+    color: var(--primary) !important;
+  }
+
+  /* Toast de advertencia - fondo sólido */
+  [data-sonner-toast][data-type="warning"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--card-foreground) !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  [data-sonner-toast][data-type="warning"] [data-icon] {
+    color: var(--primary) !important;
+  }
+
+  /* Asegurar que todos los toasts tengan fondo sólido */
+  [data-sonner-toast] {
+    background: var(--card) !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  }
 }

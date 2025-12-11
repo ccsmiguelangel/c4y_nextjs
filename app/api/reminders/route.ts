@@ -1,13 +1,99 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 import qs from "qs";
 
-// GET - Obtener todos los recordatorios de todos los vehículos
+// Función helper para obtener el user-profile del usuario actual
+async function getCurrentUserProfile() {
+  try {
+    const cookieStore = await cookies();
+    const jwt = cookieStore.get("jwt")?.value;
+    
+    if (!jwt) {
+      return null;
+    }
+
+    const userResponse = await fetch(`${STRAPI_BASE_URL}/api/users/me`, {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!userResponse.ok) {
+      return null;
+    }
+
+    const userData = await userResponse.json();
+    const userId = userData?.id;
+    
+    if (!userId) {
+      return null;
+    }
+
+    const profileQuery = qs.stringify({
+      filters: {
+        email: { $eq: userData.email },
+      },
+      fields: ["documentId", "displayName", "email"],
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    });
+
+    const profileResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/user-profiles?${profileQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!profileResponse.ok) {
+      return null;
+    }
+
+    const profileData = await profileResponse.json();
+    const profile = profileData.data?.[0];
+    
+    if (!profile || !profile.documentId) {
+      return null;
+    }
+
+    return { 
+      documentId: profile.documentId,
+      displayName: profile.displayName || profile.email || "Usuario",
+      email: profile.email,
+      avatar: profile.avatar,
+    };
+  } catch (error) {
+    console.error("Error obteniendo user-profile actual:", error);
+    return null;
+  }
+}
+
+// GET - Obtener los recordatorios del usuario logueado
 export async function GET() {
   try {
-    // Obtener todos los recordatorios
+    // Obtener el usuario actual
+    const currentUser = await getCurrentUserProfile();
+    
+    if (!currentUser) {
+      return NextResponse.json(
+        { error: "No autenticado" },
+        { status: 401 }
+      );
+    }
+
+    // Obtener todos los recordatorios y filtrar por el usuario actual
     const reminderQuery = qs.stringify({
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
       populate: {
         vehicle: {
           fields: ["id", "documentId", "name"],
@@ -49,9 +135,20 @@ export async function GET() {
 
     const reminderData = await reminderResponse.json();
 
+    // Filtrar recordatorios que tengan al usuario actual en assignedUsers
+    const userReminders = (reminderData.data || []).filter((reminder: any) => {
+      if (!reminder.assignedUsers || reminder.assignedUsers.length === 0) {
+        return false;
+      }
+      // Verificar si el usuario actual está en la lista de usuarios asignados
+      return reminder.assignedUsers.some(
+        (user: any) => user.documentId === currentUser.documentId
+      );
+    });
+
     // Buscar el usuario para cada recordatorio usando authorDocumentId
     const remindersWithAuthor = await Promise.all(
-      (reminderData.data || []).map(async (reminder: any) => {
+      userReminders.map(async (reminder: any) => {
         if (reminder.authorDocumentId) {
           try {
             const authorQuery = qs.stringify({

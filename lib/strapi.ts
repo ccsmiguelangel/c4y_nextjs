@@ -8,7 +8,7 @@ export async function getStrapiData(path: string): Promise<StrapiResponse | null
   // "use cache";
   try {
     const response = await fetch(`${STRAPI_BASE_URL}/api/${path}`, {
-      next: { revalidate: 3600 }, // Cache por 1 hora
+      next: { revalidate: 0 }, // Sin cache para desarrollo (cambiar a 3600 en producción)
     });
     if (!response.ok) {
       // No lanzar error, solo loguear y retornar null
@@ -173,6 +173,50 @@ async function updateUserConfirmedStatus(userId: number, confirmed: boolean) {
   }
 }
 
+/**
+ * Crea un user-profile para un usuario recién registrado con rol "driver"
+ * Esta función solo se ejecuta en el servidor y nunca expone el token al cliente
+ */
+export async function createUserProfile(userId: number, displayName: string, email: string) {
+  if (!STRAPI_API_TOKEN) {
+    console.error('STRAPI_API_TOKEN is not set, cannot create user profile')
+    return null
+  }
+
+  try {
+    const url = `${STRAPI_BASE_URL}/api/user-profiles`
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${STRAPI_API_TOKEN}`
+      },
+      body: JSON.stringify({
+        data: {
+          displayName,
+          role: 'driver',
+          email
+        }
+      }),
+      cache: 'no-store'
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Error desconocido' }))
+      console.error('Error creating user profile:', errorData)
+      return null
+    }
+
+    const userProfile = await response.json()
+    console.log('User profile created successfully with role "driver":', userProfile)
+    return userProfile
+  } catch (error) {
+    console.error('Error creating user profile:', error)
+    return null
+  }
+}
+
 export async function getDashboard(): Promise<DashboardDataProcessed | null> {
   const data = await getStrapiPage<DashboardData>("dashboard", QUERY_DASHBOARD.populate);
   if (!data) return null;
@@ -195,14 +239,24 @@ export async function getDashboard(): Promise<DashboardDataProcessed | null> {
 
 export async function getSingin(): Promise<SinginDataProcessed | null> {
   const data = await getStrapiPage<SinginData>("singin", QUERY_SINGIN.populate);
-  if (!data) return null;
+  if (!data) {
+    console.warn("⚠️ No se encontraron datos de singin desde Strapi");
+    return null;
+  }
   
   // Encontrar el componente singin-form en la dynamic zone
   const singinForm = data.sections?.find(
     (section) => section.__component === "layout.singin-form"
   ) as SinginFormData | undefined;
   
-  if (!singinForm) return null;
+  if (!singinForm) {
+    console.warn("⚠️ No se encontró el componente singin-form en las secciones");
+    console.log("Secciones disponibles:", data.sections?.map(s => s.__component));
+    return null;
+  }
+  
+  // Debug: ver qué datos están llegando
+  console.log("SinginForm data:", JSON.stringify(singinForm, null, 2));
   
   return {
     title: data.title,
@@ -222,6 +276,9 @@ export async function getSingup(): Promise<SingupDataProcessed | null> {
   ) as SingupFormData | undefined;
   
   if (!singupForm) return null;
+  
+  // Debug: ver qué datos están llegando
+  console.log("SingupForm data:", JSON.stringify(singupForm, null, 2));
   
   // header es repeatable, tomar el primer elemento
   const header = Array.isArray(data.header) ? data.header[0] : data.header;

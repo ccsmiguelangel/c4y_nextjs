@@ -10,6 +10,9 @@ export async function GET() {
     const jwt = cookieStore.get("jwt")?.value;
     
     if (!jwt) {
+      // Limpiar cookies si no hay JWT
+      cookieStore.delete('jwt');
+      cookieStore.delete('admin-theme');
       return NextResponse.json(
         { error: "No autenticado" },
         { status: 401 }
@@ -32,6 +35,13 @@ export async function GET() {
         statusText: userResponse.statusText,
         errorText,
       });
+      
+      // Si es un error 401 (no autorizado), limpiar cookies
+      if (userResponse.status === 401) {
+        cookieStore.delete('jwt');
+        cookieStore.delete('admin-theme');
+      }
+      
       return NextResponse.json(
         { 
           error: "No se pudo obtener el usuario",
@@ -72,7 +82,7 @@ export async function GET() {
       filters: {
         email: { $eq: userData.email },
       },
-      fields: ["documentId"], // Solo necesitamos el documentId
+      fields: ["documentId", "role", "displayName", "email"], // Incluimos el rol
     });
 
     const profileUrl = `${STRAPI_BASE_URL}/api/user-profiles?${profileQuery}`;
@@ -202,7 +212,7 @@ export async function GET() {
         filters: {
           documentId: { $eq: profile.documentId },
         },
-        fields: ["documentId", "displayName", "email"],
+        fields: ["documentId", "displayName", "email", "role"],
       });
       
       const fullProfileResponse = await fetch(
@@ -226,10 +236,13 @@ export async function GET() {
 
     console.log("✅ User-profile documentId obtenido:", profile.documentId);
 
-    // Retornar solo el documentId
+    // Retornar el documentId y el rol
     return NextResponse.json({ 
       data: { 
-        documentId: profile.documentId 
+        documentId: profile.documentId,
+        role: profile.role,
+        displayName: profile.displayName,
+        email: profile.email,
       } 
     });
   } catch (error) {

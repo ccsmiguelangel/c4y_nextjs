@@ -42,6 +42,14 @@ const populateImageConfigForDetails = {
         },
       },
     },
+    interestedDrivers: {
+      fields: ["id", "documentId", "displayName", "email"],
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
   },
 };
 
@@ -193,6 +201,25 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     };
   });
 
+  // Normalizar interestedDrivers (conductores interesados)
+  const interestedDriversRaw = attributes.interestedDrivers as any;
+  const interestedDriversData = interestedDriversRaw?.data || (Array.isArray(interestedDriversRaw) ? interestedDriversRaw : []);
+  const interestedDrivers = interestedDriversData.map((driver: any) => {
+    // El driver puede venir con attributes o directamente con los campos
+    const driverAttrs = driver.attributes || driver;
+    const avatarData = getAvatarData(driverAttrs?.avatar);
+    return {
+      id: driver.id || driverAttrs?.id,
+      documentId: driver.documentId || driverAttrs?.documentId,
+      displayName: driverAttrs?.displayName,
+      email: driverAttrs?.email,
+      avatar: avatarData ? {
+        url: avatarData.url,
+        alternativeText: avatarData.alternativeText,
+      } : undefined,
+    };
+  });
+
   // Normalizar interestedPersons (personas interesadas)
   const interestedPersonsRaw = attributes.interestedPersons as any;
   const interestedPersonsData = interestedPersonsRaw?.data || (Array.isArray(interestedPersonsRaw) ? interestedPersonsRaw : []);
@@ -231,11 +258,11 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     mileage: attributes.mileage ?? undefined,
     fuelType: attributes.fuelType ?? undefined,
     transmission: attributes.transmission ?? undefined,
-    stockQuantity: attributes.stockQuantity,
     nextMaintenanceDate: attributes.nextMaintenanceDate,
     placa: attributes.placa ?? undefined,
     assignedDrivers: assignedDrivers,
     responsables: responsables,
+    interestedDrivers: interestedDrivers,
     interestedPersons: interestedPersons,
   };
 };
@@ -290,7 +317,7 @@ const buildFleetDetailQuery = (id: string | number) => {
   return qs.stringify(
     {
       filters,
-      fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "stockQuantity", "nextMaintenanceDate", "placa"],
+      fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "nextMaintenanceDate", "placa"],
       populate: {
         interestedPersons: {
           fields: ["id", "documentId", "fullName", "email", "phone", "status"],
@@ -374,6 +401,30 @@ export async function updateFleetVehicleInStrapi(
     throw new Error("No pudimos encontrar el vehículo para actualizarlo.");
   }
 
+  // Preparar el payload para Strapi
+  // Para relaciones manyToMany, Strapi espera arrays de IDs
+  const strapiData: any = { ...data };
+  
+  // Asegurar que responsables, assignedDrivers e interestedDrivers sean arrays
+  // Si están undefined, enviarlos como array vacío para limpiar las relaciones
+  if (strapiData.responsables === undefined) {
+    strapiData.responsables = [];
+  }
+  if (strapiData.assignedDrivers === undefined) {
+    strapiData.assignedDrivers = [];
+  }
+  if (strapiData.interestedDrivers === undefined) {
+    strapiData.interestedDrivers = [];
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log("📤 Enviando a Strapi:", {
+      responsables: strapiData.responsables,
+      assignedDrivers: strapiData.assignedDrivers,
+      interestedDrivers: strapiData.interestedDrivers,
+    });
+  }
+
   // Usar populateImageConfigForDetails para incluir todas las relaciones
   const populateQueryString = qs.stringify(populateImageConfigForDetails, { encodeValuesOnly: true });
   const url = `${STRAPI_BASE_URL}/api/fleets/${documentId}?${populateQueryString}`;
@@ -383,14 +434,28 @@ export async function updateFleetVehicleInStrapi(
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data: strapiData }),
     cache: "no-store",
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error("❌ Error en Strapi update:", response.status, errorText);
-    throw new Error(`Strapi Fleet update failed with status ${response.status}`);
+    let errorMessage = `Error al actualizar el vehículo (${response.status})`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData?.error?.message || errorData?.error || errorMessage;
+    } catch {
+      // Si no se puede parsear el JSON, intentar leer como texto
+      try {
+        const errorText = await response.text();
+        if (errorText) {
+          errorMessage = errorText;
+        }
+      } catch {
+        // Si falla todo, usar el mensaje por defecto
+      }
+    }
+    console.error("❌ Error en Strapi update:", response.status, errorMessage);
+    throw new Error(errorMessage);
   }
 
   const payload = (await response.json()) as StrapiResponse<FleetVehicleRaw>;
@@ -454,7 +519,6 @@ export interface FleetVehicleCreatePayload {
   transmission?: string | null;
   image?: number | null;
   imageAlt?: string | null;
-  stockQuantity?: number | null;
   responsables?: number[];
   assignedDrivers?: number[];
   nextMaintenanceDate?: string | null;
@@ -507,7 +571,6 @@ export async function createFleetVehicleInStrapi(
     console.log("✅ Vehículo normalizado:", {
       assignedDrivers: vehicle.assignedDrivers,
       responsables: vehicle.responsables,
-      stockQuantity: vehicle.stockQuantity,
     });
   }
 

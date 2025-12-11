@@ -90,8 +90,8 @@ export default function FleetPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedCondition, setSelectedCondition] = useState<FleetVehicleCondition | null>(null);
-  const [selectedResponsable, setSelectedResponsable] = useState<number | null>(null);
-  const [selectedDriver, setSelectedDriver] = useState<number | null>(null);
+  const [filterSelectedResponsables, setFilterSelectedResponsables] = useState<number[]>([]);
+  const [filterSelectedDrivers, setFilterSelectedDrivers] = useState<number[]>([]);
   
   // Estados para paginación
   const [itemsPerPage, setItemsPerPage] = useState(5);
@@ -127,7 +127,6 @@ export default function FleetPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   
   // Estados para los nuevos campos
-  const [stockQuantity, setStockQuantity] = useState("");
   const [maintenanceScheduledDate, setMaintenanceScheduledDate] = useState("");
   const [maintenanceScheduledTime, setMaintenanceScheduledTime] = useState("");
   const [maintenanceIsAllDay, setMaintenanceIsAllDay] = useState(false);
@@ -245,13 +244,13 @@ export default function FleetPage() {
       const matchesModel = !selectedModel || vehicle.model === selectedModel;
       const matchesYear = !selectedYear || vehicle.year === selectedYear;
       const matchesCondition = !selectedCondition || vehicle.condition === selectedCondition;
-      const matchesResponsable = !selectedResponsable || 
-        (vehicle.responsables && vehicle.responsables.some(r => r.id === selectedResponsable || Number(r.id) === Number(selectedResponsable)));
-      const matchesDriver = !selectedDriver || 
-        (vehicle.assignedDrivers && vehicle.assignedDrivers.some(d => d.id === selectedDriver || Number(d.id) === Number(selectedDriver)));
+      const matchesResponsable = filterSelectedResponsables.length === 0 || 
+        (vehicle.responsables && vehicle.responsables.some(r => filterSelectedResponsables.includes(r.id) || filterSelectedResponsables.includes(Number(r.id))));
+      const matchesDriver = filterSelectedDrivers.length === 0 || 
+        (vehicle.assignedDrivers && vehicle.assignedDrivers.some(d => filterSelectedDrivers.includes(d.id) || filterSelectedDrivers.includes(Number(d.id))));
       return matchesSearch && matchesBrand && matchesModel && matchesYear && matchesCondition && matchesResponsable && matchesDriver;
     });
-  }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition, selectedResponsable, selectedDriver]);
+  }, [vehicles, searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition, filterSelectedResponsables, filterSelectedDrivers]);
 
   // Calcular paginación
   const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage);
@@ -264,7 +263,7 @@ export default function FleetPage() {
   // Resetear a página 1 cuando cambian los filtros o itemsPerPage
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition, selectedResponsable, selectedDriver, itemsPerPage]);
+  }, [searchQuery, selectedBrand, selectedModel, selectedYear, selectedCondition, filterSelectedResponsables, filterSelectedDrivers, itemsPerPage]);
 
 
   const clearFilters = () => {
@@ -272,11 +271,11 @@ export default function FleetPage() {
     setSelectedModel(null);
     setSelectedYear(null);
     setSelectedCondition(null);
-    setSelectedResponsable(null);
-    setSelectedDriver(null);
+    setFilterSelectedResponsables([]);
+    setFilterSelectedDrivers([]);
   };
 
-  const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedCondition || selectedResponsable || selectedDriver;
+  const hasActiveFilters = selectedBrand || selectedModel || selectedYear || selectedCondition || filterSelectedResponsables.length > 0 || filterSelectedDrivers.length > 0;
 
   // Validar si todos los campos requeridos están llenos
   const isFormValid = useMemo(() => {
@@ -566,7 +565,6 @@ export default function FleetPage() {
         transmission: formData.transmission || null,
         image: uploadedImageId,
         imageAlt: formData.imageAlt || null,
-        stockQuantity: stockQuantity ? Number(stockQuantity) : null,
         placa: formData.placa || null,
         nextMaintenanceDate: maintenanceScheduledDate ? (() => {
           const timeToUse = maintenanceIsAllDay ? "00:00" : (maintenanceScheduledTime || "00:00");
@@ -661,14 +659,14 @@ export default function FleetPage() {
       {/* Search Bar */}
       <section className={`flex flex-col ${spacing.gap.base}`} suppressHydrationWarning>
         <label className="flex flex-col min-w-40 h-12 w-full" suppressHydrationWarning>
-          <div className="flex w-full flex-1 items-stretch rounded-lg h-full bg-muted">
-            <div className="text-muted-foreground flex items-center justify-center pl-4">
+          <div className="flex w-full flex-1 items-stretch rounded-lg h-full bg-muted dark:bg-muted">
+            <div className="text-muted-foreground flex items-center justify-center pl-4 bg-muted dark:bg-muted rounded-l-lg">
               <Search className="h-5 w-5" />
             </div>
             <Input
               type="text"
               suppressHydrationWarning
-              className="flex w-full min-w-0 flex-1 border-none bg-muted focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:ring-0 focus:outline-none h-full rounded-l-none border-l-0 pl-2 text-base placeholder:text-muted-foreground"
+              className="flex w-full min-w-0 flex-1 border-none bg-muted dark:bg-muted focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:ring-0 focus:outline-none h-full rounded-l-none border-l-0 pl-2 text-base placeholder:text-muted-foreground"
               placeholder="Buscar por nombre, VIN..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -752,7 +750,14 @@ export default function FleetPage() {
                 onClick={() => setIsFilterSheetOpen(true)}
               >
                 <span className={typography.body.base}>
-                  {[selectedBrand, selectedModel, selectedYear, selectedCondition, selectedResponsable, selectedDriver].filter(Boolean).length} filtro(s) activo(s)
+                  {[
+                    selectedBrand ? 1 : 0,
+                    selectedModel ? 1 : 0,
+                    selectedYear ? 1 : 0,
+                    selectedCondition ? 1 : 0,
+                    filterSelectedResponsables.length > 0 ? 1 : 0,
+                    filterSelectedDrivers.length > 0 ? 1 : 0
+                  ].reduce((a, b) => a + b, 0)} filtro(s) activo(s)
                 </span>
               </Button>
             )}
@@ -773,7 +778,7 @@ export default function FleetPage() {
             <SelectTrigger id="items-per-page" className="h-8 w-20 rounded-lg" suppressHydrationWarning>
               <SelectValue placeholder="5" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent align="end">
               <SelectItem value="5">5</SelectItem>
               <SelectItem value="10">10</SelectItem>
               <SelectItem value="20">20</SelectItem>
@@ -800,7 +805,7 @@ export default function FleetPage() {
                   <SelectTrigger className="text-right [&>*:first-child]:justify-end">
                     <SelectValue placeholder="Todas las marcas" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="end">
                     <SelectItem value="all" className="text-right">Todas las marcas</SelectItem>
                     {brands.map((brand) => (
                       <SelectItem key={brand} value={brand} className="text-right">
@@ -818,7 +823,7 @@ export default function FleetPage() {
                   <SelectTrigger className="text-right [&>*:first-child]:justify-end">
                     <SelectValue placeholder="Todos los modelos" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="end">
                     <SelectItem value="all" className="text-right">Todos los modelos</SelectItem>
                     {models.map((model) => (
                       <SelectItem key={model} value={model} className="text-right">
@@ -836,7 +841,7 @@ export default function FleetPage() {
                   <SelectTrigger className="text-right [&>*:first-child]:justify-end">
                     <SelectValue placeholder="Todos los años" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="end">
                     <SelectItem value="all" className="text-right">Todos los años</SelectItem>
                     {years.map((year) => (
                       <SelectItem key={year} value={year.toString()} className="text-right">
@@ -854,7 +859,7 @@ export default function FleetPage() {
                   <SelectTrigger className="text-right [&>*:first-child]:justify-end">
                     <SelectValue placeholder="Todos los estados" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent align="end">
                     <SelectItem value="all" className="text-right">Todos los estados</SelectItem>
                     {conditions.map((status) => (
                       <SelectItem key={status} value={status} className="text-right">
@@ -868,43 +873,41 @@ export default function FleetPage() {
               {/* Filtro de Responsable */}
               <div className={`flex flex-col ${spacing.gap.small}`}>
                 <Label className={typography.label}>Responsable</Label>
-                <Select 
-                  value={selectedResponsable?.toString() || "all"} 
-                  onValueChange={(value) => setSelectedResponsable(value === "all" ? null : Number(value))}
-                >
-                  <SelectTrigger className="text-right [&>*:first-child]:justify-end">
-                    <SelectValue placeholder="Todos los responsables" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-right">Todos los responsables</SelectItem>
-                    {availableUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id.toString()} className="text-right">
-                        {user.displayName || user.email || `Usuario ${user.id}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectCombobox
+                  options={availableUsers.map((user) => ({
+                    value: user.id,
+                    label: user.displayName || user.email || "Usuario",
+                    email: user.email,
+                    avatar: user.avatar,
+                  }))}
+                  selectedValues={filterSelectedResponsables}
+                  onSelectionChange={(values) => {
+                    setFilterSelectedResponsables(values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id)));
+                  }}
+                  placeholder="Selecciona responsables..."
+                  emptyMessage="No hay usuarios disponibles"
+                  disabled={isLoadingUsers}
+                />
               </div>
 
               {/* Filtro de Conductor Asignado */}
               <div className={`flex flex-col ${spacing.gap.small}`}>
                 <Label className={typography.label}>Conductor Asignado</Label>
-                <Select 
-                  value={selectedDriver?.toString() || "all"} 
-                  onValueChange={(value) => setSelectedDriver(value === "all" ? null : Number(value))}
-                >
-                  <SelectTrigger className="text-right [&>*:first-child]:justify-end">
-                    <SelectValue placeholder="Todos los conductores" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-right">Todos los conductores</SelectItem>
-                    {availableUsers.map((user) => (
-                      <SelectItem key={user.id} value={user.id.toString()} className="text-right">
-                        {user.displayName || user.email || `Usuario ${user.id}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectCombobox
+                  options={availableUsers.map((user) => ({
+                    value: user.id,
+                    label: user.displayName || user.email || "Usuario",
+                    email: user.email,
+                    avatar: user.avatar,
+                  }))}
+                  selectedValues={filterSelectedDrivers}
+                  onSelectionChange={(values) => {
+                    setFilterSelectedDrivers(values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id)));
+                  }}
+                  placeholder="Selecciona conductores..."
+                  emptyMessage="No hay usuarios disponibles"
+                  disabled={isLoadingUsers}
+                />
               </div>
 
               {/* Botones de acción */}
@@ -1156,7 +1159,7 @@ export default function FleetPage() {
                 >
                   <CardContent className={`flex flex-col ${spacing.gap.small} ${spacing.card.padding} p-4 relative`}>
                     {isSelectMode && (
-                      <div className="absolute top-1 right-1 z-20 bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute -top-2 -right-1 z-20 bg-background/80 backdrop-blur-sm rounded-md p-0.5 shadow-sm" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => handleToggleVehicleSelection(vehicleId)}
@@ -1581,7 +1584,7 @@ export default function FleetPage() {
                           <SelectTrigger className="rounded-lg">
                             <SelectValue placeholder="Seleccionar estado" />
                           </SelectTrigger>
-                          <SelectContent className="z-[200]">
+                          <SelectContent className="z-[200]" align="end">
                             {conditions.map((condition) => (
                               <SelectItem key={condition} value={condition}>
                                 <span className="capitalize">{condition}</span>
@@ -1687,21 +1690,6 @@ export default function FleetPage() {
                   <div className={`flex flex-col ${spacing.gap.base}`}>
                     <h3 className={typography.h4}>Información Adicional</h3>
                     
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="stockQuantity" className={typography.label}>
-                        Cantidad en stock
-                      </Label>
-                      <Input
-                        id="stockQuantity"
-                        type="number"
-                        value={stockQuantity}
-                        onChange={(e) => setStockQuantity(e.target.value)}
-                        placeholder="Ej: 10"
-                        className="rounded-lg"
-                        min={0}
-                      />
-                    </div>
-
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="placa" className={typography.label}>
                         Placa
@@ -1976,19 +1964,6 @@ export default function FleetPage() {
                       />
                     </div>
 
-                    {stockQuantity && selectedAssignedDrivers.length > 0 && (
-                      <div className="flex flex-col gap-2 p-3 bg-muted rounded-lg">
-                        <Label className={typography.label}>
-                          Vehículos disponibles
-                        </Label>
-                        <p className={typography.body.large}>
-                          {Math.max(0, Number(stockQuantity) - selectedAssignedDrivers.length)} disponible{Math.max(0, Number(stockQuantity) - selectedAssignedDrivers.length) !== 1 ? 's' : ''}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {stockQuantity} (stock) - {selectedAssignedDrivers.length} (asignados) = {Math.max(0, Number(stockQuantity) - selectedAssignedDrivers.length)} (disponibles)
-                        </p>
-                      </div>
-                    )}
                   </div>
 
                   <Separator />
@@ -2094,7 +2069,7 @@ export default function FleetPage() {
             <AlertDialogAction
               onClick={handleDeleteVehicle}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {isDeleting ? "Eliminando..." : "Eliminar"}
             </AlertDialogAction>
@@ -2116,7 +2091,7 @@ export default function FleetPage() {
             <AlertDialogAction
               onClick={handleConfirmDeleteMultiple}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {isDeleting ? "Eliminando..." : "Eliminar"}
             </AlertDialogAction>

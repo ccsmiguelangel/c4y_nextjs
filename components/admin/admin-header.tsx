@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ReactNode, useState, useEffect } from "react";
-import { Filter, Bell, User as UserIcon, X, Calendar } from "lucide-react";
+import { Filter, Bell, User as UserIcon, X, Calendar, CheckCircle2, Circle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components_shadcn/ui/button";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { typography } from "@/lib/design-system";
@@ -22,6 +22,7 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
+import { REMINDER_EVENTS, emitReminderDeleted, emitReminderToggleCompleted } from "@/lib/reminder-events";
 
 interface AdminHeaderProps {
   title: string;
@@ -40,6 +41,7 @@ export function AdminHeader({
 }: AdminHeaderProps) {
   const [reminders, setReminders] = useState<any[]>([]);
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
+  const [showCompletedReminders, setShowCompletedReminders] = useState(false);
 
   // Cargar recordatorios
   useEffect(() => {
@@ -49,8 +51,12 @@ export function AdminHeader({
         const response = await fetch("/api/reminders", { cache: "no-store" });
         if (response.ok) {
           const { data } = await response.json();
-          // Filtrar solo recordatorios activos y próximos
-          const activeReminders = (data || []).filter((r: any) => r.isActive && new Date(r.nextTrigger) >= new Date());
+          // Filtrar solo recordatorios activos, próximos y no completados
+          const activeReminders = (data || []).filter((r: any) => 
+            r.isActive && 
+            new Date(r.nextTrigger) >= new Date() && 
+            !r.isCompleted
+          );
           // Ordenar por fecha próxima
           activeReminders.sort((a: any, b: any) => 
             new Date(a.nextTrigger).getTime() - new Date(b.nextTrigger).getTime()
@@ -65,9 +71,36 @@ export function AdminHeader({
     };
 
     loadReminders();
+    
+    // Escuchar eventos de cambios en recordatorios
+    const handleReminderChange = () => {
+      loadReminders();
+    };
+    
+    window.addEventListener(REMINDER_EVENTS.CREATED, handleReminderChange);
+    window.addEventListener(REMINDER_EVENTS.UPDATED, handleReminderChange);
+    window.addEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
+    window.addEventListener(REMINDER_EVENTS.TOGGLE_COMPLETED, handleReminderChange);
+    window.addEventListener(REMINDER_EVENTS.TOGGLE_ACTIVE, handleReminderChange);
+    
     // Recargar cada minuto
     const interval = setInterval(loadReminders, 60000);
-    return () => clearInterval(interval);
+    
+    // Recargar cuando la ventana vuelve a tener foco
+    const handleFocus = () => {
+      loadReminders();
+    };
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener(REMINDER_EVENTS.CREATED, handleReminderChange);
+      window.removeEventListener(REMINDER_EVENTS.UPDATED, handleReminderChange);
+      window.removeEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
+      window.removeEventListener(REMINDER_EVENTS.TOGGLE_COMPLETED, handleReminderChange);
+      window.removeEventListener(REMINDER_EVENTS.TOGGLE_ACTIVE, handleReminderChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleDeleteReminder = async (reminderId: string, e: React.MouseEvent) => {
@@ -82,12 +115,51 @@ export function AdminHeader({
       if (response.ok) {
         toast.success("Recordatorio eliminado");
         setReminders(prev => prev.filter(r => (r.documentId || String(r.id)) !== reminderId));
+        // Emitir evento de eliminación
+        emitReminderDeleted(reminderId);
       } else {
         throw new Error("Error al eliminar");
       }
     } catch (error) {
       console.error("Error eliminando recordatorio:", error);
       toast.error("No se pudo eliminar el recordatorio");
+    }
+  };
+
+  const handleToggleCompleted = async (reminderId: string, isCompleted: boolean, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: {
+            isCompleted: !isCompleted,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        toast.success(isCompleted ? "Recordatorio marcado como pendiente" : "Recordatorio marcado como completado");
+        // Actualizar el estado local
+        setReminders(prev => prev.map(r => {
+          if ((r.documentId || String(r.id)) === reminderId) {
+            return { ...r, isCompleted: !isCompleted };
+          }
+          return r;
+        }));
+        // Emitir evento de cambio de estado completado
+        emitReminderToggleCompleted(reminderId, !isCompleted);
+      } else {
+        throw new Error("Error al actualizar");
+      }
+    } catch (error) {
+      console.error("Error actualizando recordatorio:", error);
+      toast.error("No se pudo actualizar el recordatorio");
     }
   };
 
@@ -160,6 +232,8 @@ export function AdminHeader({
                 const nextTrigger = new Date(reminder.nextTrigger);
                 const isAllDay = nextTrigger.getHours() === 0 && nextTrigger.getMinutes() === 0;
                 
+                const isCompleted = reminder.isCompleted || false;
+                
                 return (
                   <div key={reminderId}>
                     <DropdownMenuItem asChild className="p-0">
@@ -176,18 +250,44 @@ export function AdminHeader({
                           >
                             <div className="flex items-center justify-between w-full">
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                <span className="font-medium text-sm line-clamp-1">{reminder.title}</span>
+                                {isCompleted ? (
+                                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                                ) : (
+                                  <button
+                                    onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
+                                    className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/30 hover:border-primary transition-colors flex items-center justify-center"
+                                    aria-label="Marcar como completado"
+                                    title="Marcar como completado"
+                                  >
+                                    <Circle className="h-3 w-3 text-muted-foreground" />
+                                  </button>
+                                )}
+                                <Calendar className={`h-4 w-4 shrink-0 ${isCompleted ? "text-muted-foreground/50" : "text-muted-foreground"}`} />
+                                <span className={`font-medium text-sm line-clamp-1 ${isCompleted ? "line-through text-muted-foreground/70" : ""}`}>{reminder.title}</span>
                               </div>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-                                onClick={(e) => handleDeleteReminder(reminderId, e)}
-                                aria-label="Eliminar recordatorio"
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                {isCompleted && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+                                    onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
+                                    aria-label="Marcar como pendiente"
+                                    title="Marcar como pendiente"
+                                  >
+                                    <Circle className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                                  onClick={(e) => handleDeleteReminder(reminderId, e)}
+                                  aria-label="Eliminar recordatorio"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
                             </div>
                             <span className="text-xs text-muted-foreground line-clamp-1">
                               {vehicleName}
@@ -215,7 +315,7 @@ export function AdminHeader({
           </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link href="/notifications" className="w-full text-center justify-center">
+            <Link href="/notifications" className="w-full text-center justify-center text-primary hover:text-primary focus:text-primary font-medium">
               Ver todas las notificaciones
             </Link>
           </DropdownMenuItem>

@@ -69,6 +69,8 @@ export interface SinginDataProcessed {
 
 export interface SingupFormData {
   header: HeaderSection;
+  fullname_label: string;
+  fullname_placeholder: string;
   username_label: string;
   username_placeholder: string;
   email_label: string;
@@ -148,7 +150,6 @@ export interface FleetVehicleRawAttributes {
   documentId?: string;
   image?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
   imageAlt?: string | null;
-  stockQuantity?: number;
   nextMaintenanceDate?: string;
   placa?: string;
   assignedDrivers?: {
@@ -163,6 +164,17 @@ export interface FleetVehicleRawAttributes {
     }>;
   };
   responsables?: {
+    data?: Array<{
+      id: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+        avatar?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+      };
+    }>;
+  };
+  interestedDrivers?: {
     data?: Array<{
       id: number;
       documentId?: string;
@@ -213,7 +225,6 @@ export interface FleetVehicleCard {
   mileage?: number;
   fuelType?: string;
   transmission?: string;
-  stockQuantity?: number;
   nextMaintenanceDate?: string;
   placa?: string;
   assignedDrivers?: Array<{
@@ -227,6 +238,16 @@ export interface FleetVehicleCard {
     };
   }>;
   responsables?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  interestedDrivers?: Array<{
     id: number;
     documentId?: string;
     displayName?: string;
@@ -266,7 +287,7 @@ export interface FleetVehicleUpdatePayload {
   imageAlt?: string | null;
   responsables?: number[];
   assignedDrivers?: number[];
-  stockQuantity?: number | null;
+  interestedDrivers?: number[];
   nextMaintenanceDate?: string | null;
   placa?: string | null;
   interestedPersons?: number[];
@@ -359,6 +380,7 @@ export interface FleetReminder {
   recurrencePattern?: RecurrencePattern;
   recurrenceEndDate?: string;
   isActive: boolean;
+  isCompleted?: boolean;
   lastTriggered?: string;
   nextTrigger: string;
   authorDocumentId?: string;
@@ -384,6 +406,11 @@ export interface FleetReminder {
       alternativeText?: string;
     };
   }>;
+  vehicle?: {
+    id: number;
+    documentId?: string;
+    name?: string;
+  };
 }
 
 export interface FleetReminderPayload {

@@ -60,7 +60,7 @@ export function SearchInput({
   const inputClasses = cn(
     "flex w-full min-w-0 flex-1",
     "border-none",
-    isCardVariant ? "bg-card" : "bg-muted",
+    isCardVariant ? "bg-card dark:bg-card" : "bg-muted dark:bg-muted",
     "focus-visible:ring-0",
     "focus-visible:ring-offset-0",
     "focus-visible:outline-none",
@@ -72,10 +72,16 @@ export function SearchInput({
     "placeholder:text-muted-foreground"
   );
 
+  const iconContainerClasses = cn(
+    "text-muted-foreground flex items-center justify-center pl-4",
+    isCardVariant ? "bg-card dark:bg-card rounded-l-xl" : "bg-muted dark:bg-muted rounded-l-xl",
+    height
+  );
+
   return (
     <label className="flex flex-col min-w-40 w-full" suppressHydrationWarning>
       <div className={containerClasses} suppressHydrationWarning>
-        <div className="text-muted-foreground flex items-center justify-center pl-4">
+        <div className={iconContainerClasses}>
           <Search className="h-5 w-5" />
         </div>
         <Input

@@ -11,6 +11,7 @@ export const SignInFormSchema = z.object({
 });
 
 export const SignUpFormSchema = z.object({
+  fullName: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
   username: z.string().min(3, "El nombre de usuario debe tener al menos 3 caracteres"),
   email: z.string().email("Dirección de correo electrónico inválida"),
   password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
@@ -30,6 +31,7 @@ export type FormState = {
   message?: string;
   data?: {
     identifier?: string;
+    fullName?: string;
     username?: string;
     email?: string;
     password?: string;
@@ -42,6 +44,7 @@ export type FormState = {
   };
   zodErrors?: {
     identifier?: string[];
+    fullName?: string[];
     username?: string[];
     email?: string[];
     password?: string[];

@@ -32,15 +32,28 @@ function setCookie(name: string, value: string, maxAge: number) {
   }`;
 }
 
+// Función para eliminar cookie
+function deleteCookie(name: string) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; max-age=0; path=/; SameSite=Lax${
+    process.env.NODE_ENV === "production" ? "; Secure" : ""
+  }`;
+}
+
+// Función exportada para limpiar el tema (útil para logout)
+export function clearThemeCookie() {
+  deleteCookie(THEME_COOKIE_NAME);
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
+  const [theme, setThemeState] = useState<Theme>("light");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
   const [mounted, setMounted] = useState(false);
 
-  // Inicializar tema desde cookie o preferencia del sistema
+  // Inicializar tema desde cookie o usar "light" por defecto
   useEffect(() => {
     const cookieTheme = getCookie(THEME_COOKIE_NAME) as Theme | null;
-    const initialTheme = cookieTheme || "system";
+    const initialTheme = cookieTheme || "light";
     setThemeState(initialTheme);
     
     // Resolver tema inicial inmediatamente

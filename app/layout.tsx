@@ -38,10 +38,12 @@ export default function RootLayout({
                     if (parts.length === 2) return parts.pop().split(";").shift();
                     return null;
                   }
-                  const theme = getCookie("admin-theme") || "system";
+                  const theme = getCookie("admin-theme") || "light";
                   let resolvedTheme = theme;
                   if (theme === "system") {
                     resolvedTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+                  } else {
+                    resolvedTheme = theme;
                   }
                   if (resolvedTheme === "dark") {
                     document.documentElement.classList.add("dark");

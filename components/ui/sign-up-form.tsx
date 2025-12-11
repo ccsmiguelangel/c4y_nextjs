@@ -20,6 +20,7 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
 
   const INITIAL_STATE: FormState = {
     data: {
+      fullName: "",
       username: "",
       email: "",
       password: "",
@@ -38,6 +39,8 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
 
   const { 
     header,
+    fullname_label,
+    fullname_placeholder,
     username_label,
     username_placeholder,
     email_label,
@@ -53,12 +56,18 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
   const singinLink = singin_link?.[0];
 
   const form = useForm<z.infer<typeof SignUpFormSchema>>({
-    defaultValues: INITIAL_STATE.data,
+    defaultValues: {
+      fullName: "",
+      username: "",
+      email: "",
+      password: "",
+    },
   });
 
   function onSubmit(values: z.infer<typeof SignUpFormSchema>) {
     // Convertir los valores a FormData para la Server Action
     const formData = new FormData();
+    formData.append("fullName", values.fullName);
     formData.append("username", values.username);
     formData.append("email", values.email);
     formData.append("password", values.password);
@@ -71,26 +80,44 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
 
   return (
     <>
-      <Card className="w-full py-8 px-8 bg-white">
+      <Card className="w-full py-8 px-8 bg-card">
         <CardHeader className="space-y-2 pb-6">
-          <CardTitle className="text-3xl font-bold text-primary text-center">{header.title}</CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary text-center">
+            {header?.title || "Regístrate"}
+          </CardTitle>
           <CardDescription className="text-base text-center">
-            {header.subtitle}
+            {header?.subtitle}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
           <Form {...form}>
             <div className="space-y-6">
-              <FormField control={form.control} name="username" render={({ field }) => (
+              <FormField control={form.control} name="fullName" render={({ field }) => (
                 <FormItem className="space-y-3">
                   <FormLabel className="text-base font-medium">
-                    {username_label}
+                    {fullname_label}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="text"
-                      placeholder={username_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      placeholder={fullname_placeholder}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormError error={formState.zodErrors?.fullName} />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="username" render={({ field }) => (
+                <FormItem className="space-y-3">
+                  <FormLabel className="text-base font-medium">
+                    {username_label || "Usuario"}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="text"
+                      placeholder={username_placeholder || "Ingresa tu nombre de usuario"}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
                       {...field}
                     />
                   </FormControl>
@@ -100,13 +127,13 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
               <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem className="space-y-3">
                   <FormLabel className="text-base font-medium">
-                    {email_label}
+                    {email_label || "Correo electrónico"}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="email"
-                      placeholder={email_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      placeholder={email_placeholder || "Ingresa tu correo electrónico"}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
                       {...field}
                     />
                   </FormControl>
@@ -116,13 +143,13 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
               <FormField control={form.control} name="password" render={({ field }) => (
                 <FormItem className="space-y-3">
                   <FormLabel className="text-base font-medium">
-                    {password_label}
+                    {password_label || "Contraseña"}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder={password_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      placeholder={password_placeholder || "Ingresa tu contraseña"}
+                      className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
                       {...field}
                     />
                   </FormControl>
@@ -159,9 +186,9 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
       </Card>
       {singinLink && (
         <p className="text-base text-muted-foreground text-center pt-4">
-          {singin_previous_link_text}{" "}
+          {singin_previous_link_text || "¿Ya tienes una cuenta?"}{" "}
           <Link href={singinLink.href} className="text-primary hover:underline font-medium">
-            {singinLink.label}
+            {singinLink.label || "Inicia sesión"}
           </Link>
         </p>
       )}

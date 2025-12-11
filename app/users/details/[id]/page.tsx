@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { ChangeEvent } from "react";
 import Image from "next/image";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
@@ -8,14 +9,33 @@ import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { Textarea } from "@/components_shadcn/ui/textarea";
+import { Input } from "@/components_shadcn/ui/input";
+import { Label } from "@/components_shadcn/ui/label";
 import { 
   ArrowLeft, 
   MoreVertical, 
   Phone, 
   Mail, 
-  Megaphone,
   MessageSquare,
-  Edit
+  Edit,
+  Save,
+  X,
+  Calendar,
+  Car,
+  Shield,
+  Briefcase,
+  User as UserIcon,
+  Bell,
+  Camera,
+  Upload,
+  MapPin,
+  Clock,
+  FileText,
+  Linkedin,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  CheckCircle2
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -23,208 +43,102 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components_shadcn/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components_shadcn/ui/select";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import { strapiImages } from "@/lib/strapi-images";
+import { Skeleton } from "@/components_shadcn/ui/skeleton";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import { FleetReminders } from "@/components/ui/fleet-reminders";
+import type { FleetReminder } from "@/validations/types";
+import { emitReminderToggleCompleted } from "@/lib/reminder-events";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components_shadcn/ui/alert-dialog";
 
-interface CommunicationHistory {
-  id: string;
-  type: "call" | "email" | "campaign";
-  title: string;
-  date: string;
-  author: string;
+interface UserProfile {
+  id: number;
+  documentId?: string;
+  displayName: string;
+  email?: string;
+  phone?: string;
+  role: "admin" | "seller" | "driver";
+  department?: string;
+  bio?: string;
+  address?: string;
+  dateOfBirth?: string;
+  hireDate?: string;
+  identificationNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  linkedin?: string;
+  workSchedule?: string;
+  specialties?: string;
+  driverLicense?: string;
+  avatar?: {
+    url?: string;
+    alternativeText?: string;
+  };
+  assignedVehicles?: Array<{
+    id: number;
+    documentId?: string;
+    name: string;
+    vin: string;
+    brand: string;
+    model: string;
+    year: number;
+    image?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  interestedVehicles?: Array<{
+    id: number;
+    documentId?: string;
+    name: string;
+    vin: string;
+    brand: string;
+    model: string;
+    year: number;
+    image?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  assignedReminders?: FleetReminder[];
 }
 
-interface Vehicle {
-  id: string;
-  name: string;
-  color: string;
-  price: string;
-  image: string;
-}
-
-interface ClientData {
-  id: string;
-  name: string;
-  avatar?: string;
-  status: "activo" | "lead" | "vip";
-  leadSince: string;
-  phone: string;
-  email: string;
-}
-
-// Datos de ejemplo - en producción vendrían de una API usando el ID
-const getClientData = (id: string): ClientData | null => {
-  const clients: Record<string, ClientData> = {
-    "1": {
-      id: "1",
-      name: "Alejandro Gomez",
-      avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuBeP0WOO_emI8zYv8K2OFVM-JWtkYiwQHKorZPb1Lu1zxouBvi_-3x_UEO8EAi4uiWk0YGMrRypONstn9oPJ_9EfEW7NTXnyvhwL1_A8YmbvkJHK_wZVHUOhE8boLjjwudUl1Z4vb1-O8faA-35tD0O6uU1HVfrwg7p5aNnrpuqBVLZl4gYgNyyEi6IxafWO5dCfZzTcEMEnx4F0XLEfi4QN_grFv3C_q-mgvXuFslPwisodZWNTzrfSxTl0MDlu-9Ks4SE07kUqpc",
-      status: "activo",
-      leadSince: "10/03/2024",
-      phone: "+34 612 345 678",
-      email: "alejandro.gomez@email.com",
-    },
-    "2": {
-      id: "2",
-      name: "Beatriz Fernández",
-      avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuCEB-3XKUYmOr9W6KntDx6Vq1wxTNOhPVnX0GorIPVOVG0dfbLHo_fg5wGlPjGuOkf-xbaWFhgkvmzi-z2vn5PbjKZ0vtdQhk-NdM07FR8-6OzR0ph0UXiszKIzY7Xdyibm9xgLpoMibeB-qPOHaQIn4JN9JAnOGamzDYvxRrL2qXeF7m7P0rRtOj2iU6Fqx0NWNoVG2K5jvz-UEFBCykp_4Dkw7wMy8vg7udSCnlJOPclE2ObH7QTG9DVQioDLdLWIHwSKYuYef8A",
-      status: "lead",
-      leadSince: "15/05/2024",
-      phone: "+34 612 345 678",
-      email: "beatriz.f@email.com",
-    },
-    "3": {
-      id: "3",
-      name: "Carlos Santana",
-      avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuBlV1Svfat0UTt97VHsCrRU-NUBkkf3-oLR1zimc7kwlhbjGDhRGlZuAlXOQmjwfYEOq8WVqWz-BZBS-DkTDn9ffVYkMcO5_OogUGeVinaT6d4OGgcmv2hE1bsNoHKYVmETomIZLKZiSyfHuZ64f9RzzW0J0qgEYs5ZZoYXqDWIugoNuYcO_plPuhj5-3P96dICAGZ4JUF_yoLCMAb-bzswLJF4Shoe-iPGMA3bw1xJXOzru4psoKb0IUjHDhxtyDPoh-wTfVpB12I",
-      status: "vip",
-      leadSince: "15/03/2023",
-      phone: "+34 611 222 333",
-      email: "carlos.santana@email.com",
-    },
-    "4": {
-      id: "4",
-      name: "Diana Moreno",
-      avatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuByJJhs0cEabmMFVU9WyQP0OPHK5vTRnfKkZVPZ-fbItSt9VnXJg08c3zq3a-MkSIqUETpKHlxt0IlsG07VT9eRMtLVl-e9fKZfATNQ4N4hG0Bn692VVnBnyvn4M28WTK7haKGpKZ4ZMUQZMnHwYiKh5_ZMZ_Bsale5OLXkceGmK63m5e7hh3x8M-d9TBAYse_t5BmZTqHgSsVEFnbogibenyhGS6Etx7MZbJqY7kjZOjIVTjOT4KGbG7rl-uPFmC8lVsm9phaOFDE",
-      status: "lead",
-      leadSince: "22/05/2024",
-      phone: "+34 698 765 432",
-      email: "diana.moreno@email.com",
-    },
-  };
-  return clients[id] || null;
-};
-
-const getVehicleData = (clientId: string): Vehicle | null => {
-  const vehicles: Record<string, Vehicle> = {
-    "1": {
-      id: "1",
-      name: "Sedán Premium Modelo A",
-      color: "Negro Perla",
-      price: "$38,500 USD",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuALtOtoBY3Ju52sfJzGdDceXS_LNoeFJr7vLYxrah94jT0WCdA4B3oE-Xvq6gkFwt5y3kbTUyJX1XB-V_WEAOb8VpWgVTmoGKQN8dObJi6JWXxQR2cOe7RM4pal_v7zrcrhzDuEYuhuftp7WIUpDakZtAtNHTcnE4S97WiVbt2ojFBXLp_KfUWaa9-pc0DZfKjVrQX2K8cGCgROIDM0mLV4fCC5PDQN2g5Rt3QnTKWcFC0c0ssu19GvHX35ynl-RhS7SmjCS95yWO0",
-    },
-    "2": {
-      id: "2",
-      name: "SUV Eléctrico Modelo X",
-      color: "Azul Metálico",
-      price: "$45,000 USD",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuALtOtoBY3Ju52sfJzGdDceXS_LNoeFJr7vLYxrah94jT0WCdA4B3oE-Xvq6gkFwt5y3kbTUyJX1XB-V_WEAOb8VpWgVTmoGKQN8dObJi6JWXxQR2cOe7RM4pal_v7zrcrhzDuEYuhuftp7WIUpDakZtAtNHTcnE4S97WiVbt2ojFBXLp_KfUWaa9-pc0DZfKjVrQX2K8cGCgROIDM0mLV4fCC5PDQN2g5Rt3QnTKWcFC0c0ssu19GvHX35ynl-RhS7SmjCS95yWO0",
-    },
-    "3": {
-      id: "3",
-      name: "Camioneta Deportiva Modelo Z",
-      color: "Rojo Intenso",
-      price: "$52,000 USD",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuALtOtoBY3Ju52sfJzGdDceXS_LNoeFJr7vLYxrah94jT0WCdA4B3oE-Xvq6gkFwt5y3kbTUyJX1XB-V_WEAOb8VpWgVTmoGKQN8dObJi6JWXxQR2cOe7RM4pal_v7zrcrhzDuEYuhuftp7WIUpDakZtAtNHTcnE4S97WiVbt2ojFBXLp_KfUWaa9-pc0DZfKjVrQX2K8cGCgROIDM0mLV4fCC5PDQN2g5Rt3QnTKWcFC0c0ssu19GvHX35ynl-RhS7SmjCS95yWO0",
-    },
-    "4": {
-      id: "4",
-      name: "Híbrido Compacto Modelo Y",
-      color: "Blanco Nacarado",
-      price: "$32,000 USD",
-      image: "https://lh3.googleusercontent.com/aida-public/AB6AXuALtOtoBY3Ju52sfJzGdDceXS_LNoeFJr7vLYxrah94jT0WCdA4B3oE-Xvq6gkFwt5y3kbTUyJX1XB-V_WEAOb8VpWgVTmoGKQN8dObJi6JWXxQR2cOe7RM4pal_v7zrcrhzDuEYuhuftp7WIUpDakZtAtNHTcnE4S97WiVbt2ojFBXLp_KfUWaa9-pc0DZfKjVrQX2K8cGCgROIDM0mLV4fCC5PDQN2g5Rt3QnTKWcFC0c0ssu19GvHX35ynl-RhS7SmjCS95yWO0",
-    },
-  };
-  return vehicles[clientId] || null;
-};
-
-const getCommunicationHistory = (clientId: string): CommunicationHistory[] => {
-  const histories: Record<string, CommunicationHistory[]> = {
-    "1": [
-      {
-        id: "1",
-        type: "call",
-        title: "Llamada de seguimiento post-venta",
-        date: "25/05/2024",
-        author: "María (Vendedora)",
-      },
-      {
-        id: "2",
-        type: "email",
-        title: "Envío de garantía extendida",
-        date: "20/05/2024",
-        author: "Automático",
-      },
-      {
-        id: "3",
-        type: "call",
-        title: "Cliente activo desde",
-        date: "10/03/2024",
-        author: "Sistema",
-      },
-    ],
-    "2": [
-      {
-        id: "1",
-        type: "call",
-        title: "Llamada inicial de seguimiento",
-        date: "20/05/2024",
-        author: "Carlos (Vendedor)",
-      },
-      {
-        id: "2",
-        type: "email",
-        title: "Envío de catálogo y precios",
-        date: "18/05/2024",
-        author: "Automático",
-      },
-      {
-        id: "3",
-        type: "campaign",
-        title: "Lead generado desde campaña online",
-        date: "15/05/2024",
-        author: "Sistema",
-      },
-    ],
-    "3": [
-      {
-        id: "1",
-        type: "call",
-        title: "Llamada VIP - Oferta exclusiva",
-        date: "28/05/2024",
-        author: "Ana (Gerente)",
-      },
-      {
-        id: "2",
-        type: "email",
-        title: "Invitación a evento VIP",
-        date: "25/05/2024",
-        author: "Marketing",
-      },
-      {
-        id: "3",
-        type: "call",
-        title: "Cliente VIP desde",
-        date: "15/03/2023",
-        author: "Sistema",
-      },
-    ],
-    "4": [
-      {
-        id: "1",
-        type: "call",
-        title: "Llamada de seguimiento inicial",
-        date: "24/05/2024",
-        author: "Pedro (Vendedor)",
-      },
-      {
-        id: "2",
-        type: "email",
-        title: "Envío de información de vehículos",
-        date: "23/05/2024",
-        author: "Automático",
-      },
-      {
-        id: "3",
-        type: "campaign",
-        title: "Lead generado desde redes sociales",
-        date: "22/05/2024",
-        author: "Sistema",
-      },
-    ],
-  };
-  return histories[clientId] || [];
+const roleConfig = {
+  admin: { 
+    label: "Administrador", 
+    className: "bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-100",
+    icon: Shield 
+  },
+  seller: { 
+    label: "Vendedor", 
+    className: "bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100",
+    icon: Briefcase 
+  },
+  driver: { 
+    label: "Conductor", 
+    className: "bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100",
+    icon: Car 
+  },
 };
 
 const getInitials = (name: string) => {
@@ -236,59 +150,331 @@ const getInitials = (name: string) => {
     .slice(0, 2);
 };
 
-const getCommunicationIcon = (type: CommunicationHistory["type"]) => {
-  switch (type) {
-    case "call":
-      return Phone;
-    case "email":
-      return Mail;
-    case "campaign":
-      return Megaphone;
-  }
-};
-
-const getCommunicationIconColor = (type: CommunicationHistory["type"]) => {
-  switch (type) {
-    case "call":
-      return "bg-green-100 text-green-600";
-    case "email":
-      return "bg-blue-100 text-blue-600";
-    case "campaign":
-      return "bg-yellow-100 text-yellow-600";
-  }
-};
-
-const getStatusBadgeClass = (status: ClientData["status"]) => {
-  switch (status) {
-    case "activo":
-      return "bg-green-100 text-green-800";
-    case "lead":
-      return "bg-orange-100 text-orange-800";
-    case "vip":
-      return "bg-blue-100 text-blue-800";
-  }
-};
-
-const getStatusLabel = (status: ClientData["status"]) => {
-  switch (status) {
-    case "activo":
-      return "Activo";
-    case "lead":
-      return "Lead";
-    case "vip":
-      return "VIP";
-  }
-};
-
 export default function UserDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const userId = params.id as string;
-  const [note, setNote] = useState("");
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [shouldRemoveImage, setShouldRemoveImage] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
+  const [formData, setFormData] = useState({
+    displayName: "",
+    email: "",
+    phone: "",
+    role: "driver" as "admin" | "seller" | "driver",
+    department: "",
+    bio: "",
+    address: "",
+    dateOfBirth: "",
+    hireDate: "",
+    identificationNumber: "",
+    emergencyContactName: "",
+    emergencyContactPhone: "",
+    linkedin: "",
+    workSchedule: "",
+    specialties: "",
+    driverLicense: "",
+  });
 
-  const clientData = getClientData(userId);
-  const vehicleData = clientData ? getVehicleData(userId) : null;
-  const communicationHistory = clientData ? getCommunicationHistory(userId) : [];
+  const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+
+    if (isObjectUrl && value) {
+      previewObjectUrlRef.current = value;
+    }
+
+    setImagePreview(value);
+  }, []);
+
+  useEffect(() => {
+    if (userId && userId !== "new") {
+      loadUser();
+    } else if (userId === "new") {
+      setIsLoading(false);
+    }
+    return () => {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const loadUser = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/user-profiles/${userId}`, { cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError("Usuario no encontrado");
+          setIsLoading(false);
+          return;
+        }
+        // Intentar obtener más información del error
+        let errorMessage = "Error al cargar usuario";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // Si no es JSON, intentar leer como texto
+          try {
+            const errorText = await response.text();
+            if (errorText) {
+              errorMessage = errorText;
+            }
+          } catch {
+            // Si falla todo, usar el mensaje por defecto
+          }
+        }
+        console.error("Error cargando usuario:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorMessage,
+        });
+        setError(errorMessage);
+        toast.error(errorMessage);
+        setIsLoading(false);
+        return;
+      }
+      const responseData = await response.json();
+      
+      // Verificar que la respuesta tenga la estructura esperada
+      if (!responseData || !responseData.data) {
+        throw new Error("La respuesta del servidor no tiene el formato esperado");
+      }
+      
+      const { data } = responseData;
+      setUser(data);
+      setFormData({
+        displayName: data.displayName || "",
+        email: data.email || "",
+        phone: data.phone || "",
+        role: data.role || "driver",
+        department: data.department || "",
+        bio: data.bio || "",
+        address: data.address || "",
+        dateOfBirth: data.dateOfBirth ? format(new Date(data.dateOfBirth), "yyyy-MM-dd") : "",
+        hireDate: data.hireDate ? format(new Date(data.hireDate), "yyyy-MM-dd") : "",
+        identificationNumber: data.identificationNumber || "",
+        emergencyContactName: data.emergencyContactName || "",
+        emergencyContactPhone: data.emergencyContactPhone || "",
+        linkedin: data.linkedin || "",
+        workSchedule: data.workSchedule || "",
+        specialties: data.specialties || "",
+        driverLicense: data.driverLicense || "",
+      });
+      // Cargar preview de imagen si existe
+      if (data.avatar?.url) {
+        updateImagePreview(strapiImages.getURL(data.avatar.url));
+      } else {
+        updateImagePreview(null);
+      }
+      setSelectedImageFile(null);
+      setShouldRemoveImage(false);
+    } catch (err) {
+      console.error("Error cargando usuario:", err);
+      const errorMessage = err instanceof Error ? err.message : "No se pudo cargar el usuario";
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleImageInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    // Validar tipo de archivo
+    const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validImageTypes.includes(file.type)) {
+      toast.error(`Tipo de archivo no válido. Solo se permiten imágenes: ${validImageTypes.join(', ')}`);
+      return;
+    }
+
+    // Validar tamaño (máximo 10MB)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("El archivo es demasiado grande. El tamaño máximo es 10MB.");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    updateImagePreview(objectUrl, true);
+    setSelectedImageFile(file);
+    setShouldRemoveImage(false);
+
+    // Si no está en modo edición, guardar automáticamente la imagen
+    if (!isEditing && user) {
+      await handleSaveImageOnly(file);
+    }
+  };
+
+  const handleSaveImageOnly = async (file: File) => {
+    if (!user) return;
+    setIsUploadingImage(true);
+    try {
+      const uploadFormData = new FormData();
+      uploadFormData.append("files", file);
+
+      const uploadResponse = await fetch("/api/strapi/upload", {
+        method: "POST",
+        body: uploadFormData,
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.error || "Error al subir la imagen");
+      }
+
+      const uploadData = await uploadResponse.json();
+      const uploadedImageId = uploadData.data?.id || null;
+
+      if (uploadedImageId) {
+        const response = await fetch(`/api/user-profiles/${user.documentId || user.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: { avatar: uploadedImageId } }),
+        });
+        if (!response.ok) {
+          throw new Error("Error al guardar");
+        }
+        await loadUser();
+        toast.success("Imagen de perfil actualizada correctamente");
+      }
+    } catch (err) {
+      console.error("Error guardando imagen:", err);
+      const errorMessage = err instanceof Error ? err.message : "Error al guardar la imagen";
+      toast.error("Error al guardar imagen", {
+        description: errorMessage,
+      });
+      // Restaurar imagen original en caso de error
+      if (user.avatar?.url) {
+        updateImagePreview(strapiImages.getURL(user.avatar.url));
+      } else {
+        updateImagePreview(null);
+      }
+      setSelectedImageFile(null);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    updateImagePreview(null);
+    setSelectedImageFile(null);
+    setShouldRemoveImage(true);
+  };
+
+  const handleRestoreOriginalImage = () => {
+    if (!user?.avatar?.url) return;
+    updateImagePreview(strapiImages.getURL(user.avatar.url));
+    setSelectedImageFile(null);
+    setShouldRemoveImage(false);
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setIsSaving(true);
+    try {
+      let uploadedImageId: number | null = null;
+
+      // Subir imagen si hay una nueva
+      if (selectedImageFile) {
+        setIsUploadingImage(true);
+        try {
+          const uploadFormData = new FormData();
+          uploadFormData.append("files", selectedImageFile);
+
+          const uploadResponse = await fetch("/api/strapi/upload", {
+            method: "POST",
+            body: uploadFormData,
+          });
+
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            throw new Error(errorData.error || "Error al subir la imagen");
+          }
+
+          const uploadData = await uploadResponse.json();
+          uploadedImageId = uploadData.data?.id || null;
+        } catch (uploadError) {
+          console.error("Error subiendo imagen:", uploadError);
+          const errorMessage = uploadError instanceof Error ? uploadError.message : "Error al subir la imagen";
+          toast.error("Error al subir imagen", {
+            description: errorMessage,
+          });
+          setIsUploadingImage(false);
+          setIsSaving(false);
+          return;
+        } finally {
+          setIsUploadingImage(false);
+        }
+      }
+
+      // Preparar datos para actualizar
+      const updateData: any = { ...formData };
+      
+      if (uploadedImageId !== null) {
+        updateData.avatar = uploadedImageId;
+      } else if (shouldRemoveImage) {
+        updateData.avatar = null;
+      }
+
+      const response = await fetch(`/api/user-profiles/${user.documentId || user.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: updateData }),
+      });
+      if (!response.ok) {
+        throw new Error("Error al guardar");
+      }
+      await loadUser();
+      setIsEditing(false);
+      toast.success("Usuario actualizado correctamente");
+    } catch (err) {
+      console.error("Error guardando usuario:", err);
+      toast.error("Error al guardar usuario");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!user) return;
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/user-profiles/${user.documentId || user.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Error al eliminar");
+      }
+      toast.success("Usuario eliminado correctamente");
+      router.push("/users");
+    } catch (err) {
+      console.error("Error eliminando usuario:", err);
+      toast.error("Error al eliminar usuario");
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
 
   const backButton = (
     <Button
@@ -301,29 +487,42 @@ export default function UserDetailsPage() {
     </Button>
   );
 
-  if (!clientData) {
+  if (isLoading) {
     return (
-      <AdminLayout title="Cliente no encontrado" showFilterAction leftActions={backButton}>
+      <AdminLayout title="Cargando usuario..." showFilterAction leftActions={backButton}>
+        <section className={`flex flex-col ${spacing.gap.large}`}>
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardContent className={`flex flex-col items-center ${spacing.gap.base} p-6`}>
+              <Skeleton className="h-24 w-24 rounded-full" />
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-4 w-32" />
+            </CardContent>
+          </Card>
+        </section>
+      </AdminLayout>
+    );
+  }
+
+  if (error || !user) {
+    return (
+      <AdminLayout title="Usuario no encontrado" showFilterAction leftActions={backButton}>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
-          <p className={typography.body.large}>El cliente solicitado no existe.</p>
+          <p className={typography.body.large}>{error || "El usuario solicitado no existe."}</p>
           <Button onClick={() => router.push("/users")}>
-            Volver a Clientes
+            Volver a Usuarios
           </Button>
         </section>
       </AdminLayout>
     );
   }
 
-  const handleSaveNote = () => {
-    // Aquí iría la lógica para guardar la nota
-    console.log("Nota guardada:", note, "para cliente:", userId);
-    setNote("");
-  };
+  const roleInfo = roleConfig[user.role];
+  const RoleIcon = roleInfo.icon;
 
   return (
-    <AdminLayout title={clientData.name} showFilterAction leftActions={backButton}>
+    <AdminLayout title={user.displayName} showFilterAction leftActions={backButton}>
       <section className={`flex flex-col ${spacing.gap.large}`}>
-        {/* Información del Cliente */}
+        {/* Información del Usuario */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
           <CardContent className={`flex flex-col items-center ${spacing.gap.base} p-6 relative`}>
             {/* Botones de navegación en la parte superior */}
@@ -343,173 +542,685 @@ export default function UserDetailsPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-[8rem]">
-                  <DropdownMenuItem className="cursor-pointer">Editar Cliente</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" className="cursor-pointer">Eliminar Cliente</DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(!isEditing)}>
+                    {isEditing ? "Cancelar edición" : "Editar Usuario"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    variant="destructive" 
+                    className="cursor-pointer"
+                    onClick={() => setShowDeleteDialog(true)}
+                  >
+                    Eliminar Usuario
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            {/* Avatar */}
-            <Avatar className="h-24 w-24 shrink-0 rounded-full mt-8">
-              {clientData.avatar ? (
-                <AvatarImage 
-                  src={clientData.avatar} 
-                  alt={`Avatar de ${clientData.name}`}
-                  className="rounded-full"
-                />
-              ) : null}
-              <AvatarFallback className="rounded-full text-xl">
-                {getInitials(clientData.name)}
-              </AvatarFallback>
-            </Avatar>
+            {/* Avatar - Aseguramos que se muestre completo */}
+            <div className="relative group">
+              <Avatar className="h-24 w-24 shrink-0 rounded-full overflow-hidden ring-2 ring-background">
+                {imagePreview ? (
+                  <AvatarImage 
+                    src={imagePreview} 
+                    alt={user.avatar?.alternativeText || `Avatar de ${user.displayName}`}
+                    className="rounded-full object-cover w-full h-full"
+                  />
+                ) : user.avatar?.url ? (
+                  <AvatarImage 
+                    src={strapiImages.getURL(user.avatar.url)} 
+                    alt={user.avatar.alternativeText || `Avatar de ${user.displayName}`}
+                    className="rounded-full object-cover w-full h-full"
+                  />
+                ) : null}
+                <AvatarFallback className="rounded-full text-xl w-full h-full flex items-center justify-center bg-muted">
+                  {getInitials(user.displayName)}
+                </AvatarFallback>
+              </Avatar>
+              {/* Overlay y botón para cambiar imagen - visible al hacer hover */}
+              <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-10 w-10 rounded-full bg-background/80 text-foreground hover:bg-background"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingImage}
+                  title="Cambiar imagen de perfil"
+                >
+                  <Camera className="h-5 w-5" />
+                </Button>
+              </div>
+              {/* Botones de acción cuando hay cambios en la imagen y está en modo edición */}
+              {isEditing && (selectedImageFile || shouldRemoveImage) && (
+                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex gap-1 bg-background rounded-full p-1 shadow-lg border border-border">
+                  {selectedImageFile && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="destructive"
+                      className="h-7 w-7 rounded-full"
+                      onClick={handleRemoveImage}
+                      disabled={isUploadingImage}
+                      title="Eliminar imagen"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                  {shouldRemoveImage && user.avatar?.url && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-7 w-7 rounded-full"
+                      onClick={handleRestoreOriginalImage}
+                      disabled={isUploadingImage}
+                      title="Restaurar imagen original"
+                    >
+                      <ArrowLeft className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              )}
+              {/* Indicador de carga al subir imagen */}
+              {isUploadingImage && (
+                <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
+                  <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {/* Input file oculto */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                onChange={handleImageInputChange}
+                className="hidden"
+              />
+            </div>
 
             {/* Nombre */}
-            <div className="flex flex-col items-center text-center">
-              <h2 className={`${typography.h3} text-center`}>
-                {clientData.name}
-              </h2>
-              <p className={`${typography.body.small} mt-1 text-muted-foreground`}>
-                {clientData.email}
-              </p>
-            </div>
+            {isEditing ? (
+              <div className="flex flex-col items-center w-full max-w-2xl gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                  <div className="w-full">
+                    <Label>Nombre</Label>
+                    <Input
+                      value={formData.displayName}
+                      onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Teléfono</Label>
+                    <Input
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>DNI/NIE</Label>
+                    <Input
+                      value={formData.identificationNumber}
+                      onChange={(e) => setFormData({ ...formData, identificationNumber: e.target.value })}
+                      className="mt-1"
+                      placeholder="12345678X"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Rol</Label>
+                    <Select
+                      value={formData.role}
+                      onValueChange={(value: "admin" | "seller" | "driver") => setFormData({ ...formData, role: value })}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="admin">Administrador</SelectItem>
+                        <SelectItem value="seller">Vendedor</SelectItem>
+                        <SelectItem value="driver">Conductor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-full">
+                    <Label>Departamento</Label>
+                    <Input
+                      value={formData.department}
+                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Fecha de Nacimiento</Label>
+                    <Input
+                      type="date"
+                      value={formData.dateOfBirth}
+                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Fecha de Contratación</Label>
+                    <Input
+                      type="date"
+                      value={formData.hireDate}
+                      onChange={(e) => setFormData({ ...formData, hireDate: e.target.value })}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Horario de Trabajo</Label>
+                    <Input
+                      value={formData.workSchedule}
+                      onChange={(e) => setFormData({ ...formData, workSchedule: e.target.value })}
+                      className="mt-1"
+                      placeholder="Lunes a Viernes 9:00 - 18:00"
+                    />
+                  </div>
+                  {user.role === "driver" && (
+                    <div className="w-full">
+                      <Label>Licencia de Conducir</Label>
+                      <Input
+                        value={formData.driverLicense}
+                        onChange={(e) => setFormData({ ...formData, driverLicense: e.target.value })}
+                        className="mt-1"
+                        placeholder="B, C, D"
+                      />
+                    </div>
+                  )}
+                  {user.role === "seller" && (
+                    <div className="w-full">
+                      <Label>Especialidades</Label>
+                      <Input
+                        value={formData.specialties}
+                        onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
+                        className="mt-1"
+                        placeholder="Especialidades o áreas de experiencia"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="w-full">
+                  <Label>Dirección</Label>
+                  <Textarea
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="mt-1"
+                    rows={2}
+                    placeholder="Dirección completa"
+                  />
+                </div>
+                <div className="w-full">
+                  <Label>Biografía</Label>
+                  <Textarea
+                    value={formData.bio}
+                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                    className="mt-1"
+                    rows={4}
+                    placeholder="Escribe una breve biografía..."
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                  <div className="w-full">
+                    <Label>Contacto de Emergencia - Nombre</Label>
+                    <Input
+                      value={formData.emergencyContactName}
+                      onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })}
+                      className="mt-1"
+                      placeholder="Nombre del contacto"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>Contacto de Emergencia - Teléfono</Label>
+                    <Input
+                      value={formData.emergencyContactPhone}
+                      onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })}
+                      className="mt-1"
+                      placeholder="+34 600 123 456"
+                    />
+                  </div>
+                  <div className="w-full">
+                    <Label>LinkedIn</Label>
+                    <Input
+                      type="url"
+                      value={formData.linkedin}
+                      onChange={(e) => setFormData({ ...formData, linkedin: e.target.value })}
+                      className="mt-1"
+                      placeholder="https://linkedin.com/in/tu-perfil"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 w-full">
+                  <Button onClick={handleSave} disabled={isSaving || isUploadingImage} className="flex-1">
+                    {isSaving || isUploadingImage ? "Guardando..." : "Guardar"}
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setIsEditing(false);
+                      // Restaurar imagen original si se canceló
+                      if (user.avatar?.url) {
+                        updateImagePreview(strapiImages.getURL(user.avatar.url));
+                      } else {
+                        updateImagePreview(null);
+                      }
+                      setSelectedImageFile(null);
+                      setShouldRemoveImage(false);
+                    }} 
+                    variant="outline" 
+                    className="flex-1"
+                    disabled={isSaving || isUploadingImage}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-col items-center text-center">
+                  <h2 className={`${typography.h3} text-center`}>
+                    {user.displayName}
+                  </h2>
+                  {user.email && (
+                    <p className={`${typography.body.small} mt-1 text-muted-foreground`}>
+                      {user.email}
+                    </p>
+                  )}
+                </div>
 
-            {/* Badge */}
-            <Badge className={`rounded-full px-3 py-1 text-xs font-medium border-0 ${getStatusBadgeClass(clientData.status)}`}>
-              {getStatusLabel(clientData.status)}
-            </Badge>
+                {/* Badge de Rol */}
+                <Badge className={`rounded-full px-3 py-1 text-xs font-medium border-0 flex items-center gap-1 ${roleInfo.className}`}>
+                  <RoleIcon className="h-3 w-3" />
+                  {roleInfo.label}
+                </Badge>
 
-            {/* Botones de acción */}
-            <div className={`flex items-center justify-center ${spacing.gap.small} w-full pt-2`}>
-              <Button
-                variant="default"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
-                onClick={() => window.location.href = `tel:${clientData.phone}`}
-              >
-                <Phone className="h-5 w-5 flex-shrink-0" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                onClick={() => window.location.href = `mailto:${clientData.email}`}
-              >
-                <Mail className="h-5 w-5 flex-shrink-0" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                onClick={() => {
-                  // Acción de mensaje
-                }}
-              >
-                <MessageSquare className="h-5 w-5 flex-shrink-0" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                onClick={() => {
-                  // Acción de editar
-                }}
-              >
-                <Edit className="h-5 w-5 flex-shrink-0" />
-              </Button>
-            </div>
+                {/* Información adicional */}
+                {(user.phone || user.department) && (
+                  <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+                    {user.phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        {user.phone}
+                      </div>
+                    )}
+                    {user.department && (
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="h-4 w-4" />
+                        {user.department}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Botones de acción */}
+                <div className={`flex items-center justify-center ${spacing.gap.small} w-full pt-2`}>
+                  {user.phone && (
+                    <Button
+                      variant="default"
+                      size="icon"
+                      className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
+                      onClick={() => window.location.href = `tel:${user.phone}`}
+                    >
+                      <Phone className="h-5 w-5 flex-shrink-0" />
+                    </Button>
+                  )}
+                  {user.email && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
+                      onClick={() => window.location.href = `mailto:${user.email}`}
+                    >
+                      <Mail className="h-5 w-5 flex-shrink-0" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    <Edit className="h-5 w-5 flex-shrink-0" />
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
-        {/* Vehículo de Interés */}
-        {vehicleData && (
+        {/* Recordatorios */}
+        {user.assignedReminders && user.assignedReminders.length > 0 && (
           <Card className="shadow-sm ring-1 ring-inset ring-border/50">
             <CardHeader className="px-6 pt-6 pb-4">
-              <CardTitle className={typography.h4}>Vehículo de Interés</CardTitle>
-            </CardHeader>
-            <CardContent className={`flex items-start ${spacing.gap.medium} px-6 pb-6`}>
-              <div className="relative w-20 h-20 shrink-0 overflow-hidden rounded-lg bg-muted">
-                <Image
-                  src={vehicleData.image}
-                  alt={vehicleData.name}
-                  fill
-                  className="object-cover"
-                  sizes="80px"
-                  priority={false}
-                />
-              </div>
-              <div className="flex-1 min-w-0 flex flex-col gap-1">
-                <h3 className={`${typography.body.large} font-semibold line-clamp-2`}>
-                  {vehicleData.name}
-                </h3>
-                <p className={`${typography.body.small}`}>
-                  Color: <span className="text-foreground font-medium">{vehicleData.color}</span>
-                </p>
-                <p className={`${typography.body.base} text-foreground font-semibold mt-1`}>
-                  Precio estimado: {vehicleData.price}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Historial de Comunicación */}
-        {communicationHistory.length > 0 && (
-          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
-            <CardHeader className="px-6 pt-6 pb-4">
-              <CardTitle className={typography.h4}>Historial de Comunicación</CardTitle>
+              <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                <Bell className="h-5 w-5" />
+                Recordatorios
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-6 pb-6">
-              <ul className={`flex flex-col ${spacing.gap.base}`}>
-                {communicationHistory.map((item) => {
-                  const Icon = getCommunicationIcon(item.type);
-                  const iconColorClass = getCommunicationIconColor(item.type);
-                  
-                  return (
-                    <li key={item.id} className={`flex items-start ${spacing.gap.base}`}>
-                      <div className={`flex size-8 items-center justify-center rounded-full shrink-0 ${iconColorClass}`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`${typography.body.base} font-medium`}>
-                          {item.title}
-                        </p>
-                        <p className={`${typography.body.small} text-xs mt-0.5`}>
-                          {item.date} - {item.author}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <FleetReminders
+                reminders={user.assignedReminders}
+                isLoading={false}
+                onToggleCompleted={async (reminderId, isCompleted) => {
+                  try {
+                    const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        data: { isCompleted: !isCompleted },
+                      }),
+                    });
+                    if (!response.ok) throw new Error("Error al actualizar");
+                    // Emitir evento de cambio de estado completado
+                    emitReminderToggleCompleted(reminderId, !isCompleted);
+                    toast.success(isCompleted ? "Recordatorio marcado como pendiente" : "Recordatorio marcado como completado");
+                    await loadUser();
+                  } catch (error) {
+                    console.error("Error:", error);
+                    toast.error("Error al actualizar el recordatorio");
+                  }
+                }}
+                vehicleId={userId}
+              />
             </CardContent>
           </Card>
         )}
 
-        {/* Notas y Comentarios */}
-        <Card className="shadow-sm ring-1 ring-inset ring-border/50">
-          <CardHeader className="px-6 pt-6 pb-4">
-            <CardTitle className={typography.h4}>Notas y Comentarios</CardTitle>
-          </CardHeader>
-          <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
-            <Textarea
-              placeholder="Añadir una nota sobre el cliente..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={4}
-              className="min-h-24 resize-y"
-            />
-            <Button
-              onClick={handleSaveNote}
-              variant="default"
-              className="btn-black"
-              disabled={!note.trim()}
-            >
-              Guardar Nota
-            </Button>
-          </CardContent>
-        </Card>
+        {/* Autos a los que están interesados */}
+        {user.interestedVehicles && user.interestedVehicles.length > 0 && (
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                <Car className="h-5 w-5" />
+                Autos a los que están interesados
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-6 pb-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                {user.interestedVehicles.map((vehicle) => (
+                  <div
+                    key={vehicle.id}
+                    onClick={() => router.push(`/fleet/details/${vehicle.documentId || vehicle.id}`)}
+                    className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                  >
+                    {vehicle.image?.url ? (
+                      <div className="relative w-16 h-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+                        <Image
+                          src={strapiImages.getURL(vehicle.image.url)}
+                          alt={vehicle.image.alternativeText || vehicle.name}
+                          fill
+                          className="object-cover"
+                          sizes="64px"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 shrink-0 rounded-lg bg-muted flex items-center justify-center">
+                        <Car className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className={`${typography.body.base} font-medium line-clamp-1`}>
+                        {vehicle.name}
+                      </p>
+                      <p className={`${typography.body.small} text-muted-foreground`}>
+                        {vehicle.brand} {vehicle.model} ({vehicle.year})
+                      </p>
+                      <p className={`${typography.body.small} text-xs text-muted-foreground mt-1`}>
+                        VIN: {vehicle.vin}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Autos a los que están contratando */}
+        {user.assignedVehicles && user.assignedVehicles.length > 0 && (
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                <Car className="h-5 w-5" />
+                Autos a los que están contratando
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-6 pb-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                {user.assignedVehicles.map((vehicle) => (
+                  <div
+                    key={vehicle.id}
+                    onClick={() => router.push(`/fleet/details/${vehicle.documentId || vehicle.id}`)}
+                    className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted transition-colors"
+                  >
+                    {vehicle.image?.url ? (
+                      <div className="relative w-16 h-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+                        <Image
+                          src={strapiImages.getURL(vehicle.image.url)}
+                          alt={vehicle.image.alternativeText || vehicle.name}
+                          fill
+                          className="object-cover"
+                          sizes="64px"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 shrink-0 rounded-lg bg-muted flex items-center justify-center">
+                        <Car className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className={`${typography.body.base} font-medium line-clamp-1`}>
+                        {vehicle.name}
+                      </p>
+                      <p className={`${typography.body.small} text-muted-foreground`}>
+                        {vehicle.brand} {vehicle.model} ({vehicle.year})
+                      </p>
+                      <p className={`${typography.body.small} text-xs text-muted-foreground mt-1`}>
+                        VIN: {vehicle.vin}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Información Adicional */}
+        {!isEditing && (
+          <>
+            {/* Información Personal Detallada */}
+            {(user.address || user.dateOfBirth || user.identificationNumber || user.hireDate || user.workSchedule) && (
+              <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+                <CardHeader className="px-6 pt-6 pb-4">
+                  <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                    <UserIcon className="h-5 w-5" />
+                    Información Personal
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-6 pb-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {user.identificationNumber && (
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>DNI/NIE</p>
+                          <p className={typography.body.base}>{user.identificationNumber}</p>
+                        </div>
+                      </div>
+                    )}
+                    {user.dateOfBirth && (
+                      <div className="flex items-center gap-3">
+                        <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Fecha de Nacimiento</p>
+                          <p className={typography.body.base}>
+                            {format(new Date(user.dateOfBirth), "d 'de' MMMM, yyyy", { locale: es })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {user.hireDate && (
+                      <div className="flex items-center gap-3">
+                        <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Fecha de Contratación</p>
+                          <p className={typography.body.base}>
+                            {format(new Date(user.hireDate), "d 'de' MMMM, yyyy", { locale: es })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {user.workSchedule && (
+                      <div className="flex items-center gap-3">
+                        <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Horario de Trabajo</p>
+                          <p className={typography.body.base}>{user.workSchedule}</p>
+                        </div>
+                      </div>
+                    )}
+                    {user.address && (
+                      <div className="flex items-start gap-3 md:col-span-2">
+                        <MapPin className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className={`${typography.body.small} text-muted-foreground`}>Dirección</p>
+                          <p className={typography.body.base}>{user.address}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Información Profesional Adicional */}
+            {((user.role === "driver" && user.driverLicense) || (user.role === "seller" && user.specialties)) && (
+              <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+                <CardHeader className="px-6 pt-6 pb-4">
+                  <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                    <Briefcase className="h-5 w-5" />
+                    Información Profesional
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-6 pb-6">
+                  <div className="flex flex-col gap-4">
+                    {user.role === "driver" && user.driverLicense && (
+                      <div className="flex items-center gap-3">
+                        <Car className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Licencia de Conducir</p>
+                          <p className={typography.body.base}>{user.driverLicense}</p>
+                        </div>
+                      </div>
+                    )}
+                    {user.role === "seller" && user.specialties && (
+                      <div className="flex items-start gap-3">
+                        <Briefcase className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className={`${typography.body.small} text-muted-foreground`}>Especialidades</p>
+                          <p className={typography.body.base}>{user.specialties}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Contacto de Emergencia y Redes */}
+            {(user.emergencyContactName || user.emergencyContactPhone || user.linkedin) && (
+              <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+                <CardHeader className="px-6 pt-6 pb-4">
+                  <CardTitle className={`${typography.h4} flex items-center gap-2`}>
+                    <AlertCircle className="h-5 w-5" />
+                    Contacto de Emergencia y Redes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-6 pb-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {user.emergencyContactName && (
+                      <div className="flex items-center gap-3">
+                        <UserIcon className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Contacto de Emergencia</p>
+                          <p className={typography.body.base}>{user.emergencyContactName}</p>
+                        </div>
+                      </div>
+                    )}
+                    {user.emergencyContactPhone && (
+                      <div className="flex items-center gap-3">
+                        <Phone className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className={`${typography.body.small} text-muted-foreground`}>Teléfono de Emergencia</p>
+                          <p className={typography.body.base}>{user.emergencyContactPhone}</p>
+                        </div>
+                      </div>
+                    )}
+                    {user.linkedin && (
+                      <div className="flex items-center gap-3 md:col-span-2">
+                        <Linkedin className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className={`${typography.body.small} text-muted-foreground`}>LinkedIn</p>
+                          <a 
+                            href={user.linkedin} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className={`${typography.body.base} text-primary hover:underline break-all`}
+                          >
+                            {user.linkedin}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Biografía */}
+            {user.bio && (
+              <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+                <CardHeader className="px-6 pt-6 pb-4">
+                  <CardTitle className={typography.h4}>Biografía</CardTitle>
+                </CardHeader>
+                <CardContent className="px-6 pb-6">
+                  <p className={typography.body.base}>{user.bio}</p>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        )}
       </section>
+
+      {/* Diálogo de confirmación de eliminación */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente el usuario {user.displayName}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }
-
