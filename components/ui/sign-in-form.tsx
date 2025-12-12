@@ -13,7 +13,6 @@ import { actions } from "@/actions";
 import { type FormState, SignInFormSchema } from "@/validations/auth";
 import { FormError } from "./form-error";
 import { Loader2 } from "lucide-react";
-
 interface SignInFormProps {
   data: SinginFormData;
 }
@@ -72,13 +71,11 @@ export function SignInForm({ data }: SignInFormProps) {
 
   return (
     <>
-      <Card className="w-full py-8 px-8 bg-card">
+      <Card className="w-full py-8 px-8 bg-white">
         <CardHeader className="space-y-2 pb-6">
-          <CardTitle className="text-3xl font-bold text-primary text-center">
-            {header?.title || "Iniciar Sesión"}
-          </CardTitle>
+          <CardTitle className="text-3xl font-bold text-primary text-center">{header.title}</CardTitle>
           <CardDescription className="text-base text-center">
-            {header?.subtitle || "Ingresa tus datos para iniciar sesión en tu cuenta"}
+            {header.subtitle}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0">
@@ -94,7 +91,7 @@ export function SignInForm({ data }: SignInFormProps) {
                       <Input 
                         placeholder={email_placeholder} 
                         type="email" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
+                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
                         {...field} 
                       />
                     </FormControl>
@@ -112,7 +109,7 @@ export function SignInForm({ data }: SignInFormProps) {
                       <Input 
                         placeholder={password_placeholder} 
                         type="password" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 dark:border-white/20 bg-white dark:bg-white dark:text-black"
+                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
                         {...field} 
                       />
                     </FormControl>
@@ -150,9 +147,9 @@ export function SignInForm({ data }: SignInFormProps) {
       </Card>
     {singupLink && (
       <p className="text-base text-muted-foreground text-center pt-4">
-        {singup_previous_link_text || "¿No tienes una cuenta?"}{" "}
+        {singup_previous_link_text}{" "}
         <Link href={singupLink.href} className="text-primary hover:underline font-medium">
-          {singupLink.label || "Regístrate"}
+          {singupLink.label}
         </Link>
       </p>
     )}

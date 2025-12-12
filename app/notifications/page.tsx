@@ -7,16 +7,15 @@ import { Input } from "@/components_shadcn/ui/input";
 import { Label } from "@/components_shadcn/ui/label";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
-import { Combobox } from "@/components_shadcn/ui/combobox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components_shadcn/ui/dialog";
-import { Archive, CheckCheck, Calendar, Plus, UserPlus, Sparkles, Receipt, Car, Bell, Eye, EyeOff } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components_shadcn/ui/tabs";
+import { Archive, CheckCheck, Calendar, Plus, UserPlus, Sparkles, Receipt, Car, Bell } from "lucide-react";
 import { useState, useEffect } from "react";
 import { commonClasses, spacing, typography, colors } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { FleetReminder } from "@/validations/types";
 import { toast } from "sonner";
-import { FleetReminders } from "@/components/ui/fleet-reminders";
-import { REMINDER_EVENTS, emitReminderToggleCompleted, emitReminderToggleActive, emitReminderDeleted } from "@/lib/reminder-events";
+import { REMINDER_EVENTS } from "@/lib/reminder-events";
 
 interface UserProfile {
   id: number;
@@ -35,6 +34,20 @@ interface ManualNotification {
   isRead: boolean;
   timestamp: string;
   createdAt: string;
+  fleetReminder?: {
+    id: number;
+    documentId?: string;
+    title: string;
+    description?: string;
+    isActive: boolean;
+    isCompleted: boolean;
+    nextTrigger: string;
+    vehicle?: {
+      id: number;
+      documentId?: string;
+      name: string;
+    };
+  };
 }
 
 interface Notification {
@@ -170,15 +183,14 @@ function manualNotificationsToNotifications(notifications: ManualNotification[])
 }
 
 export default function NotificationsPage() {
+  const [activeTab, setActiveTab] = useState<"notifications" | "archived">("notifications");
   const [notificationList, setNotificationList] = useState<Notification[]>([]);
-  const [reminders, setReminders] = useState<FleetReminder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "seller" | "driver" | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [showCompletedReminders, setShowCompletedReminders] = useState(false);
   
   // Formulario
   const [formTitle, setFormTitle] = useState("");
@@ -223,44 +235,86 @@ export default function NotificationsPage() {
     fetchUsers();
   }, []);
 
-  // Obtener recordatorios y notificaciones del usuario
+  // Obtener notificaciones del usuario (ya sincronizadas desde la BD)
   useEffect(() => {
     async function fetchNotifications() {
       try {
         setIsLoading(true);
         setError(null);
         
-        // Obtener recordatorios
-        const remindersResponse = await fetch("/api/reminders", {
-          cache: "no-store",
-        });
-
-        // Obtener notificaciones manuales
+        // Obtener todas las notificaciones (incluyendo las sincronizadas de recordatorios)
         const notificationsResponse = await fetch("/api/notifications", {
           cache: "no-store",
         });
 
-        const remindersData: FleetReminder[] = remindersResponse.ok 
-          ? (await remindersResponse.json()).data || []
-          : [];
-
-        const manualNotifications: ManualNotification[] = notificationsResponse.ok
+        const allNotificationsFromDB: ManualNotification[] = notificationsResponse.ok
           ? (await notificationsResponse.json()).data || []
           : [];
 
-        // Guardar recordatorios separados
-        setReminders(remindersData);
-
-        // Ordenar notificaciones manuales por fecha (más recientes primero)
-        manualNotifications.sort((a, b) => {
-          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        // Convertir todas las notificaciones de la BD al formato de la UI
+        const convertedNotifications = allNotificationsFromDB.map((notification) => {
+          // Si tiene fleetReminder, es una notificación sincronizada de recordatorio
+          if (notification.fleetReminder) {
+            const reminder = notification.fleetReminder;
+            const vehicleName = reminder.vehicle?.name || "Vehículo";
+            const description = reminder.description 
+              ? `${reminder.description} - ${vehicleName}`
+              : vehicleName;
+            
+            // Usar el timestamp de la notificación (que es el nextTrigger del recordatorio)
+            const reminderTimestamp = notification.timestamp || reminder.nextTrigger;
+            
+            return {
+              id: `reminder-${reminder.documentId || reminder.id}`,
+              title: reminder.title,
+              description,
+              timestamp: formatRelativeTime(reminderTimestamp),
+              isRead: notification.isRead,
+              type: "reminder" as const,
+              icon: Calendar,
+              iconBgColor: reminder.isActive && !reminder.isCompleted ? "bg-primary/10" : "bg-muted",
+              iconColor: reminder.isActive && !reminder.isCompleted ? "text-primary" : "text-muted-foreground",
+              reminderId: reminder.id,
+              reminderDocumentId: reminder.documentId,
+              notificationId: notification.id,
+              notificationDocumentId: notification.documentId,
+              source: "reminder" as const,
+              originalTimestamp: reminderTimestamp, // Guardar para ordenamiento
+            };
+          } else {
+            // Es una notificación manual
+            const colors = getNotificationColors(notification.type);
+            return {
+              id: `notification-${notification.documentId || notification.id}`,
+              title: notification.title,
+              description: notification.description || "",
+              timestamp: formatRelativeTime(notification.timestamp),
+              isRead: notification.isRead,
+              type: notification.type,
+              icon: getNotificationIcon(notification.type),
+              iconBgColor: colors.bg,
+              iconColor: colors.color,
+              notificationId: notification.id,
+              notificationDocumentId: notification.documentId,
+              source: "manual" as const,
+              originalTimestamp: notification.timestamp, // Guardar para ordenamiento
+            };
+          }
         });
         
-        // Convertir solo notificaciones manuales a notificaciones
-        const manualNotificationsList = manualNotificationsToNotifications(manualNotifications);
+        // Ordenar por fecha (no leídas primero, luego por timestamp)
+        convertedNotifications.sort((a, b) => {
+          // Las no leídas primero
+          if (a.isRead !== b.isRead) {
+            return a.isRead ? 1 : -1;
+          }
+          // Luego por timestamp (más recientes primero)
+          const dateA = (a as any).originalTimestamp || a.timestamp;
+          const dateB = (b as any).originalTimestamp || b.timestamp;
+          return new Date(dateB).getTime() - new Date(dateA).getTime();
+        });
         
-        // Solo usar notificaciones manuales
-        setNotificationList(manualNotificationsList);
+        setNotificationList(convertedNotifications);
       } catch (err) {
         console.error("Error obteniendo notificaciones:", err);
         setError(err instanceof Error ? err.message : "Error desconocido");
@@ -271,7 +325,7 @@ export default function NotificationsPage() {
 
     fetchNotifications();
     
-    // Escuchar eventos de cambios en recordatorios
+    // Escuchar eventos de cambios en recordatorios para sincronización automática
     const handleReminderChange = () => {
       fetchNotifications();
     };
@@ -302,10 +356,41 @@ export default function NotificationsPage() {
     };
   }, []);
 
-  const handleMarkAllAsRead = () => {
-    setNotificationList((prev) =>
-      prev.map((notification) => ({ ...notification, isRead: true }))
-    );
+  const handleMarkAllAsRead = async () => {
+    try {
+      // Obtener todas las notificaciones no leídas
+      const unreadNotifications = notificationList.filter((n) => !n.isRead);
+      
+      // Marcar todas como leídas en la BD
+      await Promise.all(
+        unreadNotifications.map(async (notification) => {
+          if (notification.notificationId || notification.notificationDocumentId) {
+            const notificationId = notification.notificationId || notification.notificationDocumentId;
+            try {
+              await fetch(`/api/notifications/${notificationId}`, {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ isRead: true }),
+              });
+            } catch (error) {
+              console.error(`Error marcando notificación ${notificationId} como leída:`, error);
+            }
+          }
+        })
+      );
+      
+      // Actualizar el estado local
+      setNotificationList((prev) =>
+        prev.map((notification) => ({ ...notification, isRead: true }))
+      );
+      
+      toast.success("Todas las notificaciones han sido marcadas como leídas");
+    } catch (error) {
+      console.error("Error marcando todas las notificaciones como leídas:", error);
+      toast.error("Error al marcar las notificaciones como leídas");
+    }
   };
 
   const handleCreateNotification = async () => {
@@ -356,12 +441,12 @@ export default function NotificationsPage() {
     }
   };
 
-  const displayedNotifications = notificationList;
+  const displayedNotifications =
+    activeTab === "archived"
+      ? notificationList.filter((n) => n.isRead)
+      : notificationList;
 
   const unreadCount = notificationList.filter((n) => !n.isRead).length;
-  
-  // Calcular recordatorios completados
-  const completedReminders = reminders.filter((r) => r.isCompleted);
   const isAdmin = currentUserRole === "admin";
 
   return (
@@ -377,10 +462,10 @@ export default function NotificationsPage() {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
-              <DialogHeader className="px-6 pt-6 pb-4">
+              <DialogHeader>
                 <DialogTitle>Crear Nueva Notificación</DialogTitle>
               </DialogHeader>
-              <div className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+              <div className="flex flex-col gap-4 py-4">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="title">Título *</Label>
                   <Input
@@ -406,7 +491,7 @@ export default function NotificationsPage() {
                     <SelectTrigger id="type">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent align="end">
+                    <SelectContent>
                       <SelectItem value="reminder">Recordatorio</SelectItem>
                       <SelectItem value="lead">Lead</SelectItem>
                       <SelectItem value="sale">Venta</SelectItem>
@@ -421,7 +506,7 @@ export default function NotificationsPage() {
                     <SelectTrigger id="recipientType">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent align="end">
+                    <SelectContent>
                       <SelectItem value="specific">Usuario específico</SelectItem>
                       <SelectItem value="all_sellers">Todos los vendedores</SelectItem>
                       <SelectItem value="all_admins">Todos los administradores</SelectItem>
@@ -432,23 +517,22 @@ export default function NotificationsPage() {
                 {formRecipientType === "specific" && (
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="recipientId">Usuario</Label>
-                    <Combobox
-                      options={users.map((user) => ({
-                        value: user.documentId,
-                        label: `${user.displayName} (${user.role === "admin" ? "Admin" : user.role === "seller" ? "Vendedor" : "Conductor"})`,
-                        email: user.email,
-                      }))}
-                      value={formRecipientId}
-                      onValueChange={setFormRecipientId}
-                      placeholder="Selecciona un usuario"
-                      searchPlaceholder="Buscar usuarios..."
-                      emptyMessage="No se encontraron usuarios."
-                      disabled={isCreating}
-                    />
+                    <Select value={formRecipientId} onValueChange={setFormRecipientId}>
+                      <SelectTrigger id="recipientId">
+                        <SelectValue placeholder="Selecciona un usuario" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.documentId} value={user.documentId}>
+                            {user.displayName} ({user.role === "admin" ? "Admin" : user.role === "seller" ? "Vendedor" : "Conductor"})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
               </div>
-              <DialogFooter className="px-6 pb-6 pt-4">
+              <DialogFooter>
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancelar
                 </Button>
@@ -461,82 +545,26 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {/* Botón Ver completados en lugar de tabs */}
-      {completedReminders.length > 0 && (
-        <div className="px-0 flex justify-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowCompletedReminders(!showCompletedReminders)}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            {showCompletedReminders ? (
-              <>
-                <EyeOff className="h-4 w-4 mr-2" />
-                Ocultar completados ({completedReminders.length})
-              </>
-            ) : (
-              <>
-                <Eye className="h-4 w-4 mr-2" />
-                Ver completados ({completedReminders.length})
-              </>
-            )}
-          </Button>
-        </div>
-      )}
-
-      {/* Sección de Recordatorios */}
-      {reminders.length > 0 && (
-        <Card className={commonClasses.card}>
-          <CardContent className={`flex flex-col ${spacing.gap.base} ${spacing.card.padding}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Bell className="h-5 w-5" />
-              <h3 className={typography.h4}>Recordatorios</h3>
-            </div>
-            <FleetReminders
-              reminders={reminders}
-              isLoading={false}
-              onToggleCompleted={async (reminderId, isCompleted) => {
-                try {
-                  const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      data: { isCompleted: !isCompleted },
-                    }),
-                  });
-                  if (!response.ok) throw new Error("Error al actualizar");
-                  // Emitir evento de cambio de estado completado
-                  emitReminderToggleCompleted(reminderId, !isCompleted);
-                  toast.success(isCompleted ? "Recordatorio marcado como pendiente" : "Recordatorio marcado como completado");
-                  // Recargar recordatorios
-                  const remindersResponse = await fetch("/api/reminders", { cache: "no-store" });
-                  if (remindersResponse.ok) {
-                    const { data } = await remindersResponse.json();
-                    setReminders(data || []);
-                  }
-                } catch (error) {
-                  console.error("Error:", error);
-                  toast.error("Error al actualizar el recordatorio");
-                }
-              }}
-              vehicleId=""
-              showCompletedButton={false}
-              forceShowCompleted={showCompletedReminders}
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Lista de Notificaciones Manuales */}
-      {notificationList.length > 0 && (
-        <div className={`flex flex-col ${spacing.gap.medium} px-0`}>
-          <div className="flex items-center gap-2 mb-2">
-            <Bell className="h-5 w-5" />
-            <h3 className={typography.h4}>Notificaciones</h3>
-          </div>
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="px-0">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "notifications" | "archived")}>
+          <TabsList className="flex items-center justify-center w-full bg-transparent p-0 h-auto border-0 shadow-none gap-2">
+            <TabsTrigger
+              value="archived"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 data-[state=active]:bg-muted data-[state=active]:shadow-none"
+            >
+              <Archive className="h-4 w-4" />
+              <span className={typography.body.base}>Archivadas</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="notifications"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 data-[state=active]:bg-muted data-[state=active]:shadow-none"
+            >
+              <span className={typography.body.base}>Notificaciones</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
       {/* Lista de Notificaciones */}
       <div className={`flex flex-col ${spacing.gap.medium} px-0 pb-28`}>
@@ -564,7 +592,7 @@ export default function NotificationsPage() {
               </p>
             </CardContent>
           </Card>
-        ) : displayedNotifications.length === 0 && reminders.length === 0 ? (
+        ) : displayedNotifications.length === 0 ? (
           <Card className={commonClasses.card}>
             <CardContent className={`flex flex-col items-center justify-center text-center ${spacing.card.padding}`}>
               <div className="flex items-center justify-center bg-muted rounded-full size-24 mb-6">
@@ -572,11 +600,13 @@ export default function NotificationsPage() {
               </div>
               <h3 className={typography.h3}>¡Todo al día!</h3>
               <p className={`${typography.body.small} mt-2`}>
-                No tienes notificaciones nuevas.
+                {activeTab === "archived"
+                  ? "No tienes notificaciones archivadas."
+                  : "No tienes notificaciones nuevas."}
               </p>
             </CardContent>
           </Card>
-        ) : displayedNotifications.length > 0 ? (
+        ) : (
           displayedNotifications.map((notification) => {
             const Icon = notification.icon;
             return (
@@ -625,11 +655,11 @@ export default function NotificationsPage() {
               </Card>
             );
           })
-        ) : null}
+        )}
       </div>
 
       {/* Floating Action Button */}
-      {unreadCount > 0 && (
+      {activeTab === "notifications" && unreadCount > 0 && (
         <div className="fixed bottom-6 right-6 z-50">
           <Button
             onClick={handleMarkAllAsRead}

@@ -85,7 +85,7 @@ export async function GET() {
       );
     }
 
-    // Obtener notificaciones del usuario
+    // Obtener notificaciones del usuario (incluyendo las relacionadas con recordatorios)
     const notificationQuery = qs.stringify({
       filters: {
         recipient: {
@@ -96,6 +96,14 @@ export async function GET() {
       populate: {
         recipient: {
           fields: ["id", "documentId", "displayName", "email"],
+        },
+        fleetReminder: {
+          fields: ["id", "documentId", "title", "description", "isActive", "isCompleted", "nextTrigger"],
+          populate: {
+            vehicle: {
+              fields: ["id", "documentId", "name"],
+            },
+          },
         },
       },
       sort: ["timestamp:desc"],
