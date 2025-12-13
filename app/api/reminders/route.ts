@@ -97,6 +97,14 @@ export async function GET() {
       populate: {
         vehicle: {
           fields: ["id", "documentId", "name"],
+          populate: {
+            responsables: {
+              fields: ["id", "documentId", "displayName", "email"],
+            },
+            assignedDrivers: {
+              fields: ["id", "documentId", "displayName", "email"],
+            },
+          },
         },
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],
@@ -135,15 +143,31 @@ export async function GET() {
 
     const reminderData = await reminderResponse.json();
 
-    // Filtrar recordatorios que tengan al usuario actual en assignedUsers
+    // Filtrar recordatorios que:
+    // 1. Tengan al usuario actual en assignedUsers, O
+    // 2. El usuario actual sea el autor (authorDocumentId), O
+    // 3. El usuario actual sea responsable del vehículo, O
+    // 4. El usuario actual sea conductor asignado del vehículo
     const userReminders = (reminderData.data || []).filter((reminder: any) => {
-      if (!reminder.assignedUsers || reminder.assignedUsers.length === 0) {
-        return false;
-      }
+      // Verificar si el usuario actual es el autor del recordatorio
+      const isAuthor = reminder.authorDocumentId === currentUser.documentId;
+      
       // Verificar si el usuario actual está en la lista de usuarios asignados
-      return reminder.assignedUsers.some(
+      const isAssigned = reminder.assignedUsers?.some(
         (user: any) => user.documentId === currentUser.documentId
       );
+      
+      // Verificar si el usuario actual es responsable del vehículo
+      const isResponsable = reminder.vehicle?.responsables?.some(
+        (resp: any) => resp.documentId === currentUser.documentId
+      );
+      
+      // Verificar si el usuario actual es conductor asignado del vehículo
+      const isAssignedDriver = reminder.vehicle?.assignedDrivers?.some(
+        (driver: any) => driver.documentId === currentUser.documentId
+      );
+      
+      return isAuthor || isAssigned || isResponsable || isAssignedDriver;
     });
 
     // Buscar el usuario para cada recordatorio usando authorDocumentId

@@ -130,12 +130,14 @@ export async function GET(_: Request, context: RouteContext) {
       );
     }
 
-    // Obtener los recordatorios del vehículo
+    // Obtener los recordatorios del vehículo usando notifications como fuente principal
     const reminderQuery = qs.stringify({
       filters: {
-        vehicle: { id: { $eq: vehicleId } },
+        type: { $eq: "reminder" },
+        module: { $eq: "fleet" },
+        fleetVehicle: { id: { $eq: vehicleId } },
       },
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
       populate: {
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],
@@ -145,12 +147,23 @@ export async function GET(_: Request, context: RouteContext) {
             },
           },
         },
+        author: {
+          fields: ["id", "documentId", "displayName", "email"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
+        fleetVehicle: {
+          fields: ["id", "documentId", "name"],
+        },
       },
       sort: ["nextTrigger:asc"],
     });
 
     const reminderResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/fleet-reminders?${reminderQuery}`,
+      `${STRAPI_BASE_URL}/api/notifications?${reminderQuery}`,
       {
         headers: {
           Authorization: `Bearer ${STRAPI_API_TOKEN}`,
@@ -163,7 +176,7 @@ export async function GET(_: Request, context: RouteContext) {
       // Si es 404, el tipo de contenido no existe todavía en Strapi
       // Retornar array vacío en lugar de error
       if (reminderResponse.status === 404) {
-        console.warn("Tipo de contenido 'fleet-reminders' no encontrado en Strapi. Retornando array vacío.");
+        console.warn("Tipo de contenido 'notifications' no encontrado en Strapi. Retornando array vacío.");
         return NextResponse.json({ data: [] });
       }
       
@@ -329,27 +342,38 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    // Preparar los datos del recordatorio
+    // Preparar los datos del recordatorio usando notifications como fuente principal
     const reminderData: {
       title: string;
       description?: string;
+      type: string;
+      module: string;
       reminderType: string;
       scheduledDate: string;
       recurrencePattern?: string;
       recurrenceEndDate?: string;
       isActive: boolean;
       nextTrigger: string;
+      timestamp: string;
       authorDocumentId: string;
-      vehicle: number;
+      fleetVehicle: number;
       assignedUsers?: number[];
+      tags?: any;
     } = {
       title: body.data.title.trim(),
+      type: "reminder",
+      module: "fleet",
       reminderType: body.data.reminderType,
       scheduledDate: body.data.scheduledDate,
       isActive: true,
       nextTrigger: body.data.scheduledDate, // Inicialmente igual a scheduledDate
+      timestamp: body.data.scheduledDate,
       authorDocumentId: authorDocumentId,
-      vehicle: vehicleId,
+      fleetVehicle: vehicleId,
+      tags: {
+        module: "fleet",
+        vehicleId: vehicleId,
+      },
     };
     
     if (body.data.description) {
@@ -369,28 +393,10 @@ export async function POST(request: Request, context: RouteContext) {
       reminderData.assignedUsers = body.data.assignedUserIds;
     }
 
-    // Verificar que el tipo de contenido existe antes de crear
-    const contentTypeCheck = await fetch(
-      `${STRAPI_BASE_URL}/api/fleet-reminders`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
-        },
-        cache: "no-store",
-      }
-    );
-
-    if (contentTypeCheck.status === 404) {
-      return NextResponse.json(
-        { error: "El tipo de contenido 'fleet-reminders' no existe en Strapi. Por favor, reinicia el servidor de Strapi." },
-        { status: 404 }
-      );
-    }
-
-    // Crear el recordatorio
+    // Crear el recordatorio usando notifications como fuente principal
+    // El controller manejará automáticamente las validaciones para type='reminder'
     const createResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/fleet-reminders`,
+      `${STRAPI_BASE_URL}/api/notifications`,
       {
         method: "POST",
         headers: {
@@ -429,9 +435,9 @@ export async function POST(request: Request, context: RouteContext) {
     const createdReminder = await createResponse.json();
     const createdReminderData = createdReminder.data;
 
-    // Obtener el recordatorio completo con autor y usuarios asignados
+    // Obtener el recordatorio completo con autor y usuarios asignados usando notifications
     const getReminderQuery = qs.stringify({
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
       populate: {
         assignedUsers: {
           fields: ["id", "documentId", "displayName", "email"],
@@ -441,11 +447,22 @@ export async function POST(request: Request, context: RouteContext) {
             },
           },
         },
+        author: {
+          fields: ["id", "documentId", "displayName", "email"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
+        fleetVehicle: {
+          fields: ["id", "documentId", "name"],
+        },
       },
     });
 
     const getReminderResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/fleet-reminders/${createdReminderData.id}?${getReminderQuery}`,
+      `${STRAPI_BASE_URL}/api/notifications/${createdReminderData.id}?${getReminderQuery}`,
       {
         headers: {
           Authorization: `Bearer ${STRAPI_API_TOKEN}`,

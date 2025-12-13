@@ -319,6 +319,7 @@ const buildFleetDetailQuery = (id: string | number) => {
       filters,
       fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "nextMaintenanceDate", "placa"],
       populate: {
+        ...populateImageConfigForDetails.populate,
         interestedPersons: {
           fields: ["id", "documentId", "fullName", "email", "phone", "status"],
           populate: {
@@ -328,7 +329,6 @@ const buildFleetDetailQuery = (id: string | number) => {
           },
         },
       },
-      ...populateImageConfigForDetails,
       pagination: { pageSize: 1 },
     },
     { encodeValuesOnly: true }
@@ -426,8 +426,27 @@ export async function updateFleetVehicleInStrapi(
   }
 
   // Usar populateImageConfigForDetails para incluir todas las relaciones
-  const populateQueryString = qs.stringify(populateImageConfigForDetails, { encodeValuesOnly: true });
+  // Necesitamos construir el query con populate correctamente
+  const populateQuery = {
+    populate: {
+      ...populateImageConfigForDetails.populate,
+      interestedPersons: {
+        fields: ["id", "documentId", "fullName", "email", "phone", "status"],
+        populate: {
+          avatar: {
+            fields: ["url", "alternativeText"],
+          },
+        },
+      },
+    },
+  };
+  const populateQueryString = qs.stringify(populateQuery, { encodeValuesOnly: true });
   const url = `${STRAPI_BASE_URL}/api/fleets/${documentId}?${populateQueryString}`;
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log("🔗 URL de actualización:", url);
+    console.log("📋 Query string:", populateQueryString);
+  }
   const response = await fetch(url, {
     method: "PUT",
     headers: {
@@ -468,11 +487,13 @@ export async function updateFleetVehicleInStrapi(
         hasData: !!payload?.data,
         hasAssignedDrivers: !!attrs?.assignedDrivers,
         hasResponsables: !!attrs?.responsables,
+        hasInterestedDrivers: !!attrs?.interestedDrivers,
         assignedDriversType: typeof attrs?.assignedDrivers,
         assignedDriversIsArray: Array.isArray(attrs?.assignedDrivers),
         assignedDriversRaw: attrs?.assignedDrivers,
         responsablesRaw: attrs?.responsables,
-        stockQuantity: attrs?.stockQuantity,
+        interestedDriversRaw: attrs?.interestedDrivers,
+        nextMaintenanceDate: attrs?.nextMaintenanceDate,
       });
     }
   }
@@ -480,6 +501,15 @@ export async function updateFleetVehicleInStrapi(
   const vehicle = payload?.data ? normalizeVehicle(payload.data) : null;
   if (!vehicle) {
     throw new Error("No pudimos normalizar la respuesta de Strapi.");
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.log("✅ Vehículo normalizado después de actualizar:", {
+      assignedDrivers: vehicle.assignedDrivers,
+      responsables: vehicle.responsables,
+      interestedDrivers: vehicle.interestedDrivers,
+      nextMaintenanceDate: vehicle.nextMaintenanceDate,
+    });
   }
 
   return vehicle;

@@ -5,6 +5,7 @@ import { ReactNode, useState, useEffect } from "react";
 import { Filter, Bell, User as UserIcon, X, Calendar, CheckCircle2, Circle, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components_shadcn/ui/button";
 import { Separator } from "@/components_shadcn/ui/separator";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { typography } from "@/lib/design-system";
 import { LogoutButton } from "@/components/ui/logout-button";
 import { MobileMenu } from "./mobile-menu";
@@ -51,17 +52,27 @@ export function AdminHeader({
         const response = await fetch("/api/reminders", { cache: "no-store" });
         if (response.ok) {
           const { data } = await response.json();
-          // Filtrar solo recordatorios activos, próximos y no completados
+          // Filtrar recordatorios activos y no completados
+          // No filtrar por fecha para mostrar también los pendientes que ya pasaron
           const activeReminders = (data || []).filter((r: any) => 
-            r.isActive && 
-            new Date(r.nextTrigger) >= new Date() && 
-            !r.isCompleted
+            r.isActive && !r.isCompleted
           );
-          // Ordenar por fecha próxima
-          activeReminders.sort((a: any, b: any) => 
-            new Date(a.nextTrigger).getTime() - new Date(b.nextTrigger).getTime()
-          );
-          setReminders(activeReminders.slice(0, 5)); // Mostrar solo los 5 más próximos
+          // Ordenar: primero los que ya pasaron (urgentes), luego por fecha próxima
+          const now = new Date();
+          activeReminders.sort((a: any, b: any) => {
+            const dateA = new Date(a.nextTrigger);
+            const dateB = new Date(b.nextTrigger);
+            const isPastA = dateA < now;
+            const isPastB = dateB < now;
+            
+            // Los pasados (urgentes) primero
+            if (isPastA && !isPastB) return -1;
+            if (!isPastA && isPastB) return 1;
+            
+            // Luego por fecha
+            return dateA.getTime() - dateB.getTime();
+          });
+          setReminders(activeReminders.slice(0, 5)); // Mostrar solo los 5 más próximos/urgentes
         }
       } catch (error) {
         console.error("Error cargando recordatorios:", error);
@@ -216,103 +227,112 @@ export function AdminHeader({
             <span>Recordatorios</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <div className="max-h-[400px] overflow-y-auto">
-            {isLoadingReminders ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                Cargando recordatorios...
-              </div>
-            ) : reminders.length === 0 ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                No hay recordatorios próximos
-              </div>
-            ) : (
-              reminders.map((reminder) => {
-                const reminderId = reminder.documentId || String(reminder.id);
-                const vehicleName = reminder.vehicle?.name || "Vehículo";
-                const nextTrigger = new Date(reminder.nextTrigger);
-                const isAllDay = nextTrigger.getHours() === 0 && nextTrigger.getMinutes() === 0;
-                
-                const isCompleted = reminder.isCompleted || false;
-                
-                return (
-                  <div key={reminderId}>
-                    <DropdownMenuItem asChild className="p-0">
-                      <div className="flex items-start gap-2 w-full p-3 hover:bg-accent">
-                        <div className="flex-1 min-w-0">
-                          <Link 
-                            href={reminder.vehicle?.documentId ? `/fleet/details/${reminder.vehicle.documentId}` : "#"}
-                            className="flex flex-col items-start gap-1 cursor-pointer"
-                            onClick={(e) => {
-                              if (!reminder.vehicle?.documentId) {
-                                e.preventDefault();
-                              }
-                            }}
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
-                                {isCompleted ? (
-                                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-                                ) : (
-                                  <button
-                                    onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
-                                    className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/30 hover:border-primary transition-colors flex items-center justify-center"
-                                    aria-label="Marcar como completado"
-                                    title="Marcar como completado"
-                                  >
-                                    <Circle className="h-3 w-3 text-muted-foreground" />
-                                  </button>
-                                )}
-                                <Calendar className={`h-4 w-4 shrink-0 ${isCompleted ? "text-muted-foreground/50" : "text-muted-foreground"}`} />
-                                <span className={`font-medium text-sm line-clamp-1 ${isCompleted ? "line-through text-muted-foreground/70" : ""}`}>{reminder.title}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {isCompleted && (
+          <ScrollAreaPrimitive.Root className="relative overflow-hidden h-[400px]">
+            <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+              {isLoadingReminders ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  Cargando recordatorios...
+                </div>
+              ) : reminders.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">
+                  No hay recordatorios próximos
+                </div>
+              ) : (
+                reminders.map((reminder) => {
+                  const reminderId = reminder.documentId || String(reminder.id);
+                  const vehicleName = reminder.vehicle?.name || "Vehículo";
+                  const nextTrigger = new Date(reminder.nextTrigger);
+                  const isAllDay = nextTrigger.getHours() === 0 && nextTrigger.getMinutes() === 0;
+                  
+                  const isCompleted = reminder.isCompleted || false;
+                  
+                  return (
+                    <div key={reminderId}>
+                      <DropdownMenuItem asChild className="p-0">
+                        <div className="flex items-start gap-2 w-full p-3 hover:bg-accent">
+                          <div className="flex-1 min-w-0">
+                            <Link 
+                              href={reminder.vehicle?.documentId ? `/fleet/details/${reminder.vehicle.documentId}` : "#"}
+                              className="flex flex-col items-start gap-1 cursor-pointer"
+                              onClick={(e) => {
+                                if (!reminder.vehicle?.documentId) {
+                                  e.preventDefault();
+                                }
+                              }}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                  {isCompleted ? (
+                                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                                  ) : (
+                                    <button
+                                      onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
+                                      className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/30 hover:border-primary transition-colors flex items-center justify-center"
+                                      aria-label="Marcar como completado"
+                                      title="Marcar como completado"
+                                    >
+                                      <Circle className="h-3 w-3 text-muted-foreground" />
+                                    </button>
+                                  )}
+                                  <Calendar className={`h-4 w-4 shrink-0 ${isCompleted ? "text-muted-foreground/50" : "text-muted-foreground"}`} />
+                                  <span className={`font-medium text-sm line-clamp-1 ${isCompleted ? "line-through text-muted-foreground/70" : ""}`}>{reminder.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {isCompleted && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
+                                      onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
+                                      aria-label="Marcar como pendiente"
+                                      title="Marcar como pendiente"
+                                    >
+                                      <Circle className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-primary"
-                                    onClick={(e) => handleToggleCompleted(reminderId, isCompleted, e)}
-                                    aria-label="Marcar como pendiente"
-                                    title="Marcar como pendiente"
+                                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                                    onClick={(e) => handleDeleteReminder(reminderId, e)}
+                                    aria-label="Eliminar recordatorio"
                                   >
-                                    <Circle className="h-3 w-3" />
+                                    <X className="h-3 w-3" />
                                   </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
-                                  onClick={(e) => handleDeleteReminder(reminderId, e)}
-                                  aria-label="Eliminar recordatorio"
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
+                                </div>
                               </div>
-                            </div>
-                            <span className="text-xs text-muted-foreground line-clamp-1">
-                              {vehicleName}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {isAllDay 
-                                ? format(nextTrigger, "d 'de' MMMM, yyyy", { locale: es }) + " - todo el día"
-                                : format(nextTrigger, "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })
-                              }
-                            </span>
-                            {reminder.description && (
-                              <span className="text-xs text-muted-foreground line-clamp-2 mt-1">
-                                {reminder.description}
+                              <span className="text-xs text-muted-foreground line-clamp-1">
+                                {vehicleName}
                               </span>
-                            )}
-                          </Link>
+                              <span className="text-xs text-muted-foreground">
+                                {isAllDay 
+                                  ? format(nextTrigger, "d 'de' MMMM, yyyy", { locale: es }) + " - todo el día"
+                                  : format(nextTrigger, "d 'de' MMMM, yyyy 'a las' HH:mm", { locale: es })
+                                }
+                              </span>
+                              {reminder.description && (
+                                <span className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                                  {reminder.description}
+                                </span>
+                              )}
+                            </Link>
+                          </div>
                         </div>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </div>
-                );
-              })
-            )}
-          </div>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </div>
+                  );
+                })
+              )}
+            </ScrollAreaPrimitive.Viewport>
+            <ScrollAreaPrimitive.ScrollAreaScrollbar
+              orientation="vertical"
+              className="flex touch-none select-none transition-colors h-full w-2.5 border-l border-l-transparent p-[1px]"
+            >
+              <ScrollAreaPrimitive.ScrollAreaThumb className="relative flex-1 rounded-full bg-border/75 hover:bg-border/90 dark:bg-border/65 dark:hover:bg-border/85 transition-colors" />
+            </ScrollAreaPrimitive.ScrollAreaScrollbar>
+            <ScrollAreaPrimitive.Corner />
+          </ScrollAreaPrimitive.Root>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             <Link href="/notifications" className="w-full text-center justify-center text-primary hover:text-primary focus:text-primary font-medium">

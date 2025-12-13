@@ -369,6 +369,7 @@ export interface FleetDocumentPayload {
 
 export type ReminderType = "unique" | "recurring";
 export type RecurrencePattern = "daily" | "weekly" | "biweekly" | "monthly" | "yearly";
+export type ReminderModule = "fleet" | "calendar" | "billing" | "contracts" | "inventory" | "services";
 
 export interface FleetReminder {
   id: number;
@@ -376,6 +377,7 @@ export interface FleetReminder {
   title: string;
   description?: string;
   reminderType: ReminderType;
+  module?: ReminderModule;
   scheduledDate: string;
   recurrencePattern?: RecurrencePattern;
   recurrenceEndDate?: string;
@@ -417,6 +419,7 @@ export interface FleetReminderPayload {
   title: string;
   description?: string;
   reminderType: ReminderType;
+  module?: ReminderModule;
   scheduledDate: string;
   recurrencePattern?: RecurrencePattern;
   recurrenceEndDate?: string;
