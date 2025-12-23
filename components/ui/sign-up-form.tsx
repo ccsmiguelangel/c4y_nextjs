@@ -75,9 +75,9 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
 
   return (
     <>
-      <Card className="w-full py-8 px-8 bg-white">
+      <Card className="w-full py-8 px-8">
         <CardHeader className="space-y-2 pb-6">
-          <CardTitle className="text-3xl font-bold text-primary text-center">{header.title}</CardTitle>
+          <CardTitle className="text-3xl font-bold text-center">{header.title}</CardTitle>
           <CardDescription className="text-base text-center">
             {header.subtitle}
           </CardDescription>
@@ -87,14 +87,14 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
             <div className="space-y-6">
               <FormField control={form.control} name="fullName" render={({ field }) => (
                 <FormItem className="space-y-3">
-                  <FormLabel className="text-base font-medium">
+                  <FormLabel className="text-base font-medium text-foreground">
                     {fullname_label || "Nombre completo"}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="text"
                       placeholder={fullname_placeholder || "Ingresa tu nombre completo"}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                       {...field}
                     />
                   </FormControl>
@@ -103,14 +103,14 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
               )} />
               <FormField control={form.control} name="username" render={({ field }) => (
                 <FormItem className="space-y-3">
-                  <FormLabel className="text-base font-medium">
+                  <FormLabel className="text-base font-medium text-foreground">
                     {username_label}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="text"
                       placeholder={username_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                       {...field}
                     />
                   </FormControl>
@@ -119,14 +119,14 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
               )} /> 
               <FormField control={form.control} name="email" render={({ field }) => (
                 <FormItem className="space-y-3">
-                  <FormLabel className="text-base font-medium">
+                  <FormLabel className="text-base font-medium text-foreground">
                     {email_label}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="email"
                       placeholder={email_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                       {...field}
                     />
                   </FormControl>
@@ -135,14 +135,14 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
               )} />
               <FormField control={form.control} name="password" render={({ field }) => (
                 <FormItem className="space-y-3">
-                  <FormLabel className="text-base font-medium">
+                  <FormLabel className="text-base font-medium text-foreground">
                     {password_label}
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       placeholder={password_placeholder}
-                      className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                      className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                       {...field}
                     />
                   </FormControl>
@@ -168,7 +168,7 @@ export function SignUpForm({ data }: { readonly data: Readonly<SingupFormData> }
                 </Button>
 
                 {formState.strapiErrors && (
-                  <FormMessage className="text-pink-500 text-sm text-center">
+                  <FormMessage className="text-destructive dark:text-destructive text-sm text-center">
                     {formState.strapiErrors.message}
                   </FormMessage>
                 )}

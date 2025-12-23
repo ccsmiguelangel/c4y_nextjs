@@ -605,7 +605,6 @@ export default function FleetPage() {
                 description: `Mantenimiento completo programado para el vehículo ${formData.name}`,
                 reminderType: "recurring",
                 scheduledDate: scheduledDateTime,
-                isAllDay: maintenanceIsAllDay,
                 recurrencePattern: maintenanceRecurrencePattern,
                 assignedUserIds: assignedUserIds.length > 0 ? assignedUserIds : undefined,
                 authorDocumentId: userData.documentId,

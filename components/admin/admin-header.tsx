@@ -119,21 +119,71 @@ export function AdminHeader({
     e.stopPropagation();
     
     try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+      // La API ahora acepta tanto id numérico como documentId, así que podemos pasar directamente reminderId
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
+        // Actualizar el estado local inmediatamente removiendo el recordatorio eliminado
+        setReminders(prev => {
+          return prev.filter(r => {
+            const rId = r.documentId || String(r.id);
+            const rIdNum = String(r.id);
+            // Comparar tanto documentId como id numérico para asegurar que se elimine correctamente
+            return rId !== reminderId && rIdNum !== reminderId;
+          });
+        });
+        
         toast.success("Recordatorio eliminado");
-        setReminders(prev => prev.filter(r => (r.documentId || String(r.id)) !== reminderId));
-        // Emitir evento de eliminación
+        
+        // Emitir evento de eliminación después de actualizar el estado local
+        // Esto causará una recarga, pero el recordatorio ya fue removido del estado
         emitReminderDeleted(reminderId);
+        
+        // Recargar después de un pequeño delay para asegurar que el servidor procesó la eliminación
+        setTimeout(() => {
+          const loadReminders = async () => {
+            try {
+              const response = await fetch("/api/reminders", { cache: "no-store" });
+              if (response.ok) {
+                const { data } = await response.json();
+                const activeReminders = (data || []).filter((r: any) => 
+                  r.isActive && !r.isCompleted
+                );
+                const now = new Date();
+                activeReminders.sort((a: any, b: any) => {
+                  const dateA = new Date(a.nextTrigger);
+                  const dateB = new Date(b.nextTrigger);
+                  const isPastA = dateA < now;
+                  const isPastB = dateB < now;
+                  if (isPastA && !isPastB) return -1;
+                  if (!isPastA && isPastB) return 1;
+                  return dateA.getTime() - dateB.getTime();
+                });
+                setReminders(activeReminders.slice(0, 5));
+              }
+            } catch (error) {
+              console.error("Error recargando recordatorios después de eliminar:", error);
+            }
+          };
+          loadReminders();
+        }, 500);
       } else {
-        throw new Error("Error al eliminar");
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: errorText || `Error ${response.status}` };
+        }
+        const errorMessage = errorData.error?.message || errorData.error || `Error ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error("Error eliminando recordatorio:", error);
-      toast.error("No se pudo eliminar el recordatorio");
+      const errorMessage = error instanceof Error ? error.message : "No se pudo eliminar el recordatorio";
+      toast.error(errorMessage);
     }
   };
 
@@ -142,8 +192,8 @@ export function AdminHeader({
     e.stopPropagation();
     
     try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
-        method: "PATCH",
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
@@ -166,11 +216,20 @@ export function AdminHeader({
         // Emitir evento de cambio de estado completado
         emitReminderToggleCompleted(reminderId, !isCompleted);
       } else {
-        throw new Error("Error al actualizar");
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: errorText || `Error ${response.status}` };
+        }
+        const errorMessage = errorData.error?.message || errorData.error || `Error ${response.status}: ${response.statusText}`;
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error("Error actualizando recordatorio:", error);
-      toast.error("No se pudo actualizar el recordatorio");
+      const errorMessage = error instanceof Error ? error.message : "No se pudo actualizar el recordatorio";
+      toast.error(errorMessage);
     }
   };
 
@@ -239,7 +298,11 @@ export function AdminHeader({
                 </div>
               ) : (
                 reminders.map((reminder) => {
-                  const reminderId = reminder.documentId || String(reminder.id);
+                  // IMPORTANTE: Usar ID numérico cuando esté disponible (más confiable para actualizaciones)
+                  // Solo usar documentId como fallback si no hay ID numérico
+                  const reminderId = (reminder.id && typeof reminder.id === 'number') 
+                    ? String(reminder.id) 
+                    : (reminder.documentId || String(reminder.id));
                   const vehicleName = reminder.vehicle?.name || "Vehículo";
                   const nextTrigger = new Date(reminder.nextTrigger);
                   const isAllDay = nextTrigger.getHours() === 0 && nextTrigger.getMinutes() === 0;
@@ -360,6 +423,7 @@ export function AdminHeader({
   return (
     <header 
       className="sticky top-0 z-50 flex h-16 shrink-0 items-center gap-2 border-b px-4 backdrop-blur-sm rounded-b-lg"
+      suppressHydrationWarning
       style={{
         backgroundColor: 'color-mix(in oklch, var(--background) 50%, transparent)',
         borderColor: 'color-mix(in oklch, var(--border) 85%, transparent)',

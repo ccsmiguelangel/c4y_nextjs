@@ -34,6 +34,7 @@ export function AdminLayout({
       <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
         <ScrollAreaPrimitive.Viewport 
           className="h-full w-full rounded-[inherit] scroll-smooth"
+          suppressHydrationWarning
           style={{
             backgroundImage: `
               repeating-linear-gradient(0deg, rgba(0,0,0,0.03) 0px, transparent 1px, transparent 2px, rgba(0,0,0,0.03) 3px),

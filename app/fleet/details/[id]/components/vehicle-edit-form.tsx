@@ -61,6 +61,7 @@ interface VehicleEditFormProps {
   selectedResponsables: number[];
   selectedAssignedDrivers: number[];
   selectedInterestedDrivers: number[];
+  selectedCurrentDrivers: number[];
   availableUsers: AvailableUser[];
   isLoadingUsers: boolean;
   onFormDataChange: (data: FormData) => void;
@@ -75,6 +76,7 @@ interface VehicleEditFormProps {
   onSelectedResponsablesChange: (ids: number[]) => void;
   onSelectedAssignedDriversChange: (ids: number[]) => void;
   onSelectedInterestedDriversChange: (ids: number[]) => void;
+  onSelectedCurrentDriversChange: (ids: number[]) => void;
   onSave: () => void;
   onCancel: () => void;
 }
@@ -94,6 +96,7 @@ export function VehicleEditForm({
   selectedResponsables,
   selectedAssignedDrivers,
   selectedInterestedDrivers,
+  selectedCurrentDrivers,
   availableUsers,
   isLoadingUsers,
   onFormDataChange,
@@ -108,6 +111,7 @@ export function VehicleEditForm({
   onSelectedResponsablesChange,
   onSelectedAssignedDriversChange,
   onSelectedInterestedDriversChange,
+  onSelectedCurrentDriversChange,
   onSave,
   onCancel,
 }: VehicleEditFormProps) {
@@ -538,7 +542,7 @@ export function VehicleEditForm({
         </div>
         
         {/* Mostrar responsables y conductores actuales */}
-        {(vehicleData.responsables && vehicleData.responsables.length > 0) || (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) || (vehicleData.interestedDrivers && vehicleData.interestedDrivers.length > 0) ? (
+        {(vehicleData.responsables && vehicleData.responsables.length > 0) || (vehicleData.assignedDrivers && vehicleData.assignedDrivers.length > 0) || (vehicleData.interestedDrivers && vehicleData.interestedDrivers.length > 0) || ((vehicleData as any).currentDrivers && (vehicleData as any).currentDrivers.length > 0) ? (
           <div className={`flex flex-col ${spacing.gap.small} p-4 bg-muted/50 rounded-lg border`}>
             <p className={`${typography.body.small} font-semibold text-muted-foreground mb-2`}>
               Asignaciones actuales:
@@ -657,6 +661,44 @@ export function VehicleEditForm({
                 </div>
               </div>
             )}
+            {(vehicleData as any).currentDrivers && (vehicleData as any).currentDrivers.length > 0 && (
+              <div className={`flex flex-col ${spacing.gap.small}`}>
+                <p className={`${typography.body.small} text-muted-foreground`}>Conductores actuales:</p>
+                <div className="flex flex-wrap gap-2">
+                  {(vehicleData as any).currentDrivers.map((driver: any) => (
+                    <div 
+                      key={driver.id} 
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/users/details/${driver.documentId || driver.id}`);
+                      }}
+                    >
+                      {driver.avatar?.url ? (
+                        <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                          <Image
+                            src={strapiImages.getURL(driver.avatar.url)}
+                            alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                            fill
+                            className="object-cover"
+                            sizes="24px"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <span className="text-sm">
+                        {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : null}
         
@@ -714,6 +756,25 @@ export function VehicleEditForm({
                 onSelectedInterestedDriversChange(numericValues);
               }}
               placeholder="Selecciona conductores interesados..."
+              emptyMessage="No hay usuarios disponibles"
+              disabled={isLoadingUsers}
+            />
+          </div>
+          <div className={`flex flex-col ${spacing.gap.small}`}>
+            <Label>Conductores actuales</Label>
+            <MultiSelectCombobox
+              options={availableUsers.map((user) => ({
+                value: user.id,
+                label: user.displayName || user.email || "Usuario",
+                email: user.email,
+                avatar: user.avatar,
+              }))}
+              selectedValues={selectedCurrentDrivers}
+              onSelectionChange={(values) => {
+                const numericValues = values.map((v) => typeof v === 'number' ? v : Number(v)).filter((id) => !isNaN(id));
+                onSelectedCurrentDriversChange(numericValues);
+              }}
+              placeholder="Selecciona conductores actuales..."
               emptyMessage="No hay usuarios disponibles"
               disabled={isLoadingUsers}
             />

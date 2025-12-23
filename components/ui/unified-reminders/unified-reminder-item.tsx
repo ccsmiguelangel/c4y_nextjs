@@ -25,7 +25,11 @@ export function UnifiedReminderItem({
 }: UnifiedReminderItemProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
-  const reminderId = reminder.documentId || String(reminder.id);
+  // IMPORTANTE: Usar ID numérico cuando esté disponible (más confiable para actualizaciones)
+  // Solo usar documentId como fallback si no hay ID numérico
+  const reminderId = (reminder.id && typeof reminder.id === 'number') 
+    ? String(reminder.id) 
+    : (reminder.documentId || String(reminder.id));
   const isCompleted = reminder.isCompleted || false;
   const module = reminder.module || "fleet";
   const moduleColors = MODULE_COLORS[module];
@@ -220,4 +224,12 @@ export function UnifiedReminderItem({
     </div>
   );
 }
+
+
+
+
+
+
+
+
 

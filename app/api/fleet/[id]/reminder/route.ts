@@ -80,6 +80,44 @@ async function getCurrentUserProfile() {
   }
 }
 
+// Función helper para convertir documentIds a ids numéricos
+async function convertDocumentIdsToIds(documentIds: string[]): Promise<number[]> {
+  if (!documentIds || documentIds.length === 0) {
+    return [];
+  }
+
+  try {
+    const query = qs.stringify({
+      filters: {
+        documentId: { $in: documentIds },
+      },
+      fields: ["id", "documentId"],
+    });
+
+    const response = await fetch(
+      `${STRAPI_BASE_URL}/api/user-profiles?${query}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!response.ok) {
+      console.warn("Error convirtiendo documentIds a ids:", response.statusText);
+      return [];
+    }
+
+    const data = await response.json();
+    return (data.data || []).map((profile: any) => profile.id).filter((id: any) => id != null);
+  } catch (error) {
+    console.error("Error convirtiendo documentIds a ids:", error);
+    return [];
+  }
+}
+
 interface RouteContext {
   params: Promise<{
     id: string;
@@ -122,6 +160,7 @@ export async function GET(_: Request, context: RouteContext) {
 
     const vehicleData = await vehicleResponse.json();
     const vehicleId = vehicleData.data?.[0]?.id;
+    const vehicleDocumentId = id; // El documentId del vehículo es el id del parámetro
 
     if (!vehicleId) {
       return NextResponse.json(
@@ -131,10 +170,11 @@ export async function GET(_: Request, context: RouteContext) {
     }
 
     // Obtener los recordatorios del vehículo usando notifications como fuente principal
+    // Buscar por ID numérico (relación manyToOne)
+    // Buscar todos los recordatorios del vehículo (con o sin module)
     const reminderQuery = qs.stringify({
       filters: {
         type: { $eq: "reminder" },
-        module: { $eq: "fleet" },
         fleetVehicle: { id: { $eq: vehicleId } },
       },
       fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
@@ -190,11 +230,184 @@ export async function GET(_: Request, context: RouteContext) {
     }
 
     const reminderData = await reminderResponse.json();
+    
+    // Log para depuración (solo en desarrollo)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[GET /api/fleet/${id}/reminder] Recordatorios encontrados antes de filtrar:`, reminderData.data?.length || 0);
+      if (reminderData.data && reminderData.data.length > 0) {
+        console.log('Primer recordatorio de ejemplo:', {
+          id: reminderData.data[0].id,
+          documentId: reminderData.data[0].documentId,
+          title: reminderData.data[0].title,
+          fleetVehicle: reminderData.data[0].fleetVehicle,
+          module: reminderData.data[0].module,
+          tags: reminderData.data[0].tags,
+        });
+      }
+    }
+    
+    // Filtrar recordatorios: excluir notificaciones individuales que tienen parentReminderId en tags
+    // Solo queremos mostrar los recordatorios principales, no las notificaciones individuales
+    // También verificar que el recordatorio pertenezca al vehículo correcto
+    let reminders = (reminderData.data || []).filter((reminder: any) => {
+      // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales
+      // Las notificaciones individuales tienen parentReminderId en tags Y recipient
+      // Los recordatorios principales NO tienen parentReminderId en tags
+      if (reminder.type === 'reminder') {
+        // Si tiene recipient, es una notificación individual y debe ser excluida
+        if (reminder.recipient !== undefined && reminder.recipient !== null) {
+          return false;
+        }
+        
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          
+          // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
+          if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+            return false;
+          }
+        } catch (error) {
+          // Si hay error parseando tags, continuar con la verificación
+          console.warn('Error parseando tags de recordatorio:', error);
+        }
+      }
+      
+      // Verificar que el recordatorio pertenezca al vehículo correcto
+      // Verificar por fleetVehicle.id (relación directa)
+      if (reminder.fleetVehicle?.id === vehicleId) {
+        return true;
+      }
+      
+      // Verificar por tags.vehicleId (fallback)
+      if (reminder.tags) {
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          if (tags?.vehicleId === vehicleId) {
+            return true;
+          }
+        } catch {
+          // Si hay error parseando tags, continuar
+        }
+      }
+      
+      // Si no coincide con ninguna verificación, excluir
+      return false;
+    });
+    
+    // Si no se encontraron recordatorios, intentar búsqueda más amplia (fallback)
+    // Esto puede ser necesario si el recordatorio no tiene module o fleetVehicle correctamente configurado
+    if (reminders.length === 0) {
+      // Fallback: buscar todos los recordatorios y filtrar manualmente
+      const fallbackQuery = qs.stringify({
+        filters: {
+          type: { $eq: "reminder" },
+        },
+        fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
+        populate: {
+          assignedUsers: {
+            fields: ["id", "documentId", "displayName", "email"],
+            populate: {
+              avatar: {
+                fields: ["url", "alternativeText"],
+              },
+            },
+          },
+          author: {
+            fields: ["id", "documentId", "displayName", "email"],
+            populate: {
+              avatar: {
+                fields: ["url", "alternativeText"],
+              },
+            },
+          },
+          fleetVehicle: {
+            fields: ["id", "documentId", "name"],
+          },
+        },
+        sort: ["nextTrigger:asc"],
+        pagination: {
+          pageSize: 100, // Buscar más recordatorios en el fallback
+        },
+      });
+      
+      const fallbackResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/notifications?${fallbackQuery}`,
+        {
+          headers: {
+            Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          },
+          cache: "no-store",
+        }
+      );
+      
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        // Filtrar manualmente por tags.vehicleId o fleetVehicle
+        // Y también excluir notificaciones individuales con parentReminderId
+        reminders = (fallbackData.data || []).filter((reminder: any) => {
+          // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales
+          if (reminder.type === 'reminder') {
+            // Si tiene recipient, es una notificación individual y debe ser excluida
+            if (reminder.recipient !== undefined && reminder.recipient !== null) {
+              return false;
+            }
+            
+            try {
+              const tags = typeof reminder.tags === 'string' ? JSON.parse(reminder.tags) : reminder.tags;
+              // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
+              if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+                return false; // Excluir notificaciones individuales
+              }
+            } catch {
+              // Si hay error parseando tags, continuar con la verificación
+            }
+          }
+          
+          // Verificar si tiene fleetVehicle con el ID correcto
+          if (reminder.fleetVehicle?.id === vehicleId) {
+            return true;
+          }
+          // Verificar tags si fleetVehicle no está disponible
+          if (reminder.tags) {
+            try {
+              const tags = typeof reminder.tags === 'string' ? JSON.parse(reminder.tags) : reminder.tags;
+              // Verificar tanto vehicleId (numérico) como documentId (string)
+              if (tags?.vehicleId === vehicleId || tags?.vehicleId === vehicleDocumentId) {
+                return true;
+              }
+            } catch {
+              return false;
+            }
+          }
+          return false;
+        });
+      }
+    }
 
-    // Buscar el usuario para cada recordatorio usando authorDocumentId
+    // Log para depuración (solo en desarrollo)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[GET /api/fleet/${id}/reminder] Recordatorios después de filtrar:`, reminders.length);
+      if (reminders.length > 0) {
+        console.log(`[GET /api/fleet/${id}/reminder] IDs de recordatorios devueltos:`, 
+          reminders.map(r => ({ id: r.id, documentId: r.documentId, title: r.title }))
+        );
+      }
+    }
+    
+    // Mapear recordatorios y agregar información adicional
     const remindersWithAuthor = await Promise.all(
-      (reminderData.data || []).map(async (reminder: any) => {
-        if (reminder.authorDocumentId) {
+      reminders.map(async (reminder: any) => {
+        // Mapear fleetVehicle a vehicle para compatibilidad con código existente
+        if (reminder.fleetVehicle) {
+          reminder.vehicle = reminder.fleetVehicle;
+        }
+        
+        // Obtener autor si no está populado
+        if (!reminder.author && reminder.authorDocumentId) {
           try {
             const authorQuery = qs.stringify({
               filters: {
@@ -245,10 +458,27 @@ export async function GET(_: Request, context: RouteContext) {
 }
 
 // POST - Crear un nuevo recordatorio
-export async function POST(request: Request, context: RouteContext) {
-  console.log("🚀 POST /api/fleet/[id]/reminder ejecutado");
+export async function POST(
+  request: Request,
+  context: RouteContext
+) {
+  const startTime = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+  console.log("🚀 POST /api/fleet/[id]/reminder ejecutado", { 
+    requestId,
+    timestamp: new Date().toISOString(),
+    url: request.url,
+  });
   try {
     const body = (await request.json()) as { data?: FleetReminderPayload };
+    
+    console.log("📥 Datos recibidos en POST:", {
+      requestId,
+      title: body.data?.title,
+      reminderType: body.data?.reminderType,
+      scheduledDate: body.data?.scheduledDate,
+      assignedUserIdsCount: body.data?.assignedUserIds?.length || 0,
+    });
     
     if (!body?.data) {
       return NextResponse.json(
@@ -325,6 +555,56 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
+    // Obtener el vehículo completo con responsables y conductores asignados
+    const vehicleFullQuery = qs.stringify({
+      filters: {
+        id: { $eq: vehicleId },
+      },
+      fields: ["id"],
+      populate: {
+        responsables: {
+          fields: ["id", "documentId"],
+        },
+        assignedDrivers: {
+          fields: ["id", "documentId"],
+        },
+      },
+    });
+
+    const vehicleFullResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/fleets?${vehicleFullQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    let vehicleResponsablesIds: number[] = [];
+    let vehicleAssignedDriversIds: number[] = [];
+
+    if (vehicleFullResponse.ok) {
+      const vehicleFullData = await vehicleFullResponse.json();
+      const vehicle = vehicleFullData.data?.[0];
+      
+      if (vehicle) {
+        // Obtener IDs de responsables
+        if (vehicle.responsables && Array.isArray(vehicle.responsables)) {
+          vehicleResponsablesIds = vehicle.responsables
+            .map((resp: any) => resp.id)
+            .filter((id: any) => id != null);
+        }
+        
+        // Obtener IDs de conductores asignados
+        if (vehicle.assignedDrivers && Array.isArray(vehicle.assignedDrivers)) {
+          vehicleAssignedDriversIds = vehicle.assignedDrivers
+            .map((driver: any) => driver.id)
+            .filter((id: any) => id != null);
+        }
+      }
+    }
+
     const currentUserProfile = await getCurrentUserProfile();
     
     let authorDocumentId = body.data.authorDocumentId && body.data.authorDocumentId !== null 
@@ -388,13 +668,341 @@ export async function POST(request: Request, context: RouteContext) {
       reminderData.recurrenceEndDate = body.data.recurrenceEndDate;
     }
     
-    // Agregar usuarios asignados si se proporcionan
+    // Agregar usuarios asignados: combinar usuarios seleccionados manualmente + responsables + conductores del vehículo
+    const allAssignedUserIds = new Set<number>();
+    
+    // 1. Agregar usuarios seleccionados manualmente (si se proporcionan)
     if (body.data.assignedUserIds && Array.isArray(body.data.assignedUserIds) && body.data.assignedUserIds.length > 0) {
-      reminderData.assignedUsers = body.data.assignedUserIds;
+      // Verificar si son documentIds (strings) o ids numéricos
+      const firstId = body.data.assignedUserIds[0];
+      if (typeof firstId === 'string' && !/^\d+$/.test(firstId)) {
+        // Son documentIds, convertir a ids numéricos
+        const numericIds = await convertDocumentIdsToIds(body.data.assignedUserIds);
+        numericIds.forEach(id => allAssignedUserIds.add(id));
+      } else {
+        // Ya son ids numéricos o strings numéricos
+        body.data.assignedUserIds.forEach((id: any) => {
+          const numId = typeof id === 'string' ? parseInt(id, 10) : id;
+          if (!isNaN(numId)) {
+            allAssignedUserIds.add(numId);
+          }
+        });
+      }
+    }
+    
+    // 2. Agregar responsables del vehículo automáticamente
+    vehicleResponsablesIds.forEach(id => allAssignedUserIds.add(id));
+    
+    // 3. Agregar conductores asignados del vehículo automáticamente
+    vehicleAssignedDriversIds.forEach(id => allAssignedUserIds.add(id));
+    
+    // Convertir Set a Array
+    if (allAssignedUserIds.size > 0) {
+      reminderData.assignedUsers = Array.from(allAssignedUserIds);
+    }
+
+    // Verificar si ya existe un recordatorio con el mismo título y vehículo para evitar duplicados
+    // Esto es especialmente importante para recordatorios de mantenimiento
+    // Buscar sin filtrar por module primero para ser más flexible
+    const existingReminderQuery = qs.stringify({
+      filters: {
+        type: { $eq: "reminder" },
+        fleetVehicle: { id: { $eq: vehicleId } },
+        title: { $eq: reminderData.title },
+        // Excluir notificaciones individuales (con parentReminderId) - esto se hace después
+      },
+      fields: ["id", "documentId", "title", "tags", "module", "createdAt"],
+      sort: ["createdAt:desc"], // Ordenar por más reciente primero
+    });
+
+    const existingReminderResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${existingReminderQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (existingReminderResponse.ok) {
+      const existingReminderData = await existingReminderResponse.json();
+      // Filtrar notificaciones individuales (con parentReminderId)
+      const existingMainReminders = (existingReminderData.data || []).filter((reminder: any) => {
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          // Solo incluir recordatorios principales (sin parentReminderId)
+          return !tags || !tags.parentReminderId;
+        } catch {
+          return true; // Si hay error parseando, incluir por seguridad
+        }
+      });
+
+      if (existingMainReminders.length > 0) {
+        // Ya existe un recordatorio con el mismo título y vehículo
+        // Retornar el existente en lugar de crear uno nuevo
+        // Usar el más reciente si hay múltiples
+        const existingReminder = existingMainReminders[0];
+        console.log("⚠️ Recordatorio duplicado detectado, retornando el existente:", {
+          id: existingReminder.id,
+          documentId: existingReminder.documentId,
+          title: existingReminder.title,
+          module: existingReminder.module,
+          createdAt: existingReminder.createdAt,
+          totalFound: existingMainReminders.length,
+        });
+        
+        // Obtener el recordatorio completo
+        const getReminderQuery = qs.stringify({
+          fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
+          populate: {
+            assignedUsers: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            author: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            fleetVehicle: {
+              fields: ["id", "documentId", "name"],
+            },
+          },
+        });
+
+        const getReminderResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/notifications/${existingReminder.id}?${getReminderQuery}`,
+          {
+            headers: {
+              Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (getReminderResponse.ok) {
+          const reminderDataResponse = await getReminderResponse.json();
+          const fullReminderData = reminderDataResponse.data;
+          
+          // Mapear fleetVehicle a vehicle para compatibilidad
+          if (fullReminderData.fleetVehicle) {
+            fullReminderData.vehicle = fullReminderData.fleetVehicle;
+          }
+          
+          return NextResponse.json({ data: fullReminderData });
+        }
+      }
+    }
+
+    // Verificar una vez más ANTES de crear para evitar condiciones de carrera
+    // Esta segunda verificación ayuda a prevenir duplicados si dos peticiones llegan casi simultáneamente
+    const finalCheckQuery = qs.stringify({
+      filters: {
+        type: { $eq: "reminder" },
+        fleetVehicle: { id: { $eq: vehicleId } },
+        title: { $eq: reminderData.title },
+      },
+      fields: ["id", "documentId", "title", "tags"],
+      sort: ["createdAt:desc"],
+      pagination: { pageSize: 1 },
+    });
+
+    const finalCheckResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${finalCheckQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (finalCheckResponse.ok) {
+      const finalCheckData = await finalCheckResponse.json();
+      const finalMainReminders = (finalCheckData.data || []).filter((reminder: any) => {
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          return !tags || !tags.parentReminderId;
+        } catch {
+          return true;
+        }
+      });
+
+      if (finalMainReminders.length > 0) {
+        const existingReminder = finalMainReminders[0];
+        console.log("⚠️ Recordatorio duplicado detectado en verificación final, retornando el existente:", {
+          id: existingReminder.id,
+          documentId: existingReminder.documentId,
+          title: existingReminder.title,
+          timeSinceStart: `${Date.now() - startTime}ms`,
+        });
+        
+        // Obtener el recordatorio completo y retornarlo
+        const getReminderQuery = qs.stringify({
+          fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
+          populate: {
+            assignedUsers: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            author: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            fleetVehicle: {
+              fields: ["id", "documentId", "name"],
+            },
+          },
+        });
+
+        const getReminderResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/notifications/${existingReminder.id}?${getReminderQuery}`,
+          {
+            headers: {
+              Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (getReminderResponse.ok) {
+          const reminderDataResponse = await getReminderResponse.json();
+          const fullReminderData = reminderDataResponse.data;
+          
+          if (fullReminderData.fleetVehicle) {
+            fullReminderData.vehicle = fullReminderData.fleetVehicle;
+          }
+          
+          return NextResponse.json({ data: fullReminderData });
+        }
+      }
     }
 
     // Crear el recordatorio usando notifications como fuente principal
     // El controller manejará automáticamente las validaciones para type='reminder'
+    console.log("✅ Creando nuevo recordatorio:", {
+      requestId,
+      title: reminderData.title,
+      vehicleId,
+      timeSinceStart: `${Date.now() - startTime}ms`,
+      assignedUsersCount: reminderData.assignedUsers?.length || 0,
+      assignedUsers: reminderData.assignedUsers,
+    });
+    
+    // VALIDACIÓN FINAL: Verificar una última vez que no existe antes de crear
+    // Esto previene condiciones de carrera donde dos peticiones pasan la verificación anterior
+    const lastCheckQuery = qs.stringify({
+      filters: {
+        type: { $eq: "reminder" },
+        fleetVehicle: { id: { $eq: vehicleId } },
+        title: { $eq: reminderData.title },
+      },
+      fields: ["id", "documentId", "title", "tags"],
+      sort: ["createdAt:desc"],
+      pagination: { pageSize: 1 },
+    });
+
+    const lastCheckResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${lastCheckQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (lastCheckResponse.ok) {
+      const lastCheckData = await lastCheckResponse.json();
+      const lastMainReminders = (lastCheckData.data || []).filter((reminder: any) => {
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          return !tags || !tags.parentReminderId;
+        } catch {
+          return true;
+        }
+      });
+
+      if (lastMainReminders.length > 0) {
+        const existingReminder = lastMainReminders[0];
+        console.log("⚠️ Recordatorio duplicado detectado en verificación final antes de crear, retornando el existente:", {
+          id: existingReminder.id,
+          documentId: existingReminder.documentId,
+          title: existingReminder.title,
+          timeSinceStart: `${Date.now() - startTime}ms`,
+        });
+        
+        // Obtener el recordatorio completo y retornarlo
+        const getReminderQuery = qs.stringify({
+          fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "module", "tags", "createdAt", "updatedAt"],
+          populate: {
+            assignedUsers: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            author: {
+              fields: ["id", "documentId", "displayName", "email"],
+              populate: {
+                avatar: {
+                  fields: ["url", "alternativeText"],
+                },
+              },
+            },
+            fleetVehicle: {
+              fields: ["id", "documentId", "name"],
+            },
+          },
+        });
+
+        const getReminderResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/notifications/${existingReminder.id}?${getReminderQuery}`,
+          {
+            headers: {
+              Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (getReminderResponse.ok) {
+          const reminderDataResponse = await getReminderResponse.json();
+          const fullReminderData = reminderDataResponse.data;
+          
+          if (fullReminderData.fleetVehicle) {
+            fullReminderData.vehicle = fullReminderData.fleetVehicle;
+          }
+          
+          return NextResponse.json({ data: fullReminderData });
+        }
+      }
+    }
+    
     const createResponse = await fetch(
       `${STRAPI_BASE_URL}/api/notifications`,
       {
@@ -419,6 +1027,14 @@ export async function POST(request: Request, context: RouteContext) {
         errorData = { error: { message: errorText || `Error ${createResponse.status}` } };
       }
       
+      console.error("❌ Error creando recordatorio en Strapi:", {
+        requestId,
+        status: createResponse.status,
+        statusText: createResponse.statusText,
+        error: errorData,
+        title: reminderData.title,
+      });
+      
       // Si es 404, el tipo de contenido no existe
       if (createResponse.status === 404) {
         throw new Error("El tipo de contenido 'fleet-reminders' no existe en Strapi. Por favor, reinicia el servidor de Strapi.");
@@ -434,6 +1050,14 @@ export async function POST(request: Request, context: RouteContext) {
 
     const createdReminder = await createResponse.json();
     const createdReminderData = createdReminder.data;
+    
+    console.log("✅ Recordatorio creado exitosamente:", {
+      requestId,
+      id: createdReminderData.id,
+      documentId: createdReminderData.documentId,
+      title: createdReminderData.title,
+      timeSinceStart: `${Date.now() - startTime}ms`,
+    });
 
     // Obtener el recordatorio completo con autor y usuarios asignados usando notifications
     const getReminderQuery = qs.stringify({
@@ -474,6 +1098,37 @@ export async function POST(request: Request, context: RouteContext) {
     if (getReminderResponse.ok) {
       const reminderDataResponse = await getReminderResponse.json();
       const fullReminderData = reminderDataResponse.data;
+      
+      // VALIDACIÓN: Asegurar que el recordatorio creado NO sea una notificación individual
+      // Verificar que no tenga parentReminderId en tags ni recipient
+      if (fullReminderData.type === 'reminder') {
+        try {
+          const tags = typeof fullReminderData.tags === 'string' 
+            ? JSON.parse(fullReminderData.tags) 
+            : fullReminderData.tags;
+          
+          if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+            console.error('⚠️ ERROR: Se creó una notificación individual en lugar de un recordatorio principal:', {
+              id: fullReminderData.id,
+              documentId: fullReminderData.documentId,
+              title: fullReminderData.title,
+              parentReminderId: tags.parentReminderId,
+              recipient: fullReminderData.recipient,
+            });
+          }
+          
+          if (fullReminderData.recipient !== undefined && fullReminderData.recipient !== null) {
+            console.error('⚠️ ERROR: Se creó una notificación individual (tiene recipient) en lugar de un recordatorio principal:', {
+              id: fullReminderData.id,
+              documentId: fullReminderData.documentId,
+              title: fullReminderData.title,
+              recipient: fullReminderData.recipient,
+            });
+          }
+        } catch (error) {
+          console.warn('Error verificando tags del recordatorio creado:', error);
+        }
+      }
       
       // Agregar el autor
       if (currentUserProfile && currentUserProfile.documentId === fullReminderData.authorDocumentId) {

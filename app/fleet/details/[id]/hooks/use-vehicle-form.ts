@@ -35,6 +35,7 @@ interface UseVehicleFormReturn {
   selectedResponsables: number[];
   selectedAssignedDrivers: number[];
   selectedInterestedDrivers: number[];
+  selectedCurrentDrivers: number[];
   setIsEditing: (editing: boolean) => void;
   setFormData: React.Dispatch<React.SetStateAction<FormData>>;
   setMaintenanceScheduledDate: (date: string) => void;
@@ -45,6 +46,7 @@ interface UseVehicleFormReturn {
   setSelectedResponsables: (ids: number[]) => void;
   setSelectedAssignedDrivers: (ids: number[]) => void;
   setSelectedInterestedDrivers: (ids: number[]) => void;
+  setSelectedCurrentDrivers: (ids: number[]) => void;
   syncFormWithVehicle: (data: FleetVehicleCard) => Promise<void>;
   handleImageInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
   handleRemoveImage: () => void;
@@ -93,6 +95,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
   const [selectedResponsables, setSelectedResponsables] = useState<number[]>([]);
   const [selectedAssignedDrivers, setSelectedAssignedDrivers] = useState<number[]>([]);
   const [selectedInterestedDrivers, setSelectedInterestedDrivers] = useState<number[]>([]);
+  const [selectedCurrentDrivers, setSelectedCurrentDrivers] = useState<number[]>([]);
   const previewObjectUrlRef = useRef<string | null>(null);
 
   const updateImagePreview = useCallback((value: string | null, isObjectUrl = false) => {
@@ -194,6 +197,19 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
         }
       } else {
         setSelectedInterestedDrivers([]);
+      }
+      
+      if ((data as any).currentDrivers && (data as any).currentDrivers.length > 0) {
+        const currentDriversIds = (data as any).currentDrivers
+          .map((d: any) => d.id)
+          .filter((id: any): id is number => typeof id === 'number' && !isNaN(id));
+        if (currentDriversIds.length > 0) {
+          setSelectedCurrentDrivers(currentDriversIds);
+        } else {
+          setSelectedCurrentDrivers([]);
+        }
+      } else {
+        setSelectedCurrentDrivers([]);
       }
     },
     [updateImagePreview, vehicleId]
@@ -299,6 +315,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
         responsables: selectedResponsables,
         assignedDrivers: selectedAssignedDrivers,
         interestedDrivers: selectedInterestedDrivers,
+        currentDrivers: selectedCurrentDrivers,
       };
 
       if (uploadedImageId !== null) {
@@ -396,6 +413,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
     selectedResponsables,
     selectedAssignedDrivers,
     selectedInterestedDrivers,
+    selectedCurrentDrivers,
     setIsEditing,
     setFormData,
     setMaintenanceScheduledDate,
@@ -406,6 +424,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
     setSelectedResponsables,
     setSelectedAssignedDrivers,
     setSelectedInterestedDrivers,
+    setSelectedCurrentDrivers,
     syncFormWithVehicle,
     handleImageInputChange,
     handleRemoveImage,

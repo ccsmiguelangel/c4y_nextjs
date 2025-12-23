@@ -12,17 +12,52 @@ import {
   DropdownMenuTrigger,
 } from "@/components_shadcn/ui/dropdown-menu";
 import { spacing, typography } from "@/lib/design-system";
+import { strapiImages } from "@/lib/strapi-images";
 import type { FleetVehicleCondition } from "@/validations/types";
+import type { StrapiImage } from "@/validations/types";
 
 interface VehicleHeaderCardProps {
   name: string;
   condition: FleetVehicleCondition;
   imageUrl: string | null;
   imageAlt: string;
+  imageData?: StrapiImage | null; // Datos completos de la imagen con formats
   isDeleting: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }
+
+/**
+ * Selecciona el formato de imagen apropiado según el tamaño del contenedor
+ * Para un contenedor de 384px (h-96), preferimos large para pantallas Retina,
+ * luego medium, luego original
+ */
+const getOptimalImageUrl = (
+  imageUrl: string | null,
+  imageData?: StrapiImage | null
+): string | null => {
+  if (!imageUrl) return null;
+  
+  // Si es una imagen blob (preview), usar directamente
+  if (imageUrl.startsWith("blob:")) {
+    return imageUrl;
+  }
+  
+  // Si tenemos los datos completos de la imagen con formats
+  if (imageData?.formats) {
+    // Para un contenedor de 384px, usar large para pantallas Retina (768px+)
+    // o medium para pantallas normales
+    if (imageData.formats.large?.url) {
+      return strapiImages.getURL(imageData.formats.large.url);
+    }
+    if (imageData.formats.medium?.url) {
+      return strapiImages.getURL(imageData.formats.medium.url);
+    }
+  }
+  
+  // Fallback a la URL original
+  return imageUrl;
+};
 
 const getStatusBadge = (status: FleetVehicleCondition) => {
   switch (status) {
@@ -52,11 +87,13 @@ export function VehicleHeaderCard({
   condition,
   imageUrl,
   imageAlt,
+  imageData,
   isDeleting,
   onEdit,
   onDelete,
 }: VehicleHeaderCardProps) {
   const isBlobImage = Boolean(imageUrl && imageUrl.startsWith("blob:"));
+  const optimalImageUrl = getOptimalImageUrl(imageUrl, imageData);
 
   return (
     <Card 
@@ -97,13 +134,15 @@ export function VehicleHeaderCard({
         </div>
 
         <div className="relative w-full h-96 mt-20 overflow-hidden rounded-lg bg-muted">
-          {imageUrl ? (
+          {optimalImageUrl ? (
             <Image
-              src={imageUrl}
+              src={optimalImageUrl}
               alt={imageAlt}
               fill
               className="object-cover"
-              sizes="(max-width: 768px) 100vw, 1200px"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 100vw, 1200px"
+              loading="eager"
+              priority
               unoptimized={isBlobImage}
             />
           ) : (

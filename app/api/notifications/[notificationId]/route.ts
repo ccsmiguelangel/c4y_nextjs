@@ -9,6 +9,624 @@ interface RouteContext {
   }>;
 }
 
+// PUT - Actualizar una notificación/recordatorio (campos genéricos como isCompleted, isActive, etc.)
+export async function PUT(request: Request, context: RouteContext) {
+  try {
+    const params = await context.params;
+    const { notificationId } = params;
+
+    if (!notificationId) {
+      return NextResponse.json(
+        { error: "notificationId es requerido" },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const data = body?.data;
+
+    if (!data || typeof data !== "object") {
+      return NextResponse.json(
+        { error: "El cuerpo de la petición debe incluir un objeto 'data' con los campos a actualizar" },
+        { status: 400 }
+      );
+    }
+
+    // Buscar la notificación por documentId o ID numérico
+    let idToUpdate: string | null = null;
+
+    // Si es numérico, usar directamente
+    if (/^\d+$/.test(notificationId)) {
+      idToUpdate = notificationId;
+      console.log("✅ ID numérico detectado, usando directamente:", {
+        notificationId,
+        idToUpdate,
+      });
+      
+      // Verificar que la notificación existe antes de intentar actualizar
+      try {
+        const verifyQuery = qs.stringify({
+          filters: {
+            id: { $eq: parseInt(notificationId, 10) },
+          },
+          fields: ["id", "documentId", "type", "tags"],
+        });
+        
+        const verifyResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/notifications?${verifyQuery}`,
+          {
+            headers: {
+              Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
+          }
+        );
+        
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          if (verifyData.data && verifyData.data.length > 0) {
+            const foundNotification = verifyData.data[0];
+            console.log("✅ Notificación verificada:", {
+              id: foundNotification.id,
+              documentId: foundNotification.documentId,
+              type: foundNotification.type,
+            });
+            
+            // Verificar si es una notificación individual (con parentReminderId)
+            try {
+              const tags = typeof foundNotification.tags === 'string' 
+                ? JSON.parse(foundNotification.tags) 
+                : foundNotification.tags;
+              if (tags?.parentReminderId) {
+                console.log("⚠️ Es una notificación individual, redirigiendo al recordatorio principal:", {
+                  parentReminderId: tags.parentReminderId,
+                });
+                // Redirigir al recordatorio principal
+                const parentId = typeof tags.parentReminderId === 'number' 
+                  ? tags.parentReminderId 
+                  : parseInt(String(tags.parentReminderId), 10);
+                if (!isNaN(parentId)) {
+                  idToUpdate = String(parentId);
+                  console.log("✅ Redirigido al recordatorio principal:", idToUpdate);
+                }
+              }
+            } catch {
+              // Ignorar errores parseando tags
+            }
+          } else {
+            console.error("❌ Notificación no encontrada en Strapi con ID:", notificationId);
+            return NextResponse.json(
+              { 
+                error: "Notificación no encontrada",
+                message: `No se encontró la notificación con ID: ${notificationId}. Puede haber sido eliminada.`
+              },
+              { status: 404 }
+            );
+          }
+        } else {
+          console.error("❌ Error verificando notificación:", {
+            status: verifyResponse.status,
+            statusText: verifyResponse.statusText,
+          });
+        }
+      } catch (verifyError) {
+        console.error("❌ Error al verificar notificación:", verifyError);
+      }
+    } else {
+      // Buscar por documentId - intentar primero con GET directo usando documentId como parámetro
+      // Strapi puede soportar documentId directamente en la ruta
+      let found: any = null;
+      
+      // Intentar GET directo con documentId
+      try {
+        const directGetResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/notifications/${notificationId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (directGetResponse.ok) {
+          const directGetData = await directGetResponse.json();
+          if (directGetData.data) {
+            found = directGetData.data;
+            console.log("✅ Notificación encontrada con GET directo por documentId:", {
+              documentId: notificationId,
+              id: found.id,
+            });
+          }
+        } else if (directGetResponse.status !== 404) {
+          console.warn("GET directo falló con status:", directGetResponse.status);
+        }
+      } catch (directGetError) {
+        console.warn("Error en GET directo por documentId, intentando búsqueda con filtro:", directGetError);
+      }
+
+      // Si no se encontró con GET directo, intentar búsqueda con filtro
+      if (!found) {
+        try {
+          const directSearchQuery = qs.stringify({
+            filters: {
+              documentId: { $eq: notificationId },
+            },
+            fields: ["id", "documentId", "tags", "type"],
+          });
+
+          const directSearchResponse = await fetch(
+            `${STRAPI_BASE_URL}/api/notifications?${directSearchQuery}`,
+            {
+              headers: {
+                Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+                "Content-Type": "application/json",
+              },
+              cache: "no-store",
+            }
+          );
+
+          if (directSearchResponse.ok) {
+            const directSearchData = await directSearchResponse.json();
+            if (directSearchData.data && directSearchData.data.length > 0) {
+              found = directSearchData.data[0];
+              console.log("✅ Notificación encontrada con filtro por documentId:", {
+                documentId: notificationId,
+                id: found.id,
+              });
+            } else {
+              console.warn("⚠️ Filtro por documentId no devolvió resultados:", {
+                documentId: notificationId,
+                responseData: directSearchData,
+              });
+            }
+          } else {
+            console.warn("⚠️ Búsqueda con filtro falló con status:", directSearchResponse.status);
+          }
+        } catch (directSearchError) {
+          console.warn("Error en búsqueda directa por documentId, intentando búsqueda manual:", directSearchError);
+        }
+      }
+
+      // Si no se encontró con búsqueda directa, buscar manualmente
+      let allNotifications: any[] = []; // Declarar fuera del if para poder usarlo después
+      
+      if (!found) {
+        console.log("🔍 Iniciando búsqueda manual por documentId:", notificationId);
+        // Buscar en todas las notificaciones (aumentar pageSize o buscar en múltiples páginas)
+        let page = 1;
+        const pageSize = 250; // Aumentar el tamaño de página
+        let hasMore = true;
+        let totalSearched = 0;
+
+        while (hasMore && page <= 5) { // Buscar en máximo 5 páginas (1250 notificaciones)
+          const searchQuery = qs.stringify({
+            fields: ["id", "documentId", "tags", "type"],
+            pagination: {
+              page,
+              pageSize,
+            },
+          });
+
+          const searchResponse = await fetch(
+            `${STRAPI_BASE_URL}/api/notifications?${searchQuery}`,
+            {
+              headers: {
+                Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+                "Content-Type": "application/json",
+              },
+              cache: "no-store",
+            }
+          );
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const notifications = searchData.data || [];
+            allNotifications = allNotifications.concat(notifications);
+            totalSearched += notifications.length;
+            
+            // Buscar en esta página
+            found = notifications.find((n: any) => n.documentId === notificationId);
+            
+            if (found) {
+              console.log("✅ Notificación encontrada en búsqueda manual:", {
+                documentId: notificationId,
+                id: found.id,
+                page,
+                totalSearched,
+              });
+            }
+            
+            // Si encontramos o no hay más resultados, salir del loop
+            if (found || notifications.length < pageSize) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            console.warn("⚠️ Error en búsqueda manual, página:", page, "status:", searchResponse.status);
+            hasMore = false;
+          }
+        }
+
+        // Si aún no se encontró, buscar en todas las notificaciones acumuladas
+        if (!found) {
+          found = allNotifications.find((n: any) => n.documentId === notificationId);
+          if (found) {
+            console.log("✅ Notificación encontrada en notificaciones acumuladas:", {
+              documentId: notificationId,
+              id: found.id,
+              totalSearched: allNotifications.length,
+            });
+          } else {
+            console.error("❌ Notificación NO encontrada después de buscar:", {
+              documentId: notificationId,
+              totalSearched: allNotifications.length,
+              sampleDocumentIds: allNotifications.slice(0, 5).map((n: any) => n.documentId),
+            });
+          }
+        }
+      }
+      
+      if (found && found.id) {
+        // Verificar si es notificación individual (con parentReminderId)
+        try {
+          const tags = typeof found.tags === 'string' ? JSON.parse(found.tags) : found.tags;
+          if (tags?.parentReminderId) {
+            // Es una notificación individual - buscar el recordatorio principal
+            const parentId = typeof tags.parentReminderId === 'number' 
+              ? tags.parentReminderId 
+              : parseInt(String(tags.parentReminderId), 10);
+            
+            if (!isNaN(parentId)) {
+              // Usar el ID numérico del recordatorio principal
+              idToUpdate = String(parentId);
+            } else {
+              // Si no es numérico, buscar por documentId
+              // Si tenemos allNotifications, buscar ahí, sino hacer otra búsqueda
+              let parentReminder: any = null;
+              
+              if (allNotifications.length > 0) {
+                parentReminder = allNotifications.find((n: any) => 
+                  n.documentId === tags.parentReminderId || String(n.id) === String(tags.parentReminderId)
+                );
+              }
+              
+              // Si no se encontró en allNotifications, hacer búsqueda directa
+              if (!parentReminder) {
+                try {
+                  const parentSearchQuery = qs.stringify({
+                    filters: {
+                      $or: [
+                        { documentId: { $eq: tags.parentReminderId } },
+                        { id: { $eq: parseInt(String(tags.parentReminderId), 10) } },
+                      ],
+                    },
+                    fields: ["id"],
+                  });
+                  
+                  const parentSearchResponse = await fetch(
+                    `${STRAPI_BASE_URL}/api/notifications?${parentSearchQuery}`,
+                    {
+                      headers: {
+                        Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+                        "Content-Type": "application/json",
+                      },
+                      cache: "no-store",
+                    }
+                  );
+                  
+                  if (parentSearchResponse.ok) {
+                    const parentSearchData = await parentSearchResponse.json();
+                    if (parentSearchData.data && parentSearchData.data.length > 0) {
+                      parentReminder = parentSearchData.data[0];
+                    }
+                  }
+                } catch {
+                  // Ignorar errores en búsqueda del parent
+                }
+              }
+              
+              if (parentReminder && parentReminder.id) {
+                idToUpdate = String(parentReminder.id);
+              } else {
+                idToUpdate = String(found.id);
+              }
+            }
+          } else {
+            // Es un recordatorio principal - usar su ID directamente
+            idToUpdate = String(found.id);
+          }
+        } catch {
+          // Si hay error parseando tags, usar el ID encontrado
+          idToUpdate = String(found.id);
+        }
+      }
+    }
+
+    if (!idToUpdate) {
+      console.error("No se pudo encontrar el ID numérico para actualizar:", {
+        notificationId,
+        isNumeric: /^\d+$/.test(notificationId),
+      });
+      return NextResponse.json(
+        { 
+          error: "Notificación no encontrada",
+          message: `No se pudo encontrar la notificación con ID: ${notificationId}. Puede haber sido eliminada o el ID es inválido.`
+        },
+        { status: 404 }
+      );
+    }
+
+    // Obtener el recordatorio actual para incluir responsables/conductores si es necesario
+    const currentReminderQuery = qs.stringify({
+      filters: {
+        id: { $eq: parseInt(idToUpdate, 10) },
+      },
+      fields: ["id", "type", "module", "fleetVehicle"],
+      populate: {
+        fleetVehicle: {
+          fields: ["id"],
+          populate: {
+            responsables: { fields: ["id"] },
+            assignedDrivers: { fields: ["id"] },
+          },
+        },
+      },
+    });
+
+    const currentReminderResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${currentReminderQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+
+    // Si es un recordatorio de tipo fleet y se están actualizando assignedUsers, incluir responsables y conductores
+    if (currentReminderResponse.ok && data.assignedUsers !== undefined) {
+      const currentReminderData = await currentReminderResponse.json();
+      const reminder = currentReminderData.data?.[0];
+
+      if (reminder && reminder.type === 'reminder' && reminder.module === 'fleet' && reminder.fleetVehicle) {
+        const vehicle = reminder.fleetVehicle;
+        const allAssignedUserIds = new Set<number>();
+
+        // 1. Agregar usuarios seleccionados manualmente
+        if (Array.isArray(data.assignedUsers)) {
+          data.assignedUsers.forEach((id: any) => {
+            const numId = typeof id === 'string' ? parseInt(id, 10) : id;
+            if (!isNaN(numId)) {
+              allAssignedUserIds.add(numId);
+            }
+          });
+        }
+
+        // 2. Agregar responsables del vehículo automáticamente
+        if (vehicle.responsables && Array.isArray(vehicle.responsables)) {
+          vehicle.responsables.forEach((resp: any) => {
+            if (resp.id) {
+              allAssignedUserIds.add(resp.id);
+            }
+          });
+        }
+
+        // 3. Agregar conductores asignados del vehículo automáticamente
+        if (vehicle.assignedDrivers && Array.isArray(vehicle.assignedDrivers)) {
+          vehicle.assignedDrivers.forEach((driver: any) => {
+            if (driver.id) {
+              allAssignedUserIds.add(driver.id);
+            }
+          });
+        }
+
+        // Actualizar data.assignedUsers con la lista combinada
+        if (allAssignedUserIds.size > 0) {
+          data.assignedUsers = Array.from(allAssignedUserIds);
+        }
+      }
+    }
+
+    // Verificar que la notificación existe antes de actualizar
+    console.log("🔍 Verificando que la notificación existe antes de actualizar:", {
+      notificationId,
+      idToUpdate,
+    });
+    
+    const verifyBeforeUpdateQuery = qs.stringify({
+      filters: {
+        id: { $eq: parseInt(idToUpdate, 10) },
+      },
+      fields: ["id", "documentId", "type"],
+    });
+    
+    const verifyBeforeUpdateResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${verifyBeforeUpdateQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    
+    if (!verifyBeforeUpdateResponse.ok) {
+      console.error("❌ Error verificando notificación antes de actualizar:", {
+        status: verifyBeforeUpdateResponse.status,
+        statusText: verifyBeforeUpdateResponse.statusText,
+        idToUpdate,
+      });
+      return NextResponse.json(
+        { 
+          error: "Error al verificar la notificación",
+          message: `No se pudo verificar la notificación con ID: ${idToUpdate}`
+        },
+        { status: verifyBeforeUpdateResponse.status }
+      );
+    }
+    
+    const verifyData = await verifyBeforeUpdateResponse.json();
+    if (!verifyData.data || verifyData.data.length === 0) {
+      console.error("❌ Notificación no encontrada antes de actualizar:", {
+        idToUpdate,
+        notificationId,
+      });
+      return NextResponse.json(
+        { 
+          error: "Notificación no encontrada",
+          message: `La notificación con ID: ${idToUpdate} no existe. Puede haber sido eliminada.`
+        },
+        { status: 404 }
+      );
+    }
+    
+    const verifiedNotification = verifyData.data[0];
+    console.log("✅ Notificación verificada, procediendo a actualizar:", {
+      id: verifiedNotification.id,
+      documentId: verifiedNotification.documentId,
+      type: verifiedNotification.type,
+    });
+
+    // En Strapi v5, intentar usar documentId primero, luego ID numérico como fallback
+    const identifierToUse = verifiedNotification.documentId || idToUpdate;
+    
+    // ACTUALIZAR usando documentId (preferido en Strapi v5) o ID numérico como fallback
+    console.log("🔄 Intentando actualizar notificación en Strapi:", {
+      notificationId,
+      idToUpdate,
+      identifierToUse,
+      usingDocumentId: !!verifiedNotification.documentId,
+      dataKeys: Object.keys(data),
+      data,
+    });
+    
+    const updateResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications/${identifierToUse}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ data }),
+        cache: "no-store",
+      }
+    );
+
+    console.log("📡 Respuesta de Strapi:", {
+      status: updateResponse.status,
+      statusText: updateResponse.statusText,
+      ok: updateResponse.ok,
+      idToUpdate,
+    });
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      let errorData: any;
+      try {
+        errorData = errorText ? JSON.parse(errorText) : { error: { message: "Error desconocido" } };
+      } catch {
+        errorData = { error: { message: errorText || `Error ${updateResponse.status}: ${updateResponse.statusText}` } };
+      }
+
+      // Verificar si es un error de conexión
+      if (updateResponse.status === 404 && !errorText) {
+        console.error("❌ Error 404: Posible problema de conexión con Strapi o notificación no encontrada:", {
+          status: updateResponse.status,
+          notificationId,
+          idToUpdate,
+          identifierToUse,
+          url: `${STRAPI_BASE_URL}/api/notifications/${identifierToUse}`,
+          suggestion: "Verifica que Strapi esté corriendo en " + STRAPI_BASE_URL,
+        });
+      } else {
+        console.error("❌ Error actualizando notificación en Strapi:", {
+          status: updateResponse.status,
+          statusText: updateResponse.statusText,
+          error: errorData,
+          errorText,
+          notificationId,
+          idToUpdate,
+          identifierToUse,
+          url: `${STRAPI_BASE_URL}/api/notifications/${identifierToUse}`,
+        });
+      }
+
+      if (updateResponse.status === 404) {
+        return NextResponse.json(
+          { 
+            error: "La notificación no fue encontrada",
+            message: "La notificación puede haber sido eliminada o el ID es inválido."
+          },
+          { status: 404 }
+        );
+      }
+
+      const errorMessage = errorData.error?.message || errorData.message || `Error ${updateResponse.status}: ${updateResponse.statusText}`;
+      return NextResponse.json(
+        { 
+          error: errorMessage,
+          message: errorMessage
+        },
+        { status: updateResponse.status }
+      );
+    }
+
+    const updatedNotification = await updateResponse.json();
+
+    return NextResponse.json({
+      success: true,
+      data: updatedNotification.data,
+    });
+  } catch (error) {
+    // Verificar si es un error de conexión
+    const isConnectionError = error instanceof Error && 
+      ('code' in error && error.code === 'ECONNREFUSED') ||
+      (error.message && error.message.includes('fetch failed'));
+    
+    if (isConnectionError) {
+      console.error("❌ Error de conexión con Strapi:", {
+        notificationId,
+        error,
+        suggestion: "Verifica que Strapi esté corriendo en " + STRAPI_BASE_URL + " (cd backend && npm run develop)",
+      });
+      
+      return NextResponse.json(
+        { 
+          error: "Error de conexión con el servidor",
+          message: "No se pudo conectar con Strapi. Por favor, verifica que el servidor esté corriendo."
+        },
+        { status: 503 }
+      );
+    }
+    
+    console.error("Error en PUT /api/notifications/[notificationId]:", {
+      notificationId,
+      error,
+      errorType: typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : (typeof error === 'string' ? error : "Error desconocido al actualizar la notificación");
+    
+    return NextResponse.json(
+      { 
+        error: errorMessage,
+        message: errorMessage
+      },
+      { status: 500 }
+    );
+  }
+}
+
 // Función helper para obtener el user-profile del usuario actual
 async function getCurrentUserProfile() {
   try {
@@ -114,7 +732,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     // Verificar que la notificación pertenece al usuario actual
     const notificationQuery = qs.stringify({
       filters: {
-        id: { $eq: notificationId },
+        id: { $eq: parseInt(notificationId, 10) },
         recipient: {
           documentId: { $eq: currentUser.documentId },
         },
@@ -179,13 +797,6 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const updatedNotification = await updateResponse.json();
 
-    // Si la notificación está relacionada con un recordatorio y se marca como leída,
-    // sincronizar el estado del recordatorio si es necesario
-    if (notification.fleetReminder && isRead) {
-      // El backend ya maneja la sincronización automática cuando se actualiza un recordatorio
-      // Aquí solo actualizamos la notificación
-    }
-
     return NextResponse.json({ 
       success: true,
       data: updatedNotification.data 
@@ -195,6 +806,310 @@ export async function PATCH(request: Request, context: RouteContext) {
     const errorMessage = error instanceof Error ? error.message : "Error desconocido";
     return NextResponse.json(
       { error: errorMessage },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Eliminar una notificación/recordatorio
+export async function DELETE(_: Request, context: RouteContext) {
+  const startTime = Date.now();
+  try {
+    const params = await context.params;
+    const { notificationId } = params;
+
+    console.log("🗑️ DELETE /api/notifications/[notificationId] - INICIO:", {
+      notificationId,
+      isNumeric: /^\d+$/.test(notificationId),
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!notificationId) {
+      console.error("❌ DELETE: notificationId es requerido");
+      return NextResponse.json(
+        { error: "notificationId es requerido" },
+        { status: 400 }
+      );
+    }
+
+    // Determinar si notificationId es numérico (id) o es un documentId
+    const isNumericId = /^\d+$/.test(notificationId);
+    let idToDelete = notificationId;
+
+    // Si no es numérico, buscar por documentId para obtener el id numérico
+    if (!isNumericId) {
+      console.log("🔍 Buscando notificación por documentId:", notificationId);
+      
+      const searchQuery = qs.stringify({
+        filters: {
+          documentId: { $eq: notificationId },
+        },
+        fields: ["id", "documentId", "type"],
+      });
+
+      const searchResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/notifications?${searchQuery}`,
+        {
+          headers: {
+            Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.data?.[0]?.id) {
+          idToDelete = String(searchData.data[0].id);
+          console.log("✅ Notificación encontrada, usando ID numérico:", {
+            documentId: notificationId,
+            numericId: idToDelete,
+            type: searchData.data[0].type,
+          });
+        } else {
+          console.error("❌ Notificación no encontrada por documentId:", notificationId);
+          return NextResponse.json(
+            { error: "Notificación no encontrada" },
+            { status: 404 }
+          );
+        }
+      } else {
+        console.error("❌ Error buscando notificación:", {
+          status: searchResponse.status,
+          statusText: searchResponse.statusText,
+        });
+        return NextResponse.json(
+          { error: "Error al buscar la notificación" },
+          { status: 500 }
+        );
+      }
+    } else {
+      console.log("✅ ID numérico detectado, usando directamente:", idToDelete);
+    }
+
+    // Eliminar la notificación directamente en Strapi usando el id numérico
+    console.log("🔄 Eliminando notificación en Strapi:", {
+      notificationId,
+      idToDelete,
+      url: `${STRAPI_BASE_URL}/api/notifications/${idToDelete}`,
+    });
+    
+    let deleteResponse: Response;
+    try {
+      deleteResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/notifications/${idToDelete}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          },
+          cache: "no-store",
+        }
+      );
+    } catch (fetchError: any) {
+      // Error de conexión (fetch failed)
+      const isConnectionError = 
+        fetchError?.message?.includes('fetch failed') ||
+        fetchError?.code === 'ECONNREFUSED' ||
+        fetchError?.message?.includes('ECONNREFUSED') ||
+        fetchError?.name === 'TypeError';
+      
+      if (isConnectionError) {
+        console.error("❌ DELETE: Error de conexión con Strapi:", {
+          notificationId,
+          idToDelete,
+          error: fetchError,
+          suggestion: "Verifica que Strapi esté corriendo en " + STRAPI_BASE_URL,
+        });
+        
+        return NextResponse.json(
+          { 
+            error: "Error de conexión con el servidor",
+            message: "No se pudo conectar con Strapi. Por favor, verifica que el servidor esté corriendo."
+          },
+          { status: 503 }
+        );
+      }
+      
+      // Otro tipo de error
+      throw fetchError;
+    }
+    
+    console.log("📡 Respuesta de Strapi DELETE:", {
+      status: deleteResponse.status,
+      statusText: deleteResponse.statusText,
+      ok: deleteResponse.ok,
+      idToDelete,
+    });
+
+    if (!deleteResponse.ok) {
+      const errorText = await deleteResponse.text();
+      let errorData: any = {};
+      try {
+        errorData = errorText ? JSON.parse(errorText) : {};
+      } catch {
+        // Si no se puede parsear, usar el texto como mensaje
+        errorData = { error: { message: errorText || "Error desconocido" } };
+      }
+      
+      // Extraer mensaje de error de diferentes estructuras posibles
+      const errorMessage = 
+        errorData?.error?.message || 
+        errorData?.message || 
+        errorData?.error || 
+        errorText || 
+        `Error ${deleteResponse.status}: ${deleteResponse.statusText}`;
+      
+      console.error("❌ Error eliminando notificación en Strapi:", {
+        status: deleteResponse.status,
+        statusText: deleteResponse.statusText,
+        errorText: errorText || 'Sin texto de error',
+        errorData: errorData || {},
+        errorMessage,
+        notificationId,
+        idToDelete,
+      });
+      
+      // Si es 404, la notificación no existe
+      if (deleteResponse.status === 404) {
+        return NextResponse.json(
+          { 
+            error: "La notificación no fue encontrada",
+            message: "La notificación puede haber sido eliminada o el ID es inválido."
+          },
+          { status: 404 }
+        );
+      }
+      
+      return NextResponse.json(
+        { 
+          error: errorMessage,
+          message: errorMessage
+        },
+        { status: deleteResponse.status }
+      );
+    }
+
+    // Verificar que el recordatorio fue realmente eliminado
+    // Esperar un momento para que Strapi procese la eliminación
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    const verifyDeleteQuery = qs.stringify({
+      filters: {
+        id: { $eq: parseInt(idToDelete, 10) },
+      },
+      fields: ["id", "documentId", "title"],
+    });
+    
+    const verifyDeleteResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/notifications?${verifyDeleteQuery}`,
+      {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      }
+    );
+    
+    if (verifyDeleteResponse.ok) {
+      const verifyData = await verifyDeleteResponse.json();
+      if (verifyData.data && verifyData.data.length > 0) {
+        console.error("❌ DELETE: El recordatorio aún existe después de eliminarlo:", {
+          notificationId,
+          idToDelete,
+          foundRecords: verifyData.data.length,
+          foundRecordsData: verifyData.data.map((r: any) => ({
+            id: r.id,
+            documentId: r.documentId,
+            title: r.title,
+          })),
+        });
+        
+        // Si el recordatorio aún existe, intentar eliminarlo directamente con entityService
+        // Esto puede ser necesario si el controlador personalizado no se ejecutó
+        console.warn("⚠️ DELETE: El recordatorio aún existe. Esto puede indicar que el controlador personalizado no se ejecutó.");
+        
+        // Retornar error para que el frontend sepa que hubo un problema
+        return NextResponse.json(
+          { 
+            error: "El recordatorio no fue eliminado correctamente",
+            message: "El recordatorio aún existe después de intentar eliminarlo. Puede haber un problema con el servidor."
+          },
+          { status: 500 }
+        );
+      } else {
+        console.log("✅ DELETE: Verificación confirmada - el recordatorio fue eliminado correctamente");
+      }
+    } else {
+      console.warn("⚠️ DELETE: No se pudo verificar la eliminación:", {
+        status: verifyDeleteResponse.status,
+        statusText: verifyDeleteResponse.statusText,
+      });
+    }
+
+    const elapsedTime = Date.now() - startTime;
+    console.log("✅ DELETE /api/notifications/[notificationId] - ÉXITO:", {
+      notificationId,
+      idToDelete,
+      elapsedTime: `${elapsedTime}ms`,
+      timestamp: new Date().toISOString(),
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const elapsedTime = Date.now() - startTime;
+    let notificationId = "unknown";
+    try {
+      const params = await context.params;
+      notificationId = params.notificationId;
+    } catch {
+      // Ignorar error al obtener params
+    }
+    
+    // Verificar si es un error de conexión
+    const isConnectionError = 
+      (error instanceof Error && 
+        (error.message?.includes('fetch failed') ||
+         error.message?.includes('ECONNREFUSED') ||
+         error.name === 'TypeError')) ||
+      (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ECONNREFUSED');
+    
+    if (isConnectionError) {
+      console.error("❌ DELETE: Error de conexión con Strapi:", {
+        notificationId,
+        error,
+        elapsedTime: `${elapsedTime}ms`,
+        timestamp: new Date().toISOString(),
+        suggestion: "Verifica que Strapi esté corriendo en " + STRAPI_BASE_URL + " (cd backend && npm run develop)",
+      });
+      
+      return NextResponse.json(
+        { 
+          error: "Error de conexión con el servidor",
+          message: "No se pudo conectar con Strapi. Por favor, verifica que el servidor esté corriendo."
+        },
+        { status: 503 }
+      );
+    }
+    
+    console.error("❌ DELETE /api/notifications/[notificationId] - ERROR:", {
+      notificationId,
+      error,
+      errorType: typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      elapsedTime: `${elapsedTime}ms`,
+      timestamp: new Date().toISOString(),
+    });
+    
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : (typeof error === 'string' ? error : "Error desconocido al eliminar la notificación");
+    
+    return NextResponse.json(
+      { 
+        error: errorMessage,
+        message: errorMessage
+      },
       { status: 500 }
     );
   }

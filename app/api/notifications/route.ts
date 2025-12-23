@@ -86,17 +86,60 @@ export async function GET() {
     }
 
     // Obtener notificaciones del usuario (incluyendo las relacionadas con recordatorios)
+    // IMPORTANTE: NO incluir notificaciones individuales (con recipient) de recordatorios
+    // Solo obtener:
+    // 1. Notificaciones manuales con recipient (no son recordatorios)
+    // 2. Recordatorios principales donde el usuario esté en assignedUsers (NO tienen recipient)
+    // 3. Recordatorios principales donde el usuario sea el autor (NO tienen recipient)
     const notificationQuery = qs.stringify({
       filters: {
-        recipient: {
-          documentId: { $eq: currentUser.documentId },
-        },
+        $or: [
+          {
+            // Notificaciones manuales (no son recordatorios) con recipient
+            type: { $ne: "reminder" },
+            recipient: {
+              documentId: { $eq: currentUser.documentId },
+            },
+          },
+          {
+            // Recordatorios principales (NO tienen recipient, NO tienen parentReminderId en tags)
+            type: { $eq: "reminder" },
+            assignedUsers: {
+              documentId: { $eq: currentUser.documentId },
+            },
+          },
+          {
+            // Recordatorios principales donde el usuario es el autor
+            type: { $eq: "reminder" },
+            authorDocumentId: { $eq: currentUser.documentId },
+          },
+        ],
       },
-      fields: ["id", "documentId", "title", "description", "type", "isRead", "timestamp", "createdAt"],
+      fields: ["id", "documentId", "title", "description", "type", "isRead", "timestamp", "createdAt", "module", "tags", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId"],
       populate: {
         recipient: {
           fields: ["id", "documentId", "displayName", "email"],
         },
+        assignedUsers: {
+          fields: ["id", "documentId", "displayName", "email"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
+        fleetVehicle: {
+          fields: ["id", "documentId", "name"],
+        },
+        author: {
+          fields: ["id", "documentId", "displayName", "email"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
+        // Mantener fleetReminder para compatibilidad con código legacy
         fleetReminder: {
           fields: ["id", "documentId", "title", "description", "isActive", "isCompleted", "nextTrigger"],
           populate: {
@@ -132,7 +175,58 @@ export async function GET() {
     }
 
     const data = await response.json();
-    return NextResponse.json({ data: data.data || [] });
+    
+    // Filtrar notificaciones duplicadas: excluir notificaciones individuales que tienen parentReminderId en tags
+    // Estas son las notificaciones creadas por syncReminderNotifications para usuarios asignados
+    // Solo queremos mostrar el recordatorio principal, no las notificaciones individuales
+    const filteredNotifications = (data.data || []).filter((notification: any) => {
+      // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales de recordatorios
+      // Las notificaciones individuales tienen parentReminderId en tags Y recipient
+      // Los recordatorios principales NO tienen parentReminderId en tags NI recipient
+      if (notification.type === 'reminder') {
+        // Si tiene recipient (incluso si es un objeto populado), es una notificación individual
+        if (notification.recipient !== undefined && notification.recipient !== null) {
+          // Log en desarrollo para depuración
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔍 Excluyendo notificación individual (tiene recipient):', {
+              id: notification.id,
+              documentId: notification.documentId,
+              title: notification.title,
+              recipient: notification.recipient,
+            });
+          }
+          return false;
+        }
+        
+        try {
+          const tags = typeof notification.tags === 'string' 
+            ? JSON.parse(notification.tags) 
+            : notification.tags;
+          
+          // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
+          if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+            // Log en desarrollo para depuración
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔍 Excluyendo notificación individual (tiene parentReminderId):', {
+                id: notification.id,
+                documentId: notification.documentId,
+                title: notification.title,
+                parentReminderId: tags.parentReminderId,
+              });
+            }
+            return false;
+          }
+        } catch (error) {
+          // Si hay error parseando tags, incluir la notificación por seguridad
+          console.warn('Error parseando tags de notificación:', error);
+        }
+      }
+      
+      // Incluir todas las demás notificaciones
+      return true;
+    });
+    
+    return NextResponse.json({ data: filteredNotifications });
   } catch (error) {
     console.error("Error obteniendo notificaciones:", error);
     const errorMessage = error instanceof Error ? error.message : "Error desconocido";

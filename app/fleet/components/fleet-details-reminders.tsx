@@ -33,6 +33,7 @@ interface FleetDetailsRemindersCardProps {
   selectedResponsables: number[];
   selectedAssignedDrivers: number[];
   isSavingReminder: boolean;
+  editingReminderId: number | string | null;
   availableUsers: Array<{
     id: number;
     documentId?: string;
@@ -75,6 +76,7 @@ export function FleetDetailsRemindersCard({
   selectedResponsables,
   selectedAssignedDrivers,
   isSavingReminder,
+  editingReminderId,
   availableUsers,
   onAddReminder,
   onCancelReminder,
@@ -280,18 +282,27 @@ export function FleetDetailsRemindersCard({
               </div>
             </div>
 
-            <div className="flex gap-2 mt-4">
-              <Button onClick={onCancelReminder} variant="outline" size="lg" className="flex-1">
+            <div className="flex flex-col sm:flex-row gap-3 mt-4">
+              <Button 
+                onClick={onCancelReminder} 
+                variant="outline" 
+                size="lg" 
+                className="flex-1 min-h-[44px] text-base sm:text-sm font-medium"
+              >
                 Cancelar
               </Button>
               <Button
                 onClick={onSaveReminder}
                 variant="default"
                 size="lg"
-                className="flex-1"
+                className="flex-1 min-h-[44px] text-base sm:text-sm font-medium"
                 disabled={!reminderTitle.trim() || !reminderScheduledDate || (selectedResponsables.length === 0 && selectedAssignedDrivers.length === 0) || isSavingReminder}
               >
-                {isSavingReminder ? "Guardando..." : "Crear Recordatorio"}
+                {isSavingReminder 
+                  ? "Guardando..." 
+                  : editingReminderId 
+                    ? "Guardar Cambios" 
+                    : "Crear Recordatorio"}
               </Button>
             </div>
           </div>

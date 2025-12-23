@@ -20,12 +20,10 @@ const populateImageConfig = {
   },
 };
 
-// Para detalles, usamos la misma configuración pero sin formato pequeño
+// Para detalles, necesitamos los formats para seleccionar el tamaño óptimo
 const populateImageConfigForDetails = {
   populate: {
-    image: {
-      fields: ["url", "alternativeText"],
-    },
+    image: true, // Obtener todos los campos incluyendo formats para selección óptima
     responsables: {
       fields: ["id", "documentId", "displayName", "email"],
       populate: {
@@ -43,6 +41,14 @@ const populateImageConfigForDetails = {
       },
     },
     interestedDrivers: {
+      fields: ["id", "documentId", "displayName", "email"],
+      populate: {
+        avatar: {
+          fields: ["url", "alternativeText"],
+        },
+      },
+    },
+    currentDrivers: {
       fields: ["id", "documentId", "displayName", "email"],
       populate: {
         avatar: {
@@ -100,42 +106,45 @@ const getImageData = (image: FleetVehicleRawAttributes["image"]) => {
   return image as FleetVehicleImage;
 };
 
-const getImageUrl = (imageData: FleetVehicleImage | undefined, useSmallFormat = false): string | undefined => {
+type ImageSize = 'thumbnail' | 'small' | 'medium' | 'large' | 'original';
+
+const getImageUrl = (
+  imageData: FleetVehicleImage | undefined, 
+  size: ImageSize | 'small' | boolean = 'original'
+): string | undefined => {
   if (!imageData) return undefined;
   
+  // Compatibilidad con el parámetro booleano anterior
+  const requestedSize: ImageSize = typeof size === 'boolean' 
+    ? (size ? 'small' : 'original')
+    : size;
+  
   // Para cards pequeñas, usar formato 'small' si está disponible, sino 'thumbnail', sino la original
-  if (useSmallFormat) {
-    // Debug: verificar estructura de formats
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Image data:', {
-        hasFormats: !!imageData.formats,
-        formatsKeys: imageData.formats ? Object.keys(imageData.formats) : [],
-        hasSmall: !!imageData.formats?.small,
-        hasThumbnail: !!imageData.formats?.thumbnail,
-        useSmallFormat,
-      });
-    }
-    
-    if (imageData.formats?.small?.url) {
-      const smallUrl = strapiImages.getURL(imageData.formats.small.url);
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Using small format:', smallUrl);
-      }
-      return smallUrl;
+  if (requestedSize === 'small' || requestedSize === 'thumbnail') {
+    if (requestedSize === 'small' && imageData.formats?.small?.url) {
+      return strapiImages.getURL(imageData.formats.small.url);
     }
     if (imageData.formats?.thumbnail?.url) {
-      const thumbUrl = strapiImages.getURL(imageData.formats.thumbnail.url);
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Using thumbnail format:', thumbUrl);
-      }
-      return thumbUrl;
-    }
-    if (process.env.NODE_ENV === 'development') {
-      console.log('No small formats available, using original');
+      return strapiImages.getURL(imageData.formats.thumbnail.url);
     }
   }
   
-  // Para vista completa, usar la imagen original
+  // Para imágenes medianas (como en listas)
+  if (requestedSize === 'medium' && imageData.formats?.medium?.url) {
+    return strapiImages.getURL(imageData.formats.medium.url);
+  }
+  
+  // Para imágenes grandes (como en headers), preferir large, luego medium, luego original
+  if (requestedSize === 'large') {
+    if (imageData.formats?.large?.url) {
+      return strapiImages.getURL(imageData.formats.large.url);
+    }
+    if (imageData.formats?.medium?.url) {
+      return strapiImages.getURL(imageData.formats.medium.url);
+    }
+  }
+  
+  // Para vista completa o si no hay formato específico, usar la imagen original
   return imageData.url ? strapiImages.getURL(imageData.url) : undefined;
 };
 
@@ -152,6 +161,13 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     imageData?.alternativeText ?? attributes.imageAlt ?? attributes.name ?? "Vehículo";
   const idSource = attributes.id ?? attributes.documentId ?? attributes.vin;
   const documentId = attributes.documentId ?? String(idSource);
+  
+  // Incluir datos completos de la imagen con formats para uso optimizado
+  const fullImageData = imageData ? {
+    url: imageData.url,
+    alternativeText: imageData.alternativeText,
+    formats: imageData.formats,
+  } : undefined;
 
   // Helper para obtener avatar
   const getAvatarData = (avatar: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null } | undefined) => {
@@ -220,6 +236,25 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     };
   });
 
+  // Normalizar currentDrivers (conductores actuales)
+  const currentDriversRaw = attributes.currentDrivers as any;
+  const currentDriversData = currentDriversRaw?.data || (Array.isArray(currentDriversRaw) ? currentDriversRaw : []);
+  const currentDrivers = currentDriversData.map((driver: any) => {
+    // El driver puede venir con attributes o directamente con los campos
+    const driverAttrs = driver.attributes || driver;
+    const avatarData = getAvatarData(driverAttrs?.avatar);
+    return {
+      id: driver.id || driverAttrs?.id,
+      documentId: driver.documentId || driverAttrs?.documentId,
+      displayName: driverAttrs?.displayName,
+      email: driverAttrs?.email,
+      avatar: avatarData ? {
+        url: avatarData.url,
+        alternativeText: avatarData.alternativeText,
+      } : undefined,
+    };
+  });
+
   // Normalizar interestedPersons (personas interesadas)
   const interestedPersonsRaw = attributes.interestedPersons as any;
   const interestedPersonsData = interestedPersonsRaw?.data || (Array.isArray(interestedPersonsRaw) ? interestedPersonsRaw : []);
@@ -254,6 +289,7 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     priceLabel: formatCurrency(parsedPrice),
     imageUrl,
     imageAlt,
+    imageData: fullImageData,
     color: attributes.color ?? undefined,
     mileage: attributes.mileage ?? undefined,
     fuelType: attributes.fuelType ?? undefined,
@@ -263,6 +299,7 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     assignedDrivers: assignedDrivers,
     responsables: responsables,
     interestedDrivers: interestedDrivers,
+    currentDrivers: currentDrivers,
     interestedPersons: interestedPersons,
   };
 };
@@ -405,17 +442,10 @@ export async function updateFleetVehicleInStrapi(
   // Para relaciones manyToMany, Strapi espera arrays de IDs
   const strapiData: any = { ...data };
   
-  // Asegurar que responsables, assignedDrivers e interestedDrivers sean arrays
-  // Si están undefined, enviarlos como array vacío para limpiar las relaciones
-  if (strapiData.responsables === undefined) {
-    strapiData.responsables = [];
-  }
-  if (strapiData.assignedDrivers === undefined) {
-    strapiData.assignedDrivers = [];
-  }
-  if (strapiData.interestedDrivers === undefined) {
-    strapiData.interestedDrivers = [];
-  }
+  // IMPORTANTE: No incluir responsables, assignedDrivers e interestedDrivers si no están explícitamente
+  // en los datos a actualizar. Si están undefined, NO enviarlos para evitar limpiar las relaciones existentes.
+  // Solo enviar estos campos si están presentes en el objeto data (incluso si es un array vacío para limpiar explícitamente).
+  // Si no están presentes, Strapi mantendrá los valores existentes.
 
   if (process.env.NODE_ENV === 'development') {
     console.log("📤 Enviando a Strapi:", {

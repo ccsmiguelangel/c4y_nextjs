@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Bell, Trash2, Edit2, Calendar, Repeat, CalendarCheck, Check, Users, Pause, CheckCircle2, Circle } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { Card } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
@@ -22,7 +23,11 @@ export function ReminderItem({
 }: ReminderItemProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
-  const reminderId = reminder.documentId || String(reminder.id);
+  // IMPORTANTE: Usar ID numérico cuando esté disponible (más confiable para actualizaciones)
+  // Solo usar documentId como fallback si no hay ID numérico
+  const reminderId = (reminder.id && typeof reminder.id === 'number') 
+    ? String(reminder.id) 
+    : (reminder.documentId || String(reminder.id));
   const scheduledDate = new Date(reminder.scheduledDate);
   const nextTriggerDate = new Date(reminder.nextTrigger);
   
@@ -42,11 +47,34 @@ export function ReminderItem({
 
   const handleDelete = async () => {
     if (!onDelete) return;
+    
+    // Prevenir múltiples clics
+    if (isDeleting) {
+      console.warn("⚠️ Eliminación ya en progreso, ignorando clic duplicado");
+      return;
+    }
+    
     setIsDeleting(true);
+    
+    // Log para depuración
+    if (process.env.NODE_ENV === 'development') {
+      console.log("🗑️ ReminderItem: Iniciando eliminación:", {
+        reminderId,
+        title: reminder.title,
+      });
+    }
+    
     try {
-      await onDelete(reminderId);
+      await onDelete(reminderId, async () => {
+        // Callback opcional para recargar el vehículo si es necesario
+        // Por ahora no hacemos nada aquí
+      });
     } catch (error) {
-      console.error("Error eliminando recordatorio:", error);
+      console.error("❌ Error eliminando recordatorio en ReminderItem:", {
+        reminderId,
+        error,
+      });
+      // No necesitamos hacer throw aquí, el error ya se maneja en el hook
     } finally {
       setIsDeleting(false);
     }
@@ -70,10 +98,48 @@ export function ReminderItem({
 
   const handleToggleCompleted = async () => {
     if (!onToggleCompleted) return;
+    
+    // Validar que tenemos un ID válido antes de intentar actualizar
+    if (!reminderId || reminderId === 'null' || reminderId === 'undefined') {
+      console.error("❌ ID de recordatorio inválido en ReminderItem:", {
+        reminderId,
+        reminder: {
+          id: reminder.id,
+          documentId: reminder.documentId,
+        },
+      });
+      return;
+    }
+    
+    // Log para depuración
+    if (process.env.NODE_ENV === 'development') {
+      console.log("🔄 ReminderItem: Intentando cambiar estado de completado:", {
+        reminderId,
+        reminderIdType: typeof reminderId,
+        reminderIdValue: reminderId,
+        reminder: {
+          id: reminder.id,
+          idType: typeof reminder.id,
+          documentId: reminder.documentId,
+          title: reminder.title,
+        },
+        isCompleted,
+        newState: !isCompleted,
+      });
+    }
+    
     try {
       await onToggleCompleted(reminderId, isCompleted);
     } catch (error) {
-      console.error("Error cambiando estado de completado del recordatorio:", error);
+      console.error("❌ Error cambiando estado de completado del recordatorio en ReminderItem:", {
+        reminderId,
+        reminder: {
+          id: reminder.id,
+          documentId: reminder.documentId,
+          title: reminder.title,
+        },
+        error,
+      });
     }
   };
 
@@ -231,30 +297,46 @@ export function ReminderItem({
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {reminder.assignedUsers.map((user) => (
-                <div key={user.id || user.documentId} className="flex items-center gap-2">
-                  {user.avatar?.url ? (
-                    <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
-                      <Image
-                        src={strapiImages.getURL(user.avatar.url)}
-                        alt={user.avatar.alternativeText || user.displayName || user.email || "Usuario"}
-                        fill
-                        className="object-cover"
-                        sizes="24px"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-2 ring-background">
-                      <span className={`${typography.body.small} font-semibold text-primary text-xs`}>
-                        {(user.displayName || user.email || "U").charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <span className={`${typography.body.small} text-xs`}>
-                    {user.displayName || user.email || "Usuario"}
-                  </span>
-                </div>
-              ))}
+              {reminder.assignedUsers.map((user) => {
+                const userId = user.documentId || user.id;
+                const userLink = userId ? `/users/details/${userId}` : null;
+                const userContent = (
+                  <div className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+                    {user.avatar?.url ? (
+                      <div className="relative h-6 w-6 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                        <Image
+                          src={strapiImages.getURL(user.avatar.url)}
+                          alt={user.avatar.alternativeText || user.displayName || user.email || "Usuario"}
+                          fill
+                          className="object-cover"
+                          sizes="24px"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-2 ring-background">
+                        <span className={`${typography.body.small} font-semibold text-primary text-xs`}>
+                          {(user.displayName || user.email || "U").charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <span className={`${typography.body.small} text-xs`}>
+                      {user.displayName || user.email || "Usuario"}
+                    </span>
+                  </div>
+                );
+                
+                return (
+                  <div key={user.id || user.documentId}>
+                    {userLink ? (
+                      <Link href={userLink} className="block">
+                        {userContent}
+                      </Link>
+                    ) : (
+                      userContent
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -262,6 +344,14 @@ export function ReminderItem({
     </Card>
   );
 }
+
+
+
+
+
+
+
+
 
 
 

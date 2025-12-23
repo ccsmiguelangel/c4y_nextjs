@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { REMINDER_EVENTS, emitReminderCreated, emitReminderUpdated, emitReminderDeleted, emitReminderToggleCompleted, emitReminderToggleActive } from "@/lib/reminder-events";
 import type { FleetReminder, ReminderType, RecurrencePattern } from "@/validations/types";
@@ -55,6 +55,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
   const [vehicleReminders, setVehicleReminders] = useState<FleetReminder[]>([]);
   const [isLoadingReminders, setIsLoadingReminders] = useState(false);
   const [isSavingReminder, setIsSavingReminder] = useState(false);
+  const isSavingRef = useRef(false); // Ref para prevenir condiciones de carrera
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderDescription, setReminderDescription] = useState("");
   const [reminderType, setReminderType] = useState<ReminderType>("unique");
@@ -106,7 +107,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     }
   }, []);
 
-  const loadVehicleReminders = useCallback(async () => {
+  const loadVehicleReminders = useCallback(async (): Promise<FleetReminder[]> => {
     setIsLoadingReminders(true);
     try {
       const response = await fetch(`/api/fleet/${vehicleId}/reminder`, { cache: "no-store" });
@@ -114,18 +115,27 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         throw new Error("No pudimos obtener los recordatorios");
       }
       const { data } = (await response.json()) as { data: FleetReminder[] };
-      setVehicleReminders(data || []);
+      const reminders = data || [];
+      setVehicleReminders(reminders);
+      return reminders;
     } catch (error) {
       console.error("Error cargando recordatorios:", error);
       toast.error("Error al cargar recordatorios", {
         description: error instanceof Error ? error.message : "Error desconocido",
       });
+      return [];
     } finally {
       setIsLoadingReminders(false);
     }
   }, [vehicleId]);
 
+  // Cargar recordatorios al montar el componente
+  useEffect(() => {
+    loadVehicleReminders();
+  }, [loadVehicleReminders]);
+
   // Escuchar eventos de recordatorios para recargar automáticamente
+  // NOTA: No recargar en DELETE porque ya se maneja explícitamente en handleDeleteReminder
   useEffect(() => {
     const handleReminderChange = () => {
       loadVehicleReminders();
@@ -133,14 +143,15 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
 
     window.addEventListener(REMINDER_EVENTS.CREATED, handleReminderChange);
     window.addEventListener(REMINDER_EVENTS.UPDATED, handleReminderChange);
-    window.addEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
+    // NO escuchar REMINDER_EVENTS.DELETED aquí porque ya se maneja en handleDeleteReminder
+    // window.addEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
     window.addEventListener(REMINDER_EVENTS.TOGGLE_COMPLETED, handleReminderChange);
     window.addEventListener(REMINDER_EVENTS.TOGGLE_ACTIVE, handleReminderChange);
 
     return () => {
       window.removeEventListener(REMINDER_EVENTS.CREATED, handleReminderChange);
       window.removeEventListener(REMINDER_EVENTS.UPDATED, handleReminderChange);
-      window.removeEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
+      // window.removeEventListener(REMINDER_EVENTS.DELETED, handleReminderChange);
       window.removeEventListener(REMINDER_EVENTS.TOGGLE_COMPLETED, handleReminderChange);
       window.removeEventListener(REMINDER_EVENTS.TOGGLE_ACTIVE, handleReminderChange);
     };
@@ -176,35 +187,55 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
       return;
     }
 
+    // Prevenir doble submit usando ref para evitar condiciones de carrera
+    if (isSavingRef.current || isSavingReminder) {
+      console.warn("⚠️ Ya hay una operación de guardado en progreso, ignorando solicitud duplicada", {
+        isSavingRef: isSavingRef.current,
+        isSavingReminder,
+      });
+      return;
+    }
+    
+    isSavingRef.current = true;
     setIsSavingReminder(true);
     try {
-      const requestBody: { data: { title: string; description?: string; reminderType: ReminderType; scheduledDate: string; recurrencePattern?: RecurrencePattern; recurrenceEndDate?: string; assignedUserIds: number[]; authorDocumentId?: string; isAllDay?: boolean } } = {
-        data: {
-          title: reminderTitle?.trim() || "",
-          reminderType: reminderType,
-          scheduledDate: scheduledDateTime,
-          isAllDay: isAllDay,
-          assignedUserIds: allAssignedUserIds,
-        },
+      const baseData: {
+        title: string;
+        description?: string;
+        reminderType: ReminderType;
+        scheduledDate: string;
+        recurrencePattern?: RecurrencePattern;
+        recurrenceEndDate?: string;
+      } = {
+        title: reminderTitle?.trim() || "",
+        reminderType: reminderType,
+        scheduledDate: scheduledDateTime,
       };
 
       if (reminderDescription.trim()) {
-        requestBody.data.description = reminderDescription.trim();
+        baseData.description = reminderDescription.trim();
       }
 
       if (reminderType === "recurring") {
-        requestBody.data.recurrencePattern = reminderRecurrencePattern;
+        baseData.recurrencePattern = reminderRecurrencePattern;
         if (reminderRecurrenceEndDate) {
-          requestBody.data.recurrenceEndDate = reminderRecurrenceEndDate;
+          baseData.recurrenceEndDate = reminderRecurrenceEndDate;
         }
       }
 
       if (editingReminderId) {
         const reminderIdStr = String(editingReminderId);
-        const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
-          method: "PATCH",
+        const updateBody = {
+          data: {
+            ...baseData,
+            // Para actualización directa en notifications, usar assignedUsers
+            assignedUsers: allAssignedUserIds,
+          },
+        };
+        const response = await fetch(`/api/notifications/${encodeURIComponent(reminderIdStr)}`, {
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(updateBody),
         });
 
         if (!response.ok) {
@@ -223,6 +254,13 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         
         // Emitir evento ANTES de actualizar para que otros componentes se enteren
         emitReminderUpdated(updatedReminder);
+        
+        // Recargar recordatorios PRIMERO para que se actualice en la lista antes de actualizar nextMaintenanceDate
+        // Esto evita que el useEffect de limpieza se ejecute antes de que el recordatorio esté disponible
+        await loadVehicleReminders();
+        
+        // Pequeño delay para asegurar que los recordatorios se hayan cargado completamente
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         const isMaintenanceReminder = updatedReminder.title.toLowerCase().includes("mantenimiento") || 
                                       updatedReminder.title === "Mantenimiento completo del vehículo";
@@ -249,26 +287,43 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
           }
         }
         
-        // Recargar recordatorios primero para que se actualice en la lista
-        await loadVehicleReminders();
-        
-        // Pequeño delay para asegurar que el servidor procesó todo
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
         handleCancelReminderForm();
         
         toast.success("Recordatorio actualizado", {
           description: "El recordatorio ha sido actualizado correctamente",
         });
       } else {
+        const createBody: {
+          data: typeof baseData & {
+            assignedUserIds: number[];
+            authorDocumentId?: string;
+          };
+        } = {
+          data: {
+            ...baseData,
+            assignedUserIds: allAssignedUserIds,
+          },
+        };
+
         if (currentUserDocumentId) {
-          requestBody.data.authorDocumentId = currentUserDocumentId;
+          createBody.data.authorDocumentId = currentUserDocumentId;
         }
 
+        // Log para depuración
+        if (process.env.NODE_ENV === 'development') {
+          console.log("📤 Enviando petición POST para crear recordatorio:", {
+            title: baseData.title,
+            reminderType: baseData.reminderType,
+            scheduledDate: baseData.scheduledDate,
+            assignedUsersCount: allAssignedUserIds.length,
+            isEditing: !!editingReminderId,
+          });
+        }
+        
         const response = await fetch(`/api/fleet/${vehicleId}/reminder`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(createBody),
         });
 
         if (!response.ok) {
@@ -291,6 +346,13 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         
         // Emitir evento ANTES de actualizar para que otros componentes se enteren
         emitReminderCreated(createdReminder);
+        
+        // Recargar recordatorios PRIMERO para que aparezca en la lista antes de actualizar nextMaintenanceDate
+        // Esto evita que el useEffect de limpieza se ejecute antes de que el recordatorio esté disponible
+        await loadVehicleReminders();
+        
+        // Pequeño delay para asegurar que los recordatorios se hayan cargado completamente
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         const isMaintenanceReminder = createdReminder.title.toLowerCase().includes("mantenimiento") || 
                                       createdReminder.title === "Mantenimiento completo del vehículo";
@@ -317,12 +379,6 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
           }
         }
         
-        // Recargar recordatorios primero para que aparezca en la lista
-        await loadVehicleReminders();
-        
-        // Pequeño delay para asegurar que el servidor procesó todo
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
         handleCancelReminderForm();
         
         toast.success("Recordatorio creado", {
@@ -336,6 +392,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         description: errorMessage,
       });
     } finally {
+      isSavingRef.current = false;
       setIsSavingReminder(false);
     }
   };
@@ -344,35 +401,129 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     try {
       const reminderIdStr = String(reminderId);
       
+      // Log para depuración
+      if (process.env.NODE_ENV === 'development') {
+        console.log("🗑️ Intentando eliminar recordatorio:", {
+          reminderId,
+          reminderIdStr,
+          vehicleRemindersCount: vehicleReminders.length,
+        });
+      }
+      
       const reminderToDelete = vehicleReminders.find(
         (r) => String(r.id) === reminderIdStr || r.documentId === reminderIdStr
       );
       
+      if (!reminderToDelete) {
+        console.error("❌ Recordatorio no encontrado en la lista local para eliminar:", {
+          reminderId,
+          reminderIdStr,
+          availableIds: vehicleReminders.map(r => ({ id: r.id, documentId: r.documentId })),
+        });
+        throw new Error("Recordatorio no encontrado en la lista local");
+      }
+      
+      // Log del recordatorio encontrado
+      if (process.env.NODE_ENV === 'development') {
+        console.log("✅ Recordatorio encontrado para eliminar:", {
+          id: reminderToDelete.id,
+          documentId: reminderToDelete.documentId,
+          title: reminderToDelete.title,
+        });
+      }
+      
       const isMaintenanceReminder = reminderToDelete?.title.toLowerCase().includes("mantenimiento") || 
                                     reminderToDelete?.title === "Mantenimiento completo del vehículo";
       
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
+      // Usar el ID numérico si está disponible, sino usar documentId
+      const idToUse = (reminderToDelete.id && typeof reminderToDelete.id === 'number') 
+        ? String(reminderToDelete.id) 
+        : (reminderToDelete.documentId || reminderIdStr);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log("🔄 Enviando petición DELETE con ID:", idToUse);
+      }
+      
+      const response = await fetch(`/api/notifications/${encodeURIComponent(idToUse)}`, {
         method: "DELETE",
       });
 
+      if (process.env.NODE_ENV === 'development') {
+        console.log("📡 Respuesta DELETE recibida:", {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+          idToUse,
+        });
+      }
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Error desconocido" }));
-        throw new Error(errorData.error || `Error ${response.status}`);
+        const errorText = await response.text();
+        let errorData: any;
+        try {
+          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
+        } catch {
+          errorData = { error: errorText || `Error ${response.status}: ${response.statusText}` };
+        }
+        
+        const errorMessage = errorData?.error || errorData?.message || errorText || `Error ${response.status}: ${response.statusText}`;
+        
+        console.error("❌ Error eliminando recordatorio:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData || {},
+          errorText: errorText || 'Sin texto de error',
+          reminderId,
+          idToUse,
+          errorMessage,
+        });
+        
+        throw new Error(errorMessage);
+      }
+
+      // Verificar que la respuesta sea exitosa antes de actualizar el estado
+      const responseData = await response.json().catch(() => ({}));
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log("✅ Eliminación exitosa, respuesta:", responseData);
       }
 
       // Actualizar estado local optimistamente
-      setVehicleReminders((prev) => prev.filter((r) => {
-        const matchesById = r.id && String(r.id) === reminderIdStr;
-        const matchesByDocumentId = r.documentId && r.documentId === reminderIdStr;
-        return !matchesById && !matchesByDocumentId;
-      }));
+      setVehicleReminders((prev) => {
+        const filtered = prev.filter((r) => {
+          const matchesById = r.id && String(r.id) === reminderIdStr;
+          const matchesByDocumentId = r.documentId && r.documentId === reminderIdStr;
+          return !matchesById && !matchesByDocumentId;
+        });
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log("🔄 Estado actualizado después de eliminar:", {
+            antes: prev.length,
+            después: filtered.length,
+            eliminado: reminderIdStr,
+            recordatoriosRestantes: filtered.map(r => ({ id: r.id, documentId: r.documentId, title: r.title })),
+          });
+        }
+        
+        return filtered;
+      });
       
       // Emitir evento con el ID correcto (preferir documentId si está disponible)
       const reminderIdToEmit = reminderToDelete?.documentId || reminderIdStr;
       emitReminderDeleted(reminderIdToEmit);
       
+      // Esperar un momento antes de recargar para asegurar que la eliminación se complete en el servidor
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       // Recargar recordatorios desde el servidor para asegurar sincronización
-      await loadVehicleReminders();
+      const reloadedReminders = await loadVehicleReminders();
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log("🔄 Recordatorios después de recargar:", {
+          cantidad: reloadedReminders?.length || 0,
+          recordatorios: reloadedReminders?.map(r => ({ id: r.id, documentId: r.documentId, title: r.title })) || [],
+        });
+      }
       
       if (isMaintenanceReminder && vehicleId) {
         try {
@@ -407,12 +558,39 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         });
       }
     } catch (error) {
-      console.error("Error eliminando recordatorio:", error);
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      // Extraer información útil del error
+      let errorMessage = "Error desconocido al eliminar el recordatorio";
+      let errorDetails: any = {};
+      
+      if (error instanceof Error) {
+        errorMessage = error.message || errorMessage;
+        errorDetails = {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        };
+      } else if (typeof error === 'object' && error !== null) {
+        errorDetails = error;
+        errorMessage = (error as any).message || (error as any).error || errorMessage;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      console.error("❌ Error eliminando recordatorio:", {
+        error,
+        errorMessage,
+        errorDetails,
+        reminderId,
+        reminderIdStr: String(reminderId),
+        vehicleRemindersCount: vehicleReminders.length,
+      });
+      
       toast.error("Error al eliminar recordatorio", {
         description: errorMessage,
       });
-      throw error;
+      
+      // No relanzar el error para evitar que se propague y rompa la UI
+      // El error ya se mostró al usuario con el toast
     }
   };
 
@@ -421,8 +599,8 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     const newActiveState = !isActive;
     
     try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
-        method: "PATCH",
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderIdStr)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: {
@@ -502,29 +680,95 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     const reminderIdStr = String(reminderId);
     const newCompletedState = !isCompleted;
     
-    try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderIdStr)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: {
-            isCompleted: newCompletedState,
-          },
-        }),
+    // Validar que tenemos un ID válido
+    if (!reminderIdStr || reminderIdStr === 'null' || reminderIdStr === 'undefined') {
+      console.error("❌ ID de recordatorio inválido:", reminderIdStr);
+      toast.error("Error al cambiar estado", {
+        description: "No se pudo identificar el recordatorio. Por favor, recarga la página.",
       });
-
-      if (!response.ok) {
-        let errorData;
-        try {
-          const errorText = await response.text();
-          errorData = errorText ? JSON.parse(errorText) : { error: "Error desconocido" };
-        } catch {
-          errorData = { error: `Error ${response.status}: ${response.statusText}` };
-        }
-        throw new Error(errorData.error || `Error ${response.status}`);
+      return;
+    }
+    
+    try {
+      // Log para depuración
+      if (process.env.NODE_ENV === 'development') {
+        console.log("🔄 Actualizando estado de completado del recordatorio:", {
+          reminderId: reminderIdStr,
+          isCompleted,
+          newCompletedState,
+        });
       }
 
-      const { data } = (await response.json()) as { data: FleetReminder };
+      let response: Response;
+      try {
+        response = await fetch(`/api/notifications/${encodeURIComponent(reminderIdStr)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: {
+              isCompleted: newCompletedState,
+            },
+          }),
+        });
+      } catch (fetchError) {
+        // Error de red o conexión
+        const networkError = fetchError instanceof Error 
+          ? fetchError.message 
+          : "Error de conexión. Verifica tu conexión a internet.";
+        throw new Error(`Error de red: ${networkError}`);
+      }
+
+      if (!response.ok) {
+        let errorData: any = null;
+        let errorMessage = `Error ${response.status}: ${response.statusText}`;
+        
+        try {
+          const errorText = await response.text();
+          if (errorText) {
+            try {
+              errorData = JSON.parse(errorText);
+              // Intentar obtener el mensaje de error de diferentes formas
+              errorMessage = errorData.error?.message || 
+                           errorData.message || 
+                           errorData.error || 
+                           errorText || 
+                           errorMessage;
+            } catch {
+              // Si no es JSON, usar el texto directamente
+              errorMessage = errorText || errorMessage;
+            }
+          }
+        } catch (parseError) {
+          console.error("Error parseando respuesta de error:", parseError);
+          errorMessage = `Error ${response.status}: ${response.statusText}`;
+        }
+
+        // Si es un error 404, NO recargar la lista automáticamente porque puede causar que el recordatorio desaparezca
+        // En su lugar, solo mostrar el error y dejar que el usuario decida si quiere recargar
+        if (response.status === 404) {
+          console.warn("⚠️ Recordatorio no encontrado (404). No se recargará la lista automáticamente para evitar pérdida de datos.");
+          // NO llamar a loadVehicleReminders() aquí porque puede eliminar el recordatorio de la UI
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      let responseData: any;
+      try {
+        const responseText = await response.text();
+        if (!responseText) {
+          throw new Error("Respuesta vacía del servidor");
+        }
+        responseData = JSON.parse(responseText);
+      } catch (parseError) {
+        throw new Error(`Error parseando respuesta del servidor: ${parseError instanceof Error ? parseError.message : 'Error desconocido'}`);
+      }
+
+      const data = responseData?.data as FleetReminder;
+      
+      if (!data) {
+        throw new Error("No se recibieron datos del servidor en la respuesta");
+      }
       
       setVehicleReminders((prev) => {
         return prev.map((r) => {
@@ -545,12 +789,114 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
         description: `El recordatorio ha sido ${newCompletedState ? "marcado como completado" : "marcado como pendiente"} correctamente`,
       });
     } catch (error) {
-      console.error("❌ Error cambiando estado de completado del recordatorio:", error);
-      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      // Mejorar el manejo de errores para obtener información útil
+      let errorMessage = "Error desconocido";
+      let errorDetails: any = {};
+      
+      // Verificar si el error es realmente un objeto vacío
+      const isErrorEmpty = error !== null && 
+                          typeof error === 'object' && 
+                          Object.keys(error).length === 0;
+      
+      if (error instanceof Error) {
+        errorMessage = error.message || "Error desconocido";
+        errorDetails = {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        };
+      } else if (typeof error === 'object' && error !== null) {
+        // Si es un objeto, intentar extraer información
+        errorDetails = error;
+        
+        // Verificar si tiene propiedades
+        const errorKeys = Object.keys(error);
+        if (errorKeys.length > 0) {
+          // Intentar obtener mensaje de diferentes propiedades
+          if ('message' in error && typeof error.message === 'string') {
+            errorMessage = error.message;
+          } else if ('error' in error) {
+            if (typeof error.error === 'string') {
+              errorMessage = error.error;
+            } else if (typeof error.error === 'object' && error.error !== null && 'message' in error.error) {
+              errorMessage = String(error.error.message);
+            }
+          } else {
+            // Intentar convertir el objeto a string
+            try {
+              errorMessage = JSON.stringify(error);
+            } catch {
+              errorMessage = `Error al actualizar recordatorio (ID: ${reminderIdStr})`;
+            }
+          }
+        } else {
+          // Objeto vacío - crear mensaje descriptivo
+          errorMessage = `Error al actualizar recordatorio (ID: ${reminderIdStr}). La respuesta del servidor fue vacía.`;
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (isErrorEmpty) {
+        errorMessage = `Error al actualizar recordatorio (ID: ${reminderIdStr}). El servidor devolvió un error vacío.`;
+      }
+      
+      // Asegurar que siempre tengamos un mensaje de error válido
+      if (!errorMessage || errorMessage === "Error desconocido") {
+        errorMessage = `Error al actualizar recordatorio (ID: ${reminderIdStr}). Por favor, intenta nuevamente o recarga la página.`;
+      }
+      
+      // Log detallado para depuración - SIEMPRE mostrar información útil
+      // Primero mostrar el mensaje de error de forma clara
+      console.error(`❌ Error cambiando estado de completado del recordatorio (ID: ${reminderIdStr}):`, errorMessage);
+      
+      // Luego mostrar información detallada si está disponible
+      const logInfo: any = {
+        reminderId: reminderIdStr,
+        isCompleted,
+        newCompletedState,
+        errorType: typeof error,
+        isErrorEmpty,
+        errorMessage,
+      };
+      
+      // Agregar información adicional solo si está disponible
+      if (errorDetails && Object.keys(errorDetails).length > 0) {
+        logInfo.errorDetails = errorDetails;
+      }
+      
+      if (error !== null && typeof error === 'object') {
+        try {
+          const errorStr = JSON.stringify(error);
+          if (errorStr !== '{}') {
+            logInfo.errorJSON = errorStr;
+          } else {
+            logInfo.errorJSON = "(objeto vacío)";
+          }
+        } catch {
+          logInfo.errorJSON = "(error al serializar)";
+        }
+      }
+      
+      // SIEMPRE mostrar el error original al final para depuración
+      logInfo.originalError = error;
+      
+      console.error("❌ Detalles del error:", logInfo);
+      
+      // Mensajes más específicos según el tipo de error
+      let userMessage = errorMessage;
+      if (errorMessage.includes("no encontrada") || errorMessage.includes("eliminada") || errorMessage.includes("404")) {
+        userMessage = "El recordatorio no se encontró. Puede haber sido eliminado o el ID es inválido.";
+        // NO recargar automáticamente para evitar que desaparezcan recordatorios válidos
+        // El usuario puede recargar manualmente si es necesario
+      } else if (errorMessage.includes("Error desconocido")) {
+        userMessage = `No se pudo actualizar el recordatorio. Por favor, intenta nuevamente.`;
+      }
+      
       toast.error("Error al cambiar estado", {
-        description: errorMessage,
+        description: userMessage,
       });
-      throw error;
+      
+      // No lanzar el error para evitar que se propague y rompa la UI
+      // throw error;
     }
   };
 

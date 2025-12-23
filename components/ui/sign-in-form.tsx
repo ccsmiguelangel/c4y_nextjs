@@ -71,10 +71,10 @@ export function SignInForm({ data }: SignInFormProps) {
 
   return (
     <>
-      <Card className="w-full py-8 px-8 bg-white">
+      <Card className="w-full py-8 px-8 bg-card">
         <CardHeader className="space-y-2 pb-6">
-          <CardTitle className="text-3xl font-bold text-primary text-center">{header.title}</CardTitle>
-          <CardDescription className="text-base text-center">
+          <CardTitle className="text-3xl font-bold text-foreground text-center">{header.title}</CardTitle>
+          <CardDescription className="text-base text-center text-muted-foreground">
             {header.subtitle}
           </CardDescription>
         </CardHeader>
@@ -86,12 +86,12 @@ export function SignInForm({ data }: SignInFormProps) {
                 name="email" 
                 render={({ field }) => (
                   <FormItem className="space-y-3">
-                    <FormLabel className="text-base font-medium">{email_label}</FormLabel> 
+                    <FormLabel className="text-base font-medium text-foreground">{email_label}</FormLabel> 
                     <FormControl> 
                       <Input 
                         placeholder={email_placeholder} 
                         type="email" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                        className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                         {...field} 
                       />
                     </FormControl>
@@ -104,12 +104,12 @@ export function SignInForm({ data }: SignInFormProps) {
                 name="password" 
                 render={({ field }) => (
                   <FormItem className="space-y-3">
-                    <FormLabel className="text-base font-medium">{password_label}</FormLabel>
+                    <FormLabel className="text-base font-medium text-foreground">{password_label}</FormLabel>
                     <FormControl>
                       <Input 
                         placeholder={password_placeholder} 
                         type="password" 
-                        className="h-14 px-5 text-base rounded-xl border border-gray-200 bg-white"
+                        className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
                         {...field} 
                       />
                     </FormControl>
@@ -136,7 +136,7 @@ export function SignInForm({ data }: SignInFormProps) {
                 </Button>
 
                 {formState.strapiErrors && (
-                  <FormMessage className="text-pink-500 text-sm text-center">
+                  <FormMessage className="text-destructive dark:text-destructive text-sm text-center">
                     {formState.strapiErrors.message}
                   </FormMessage>
                 )}

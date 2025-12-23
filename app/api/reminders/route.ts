@@ -73,7 +73,13 @@ async function getCurrentUserProfile() {
       avatar: profile.avatar,
     };
   } catch (error) {
-    console.error("Error obteniendo user-profile actual:", error);
+    // Manejar errores de conexión específicamente
+    if (error instanceof Error && 'code' in error && error.code === 'ECONNREFUSED') {
+      console.error("❌ Error de conexión: Strapi no está corriendo o no es accesible en", STRAPI_BASE_URL);
+      console.error("   Por favor, asegúrate de que el servidor de Strapi esté corriendo con: cd backend && npm run develop");
+    } else {
+      console.error("Error obteniendo user-profile actual:", error);
+    }
     return null;
   }
 }
@@ -91,11 +97,16 @@ export async function GET() {
       );
     }
 
-    // Obtener todos los recordatorios y filtrar por el usuario actual
+    // Obtener todos los recordatorios (notificaciones con type='reminder')
+    // Primero buscar todos los recordatorios y luego filtrar en el código
+    // porque el filtro $or con assignedUsers puede no funcionar correctamente en Strapi
     const reminderQuery = qs.stringify({
-      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt"],
+      filters: {
+        type: { $eq: "reminder" },
+      },
+      fields: ["id", "documentId", "title", "description", "reminderType", "scheduledDate", "recurrencePattern", "recurrenceEndDate", "isActive", "isCompleted", "lastTriggered", "nextTrigger", "authorDocumentId", "createdAt", "updatedAt", "module", "tags"],
       populate: {
-        vehicle: {
+        fleetVehicle: {
           fields: ["id", "documentId", "name"],
           populate: {
             responsables: {
@@ -114,6 +125,14 @@ export async function GET() {
             },
           },
         },
+        author: {
+          fields: ["id", "documentId", "displayName", "email"],
+          populate: {
+            avatar: {
+              fields: ["url", "alternativeText"],
+            },
+          },
+        },
       },
       sort: ["nextTrigger:asc"],
       pagination: {
@@ -122,7 +141,7 @@ export async function GET() {
     });
 
     const reminderResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/fleet-reminders?${reminderQuery}`,
+      `${STRAPI_BASE_URL}/api/notifications?${reminderQuery}`,
       {
         headers: {
           Authorization: `Bearer ${STRAPI_API_TOKEN}`,
@@ -133,7 +152,7 @@ export async function GET() {
 
     if (!reminderResponse.ok) {
       if (reminderResponse.status === 404) {
-        console.warn("Tipo de contenido 'fleet-reminders' no encontrado en Strapi. Retornando array vacío.");
+        console.warn("Tipo de contenido 'notifications' no encontrado en Strapi. Retornando array vacío.");
         return NextResponse.json({ data: [] });
       }
       
@@ -143,37 +162,117 @@ export async function GET() {
 
     const reminderData = await reminderResponse.json();
 
+    // Primero filtrar notificaciones duplicadas: excluir notificaciones individuales que tienen parentReminderId en tags
+    // Estas son las notificaciones creadas por syncReminderNotifications para usuarios asignados
+    // Solo queremos mostrar el recordatorio principal, no las notificaciones individuales
+    const filteredReminders = (reminderData.data || []).filter((reminder: any) => {
+      // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales de recordatorios
+      // Las notificaciones individuales tienen parentReminderId en tags Y recipient
+      // Los recordatorios principales NO tienen parentReminderId en tags
+      if (reminder.type === 'reminder') {
+        // Si tiene recipient, es una notificación individual y debe ser excluida
+        if (reminder.recipient !== undefined && reminder.recipient !== null) {
+          return false;
+        }
+        
+        try {
+          const tags = typeof reminder.tags === 'string' 
+            ? JSON.parse(reminder.tags) 
+            : reminder.tags;
+          
+          // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
+          if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+            return false;
+          }
+        } catch (error) {
+          // Si hay error parseando tags, incluir la notificación por seguridad
+          console.warn('Error parseando tags de recordatorio:', error);
+        }
+      }
+      
+      // Incluir todas las demás notificaciones
+      return true;
+    });
+
     // Filtrar recordatorios que:
     // 1. Tengan al usuario actual en assignedUsers, O
     // 2. El usuario actual sea el autor (authorDocumentId), O
     // 3. El usuario actual sea responsable del vehículo, O
     // 4. El usuario actual sea conductor asignado del vehículo
-    const userReminders = (reminderData.data || []).filter((reminder: any) => {
+    const userReminders = filteredReminders.filter((reminder: any) => {
       // Verificar si el usuario actual es el autor del recordatorio
       const isAuthor = reminder.authorDocumentId === currentUser.documentId;
       
       // Verificar si el usuario actual está en la lista de usuarios asignados
       const isAssigned = reminder.assignedUsers?.some(
-        (user: any) => user.documentId === currentUser.documentId
+        (user: any) => user?.documentId === currentUser.documentId
       );
       
       // Verificar si el usuario actual es responsable del vehículo
-      const isResponsable = reminder.vehicle?.responsables?.some(
-        (resp: any) => resp.documentId === currentUser.documentId
+      const isResponsable = reminder.fleetVehicle?.responsables?.some(
+        (resp: any) => resp?.documentId === currentUser.documentId
       );
       
       // Verificar si el usuario actual es conductor asignado del vehículo
-      const isAssignedDriver = reminder.vehicle?.assignedDrivers?.some(
-        (driver: any) => driver.documentId === currentUser.documentId
+      const isAssignedDriver = reminder.fleetVehicle?.assignedDrivers?.some(
+        (driver: any) => driver?.documentId === currentUser.documentId
       );
       
-      return isAuthor || isAssigned || isResponsable || isAssignedDriver;
+      const shouldInclude = isAuthor || isAssigned || isResponsable || isAssignedDriver;
+      
+      // Log para debug (solo en desarrollo)
+      if (process.env.NODE_ENV === 'development' && reminder.title?.includes('Mantenimiento')) {
+        console.log('Recordatorio de mantenimiento:', {
+          title: reminder.title,
+          authorDocumentId: reminder.authorDocumentId,
+          currentUserDocumentId: currentUser.documentId,
+          isAuthor,
+          isAssigned,
+          isResponsable,
+          isAssignedDriver,
+          shouldInclude,
+          assignedUsers: reminder.assignedUsers?.map((u: any) => u?.documentId),
+        });
+      }
+      
+      return shouldInclude;
     });
+
+    // Eliminar duplicados: si hay múltiples recordatorios con el mismo título y vehículo,
+    // mantener solo el más reciente (basado en createdAt o id)
+    const remindersByKey = new Map<string, any>();
+    
+    for (const reminder of userReminders) {
+      // Crear una clave única basada en título y vehículo
+      const vehicleId = reminder.fleetVehicle?.id || reminder.fleetVehicle?.documentId || 'unknown';
+      const key = `${reminder.title}-${vehicleId}`;
+      
+      const existing = remindersByKey.get(key);
+      
+      if (!existing) {
+        // No existe, agregarlo
+        remindersByKey.set(key, reminder);
+      } else {
+        // Ya existe, mantener el más reciente (mayor id o createdAt más reciente)
+        const existingId = existing.id || 0;
+        const newId = reminder.id || 0;
+        const existingDate = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        const newDate = reminder.createdAt ? new Date(reminder.createdAt).getTime() : 0;
+        
+        // Si el nuevo tiene mayor ID o fecha más reciente, reemplazar
+        if (newId > existingId || newDate > existingDate) {
+          remindersByKey.set(key, reminder);
+        }
+      }
+    }
+    
+    const uniqueReminders = Array.from(remindersByKey.values());
 
     // Buscar el usuario para cada recordatorio usando authorDocumentId
     const remindersWithAuthor = await Promise.all(
-      userReminders.map(async (reminder: any) => {
-        if (reminder.authorDocumentId) {
+      uniqueReminders.map(async (reminder: any) => {
+        // Si el autor no está populado pero tenemos authorDocumentId, obtenerlo
+        if (!reminder.author && reminder.authorDocumentId) {
           try {
             const authorQuery = qs.stringify({
               filters: {
@@ -206,6 +305,11 @@ export async function GET() {
           } catch (error) {
             console.error("Error obteniendo autor para recordatorio:", error);
           }
+        }
+        
+        // Mapear fleetVehicle a vehicle para compatibilidad con el código existente
+        if (reminder.fleetVehicle) {
+          reminder.vehicle = reminder.fleetVehicle;
         }
         
         return reminder;

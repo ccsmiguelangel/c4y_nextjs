@@ -273,6 +273,46 @@ export function VehicleInfoCard({ vehicleData, priceLabel }: VehicleInfoCardProp
               )}
             </div>
           </div>
+          <div className={`flex items-start ${spacing.gap.medium}`}>
+            <Car className="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+            <div className="flex-1">
+              <p className={`${typography.body.small} text-muted-foreground mb-2`}>Conductores actuales</p>
+              {(vehicleData as any).currentDrivers && (vehicleData as any).currentDrivers.length > 0 ? (
+                <div className="flex flex-wrap gap-3">
+                  {(vehicleData as any).currentDrivers.map((driver: any) => (
+                    <div 
+                      key={driver.id} 
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => router.push(`/users/details/${driver.documentId || driver.id}`)}
+                    >
+                      {driver.avatar?.url ? (
+                        <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full ring-2 ring-background">
+                          <Image
+                            src={strapiImages.getURL(driver.avatar.url)}
+                            alt={driver.avatar.alternativeText || driver.displayName || driver.email || `Avatar de ${driver.id}`}
+                            fill
+                            className="object-cover"
+                            sizes="32px"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted ring-2 ring-background overflow-hidden">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {(driver.displayName || driver.email || `U${driver.id}`).charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <span className="text-sm font-medium">
+                        {driver.displayName || driver.email || `Usuario ${driver.id}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">No hay conductores actuales</p>
+              )}
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

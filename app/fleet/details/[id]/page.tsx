@@ -161,6 +161,7 @@ export default function FleetDetailsPage() {
     selectedResponsables,
     selectedAssignedDrivers,
     selectedInterestedDrivers,
+    selectedCurrentDrivers,
     setIsEditing,
     setFormData,
     setMaintenanceScheduledDate,
@@ -171,6 +172,7 @@ export default function FleetDetailsPage() {
     setSelectedResponsables,
     setSelectedAssignedDrivers,
     setSelectedInterestedDrivers,
+    setSelectedCurrentDrivers,
     syncFormWithVehicle,
     handleImageInputChange,
     handleRemoveImage,
@@ -293,7 +295,7 @@ export default function FleetDetailsPage() {
 
   // Verificar si se eliminó un recordatorio de mantenimiento y limpiar nextMaintenanceDate si es necesario
   useEffect(() => {
-    if (isEditing || isLoadingReminders) return;
+    if (isEditing || isLoadingReminders || isCreatingMaintenanceReminder) return;
     
     const maintenanceReminder = vehicleReminders.find(
       (reminder) =>
@@ -302,29 +304,46 @@ export default function FleetDetailsPage() {
     );
 
     // Si hay nextMaintenanceDate pero NO hay recordatorio de mantenimiento, limpiar la fecha
+    // Agregar un pequeño delay para evitar condiciones de carrera cuando se está creando un recordatorio
     if (vehicleData?.nextMaintenanceDate && !maintenanceReminder) {
       const clearMaintenanceDate = async () => {
-        try {
-          await fetch(`/api/fleet/${vehicleId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              data: {
-                nextMaintenanceDate: null,
-              },
-            }),
-          });
-          await loadVehicle();
-        } catch (error) {
-          console.error("Error limpiando fecha de mantenimiento:", error);
+        // Esperar un poco para asegurar que los recordatorios se hayan cargado completamente
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Verificar nuevamente después del delay
+        const currentReminders = vehicleReminders;
+        const stillNoReminder = !currentReminders.find(
+          (reminder) =>
+            reminder.title.toLowerCase().includes("mantenimiento") ||
+            reminder.title === "Mantenimiento completo del vehículo"
+        );
+        
+        // Solo limpiar si realmente no hay recordatorio después del delay
+        if (stillNoReminder && vehicleData?.nextMaintenanceDate) {
+          try {
+            await fetch(`/api/fleet/${vehicleId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data: {
+                  nextMaintenanceDate: null,
+                },
+              }),
+            });
+            await loadVehicle();
+          } catch (error) {
+            console.error("Error limpiando fecha de mantenimiento:", error);
+          }
         }
       };
       
       clearMaintenanceDate();
     }
-  }, [vehicleReminders, vehicleData?.nextMaintenanceDate, isEditing, isLoadingReminders, vehicleId, loadVehicle]);
+  }, [vehicleReminders, vehicleData?.nextMaintenanceDate, isEditing, isLoadingReminders, isCreatingMaintenanceReminder, vehicleId, loadVehicle]);
 
   // Sincronizar mantenimiento con recordatorios
+  // DESHABILITADO: La creación automática de recordatorios causa duplicados
+  // Los recordatorios se crean solo a través de syncMaintenanceReminder cuando se guarda el mantenimiento
   useEffect(() => {
     // NO sincronizar mientras se está editando o guardando
     if (isEditing || isSavingMaintenance) return;
@@ -335,82 +354,12 @@ export default function FleetDetailsPage() {
         reminder.title === "Mantenimiento completo del vehículo"
     );
 
-    // Si hay nextMaintenanceDate pero no hay recordatorio, crear uno automáticamente
-    // NO crear si se está guardando, creando manualmente, o si los recordatorios aún se están cargando
-    // También agregar un pequeño delay para evitar condiciones de carrera
-    if (!maintenanceReminder && vehicleData?.nextMaintenanceDate && !isLoadingReminders && currentUserDocumentId && !isCreatingMaintenanceReminder) {
-      // Usar un timeout para evitar que se ejecute inmediatamente después de crear/actualizar
-      const timeoutId = setTimeout(() => {
-        // Verificar nuevamente después del delay para asegurar que no se creó en el intermedio
-        const currentMaintenanceReminder = vehicleReminders.find(
-          (reminder) =>
-            reminder.title.toLowerCase().includes("mantenimiento") ||
-            reminder.title === "Mantenimiento completo del vehículo"
-        );
-        
-        if (currentMaintenanceReminder) {
-          // Ya existe, no crear
-          return;
-        }
-        
-        if (!vehicleData?.nextMaintenanceDate) {
-          // Ya no hay fecha de mantenimiento, no crear
-          return;
-        }
-        
-      const maintenanceDate = new Date(vehicleData.nextMaintenanceDate);
-      const year = maintenanceDate.getFullYear();
-      const month = String(maintenanceDate.getMonth() + 1).padStart(2, "0");
-      const day = String(maintenanceDate.getDate()).padStart(2, "0");
-      const hours = String(maintenanceDate.getHours()).padStart(2, "0");
-      const minutes = String(maintenanceDate.getMinutes()).padStart(2, "0");
-      
-      const isAllDay = hours === "00" && minutes === "00";
-      const scheduledDateTime = `${year}-${month}-${day}T${hours}:${minutes}:00`;
-      
-      // Crear recordatorio automáticamente
-      const createMaintenanceReminder = async () => {
-        setIsCreatingMaintenanceReminder(true);
-        try {
-          const assignedUserIds = [
-            ...selectedResponsables,
-            ...selectedAssignedDrivers,
-          ].filter((id, index, self) => self.indexOf(id) === index);
-
-          const createData: any = {
-            title: "Mantenimiento completo del vehículo",
-            description: `Mantenimiento completo programado para el vehículo ${vehicleData.name || ""}`,
-            reminderType: "recurring" as ReminderType,
-            scheduledDate: scheduledDateTime,
-            isAllDay: isAllDay,
-            recurrencePattern: "monthly" as RecurrencePattern,
-            assignedUserIds: assignedUserIds.length > 0 ? assignedUserIds : undefined,
-            authorDocumentId: currentUserDocumentId,
-          };
-
-          const response = await fetch(`/api/fleet/${vehicleId}/reminder`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data: createData }),
-          });
-
-          if (response.ok) {
-            // Pequeño delay para asegurar que el servidor procesó la creación
-            await new Promise(resolve => setTimeout(resolve, 200));
-            await loadVehicleReminders();
-          }
-        } catch (error) {
-          console.error("Error creando recordatorio de mantenimiento automáticamente:", error);
-        } finally {
-          setIsCreatingMaintenanceReminder(false);
-        }
-      };
-      
-      createMaintenanceReminder();
-      }, 1000); // Delay de 1 segundo para evitar condiciones de carrera
-      
-      return () => clearTimeout(timeoutId);
-    }
+    // DESHABILITADO: No crear recordatorios automáticamente desde useEffect
+    // Esto causa duplicados. Los recordatorios se crean solo cuando se guarda el mantenimiento
+    // a través de syncMaintenanceReminder
+    // if (!maintenanceReminder && vehicleData?.nextMaintenanceDate && ...) {
+    //   ... código deshabilitado ...
+    // }
 
     // Solo sincronizar valores cuando hay un recordatorio existente
     // NO limpiar valores cuando no hay recordatorio - permitir que el usuario los establezca manualmente
@@ -634,6 +583,9 @@ export default function FleetDetailsPage() {
           return;
         }
 
+        // Marcar que se está creando para evitar que el useEffect también lo haga
+        setIsCreatingMaintenanceReminder(true);
+
         const assignedUserIds = [
           ...selectedResponsables,
           ...selectedAssignedDrivers,
@@ -695,6 +647,10 @@ export default function FleetDetailsPage() {
       console.error("Error sincronizando recordatorio de mantenimiento:", error);
     } finally {
       setIsSavingMaintenance(false);
+      // Limpiar el flag de creación después de un delay adicional
+      setTimeout(() => {
+        setIsCreatingMaintenanceReminder(false);
+      }, 1000);
     }
   }, [vehicleReminders, currentUserDocumentId, selectedResponsables, selectedAssignedDrivers, vehicleData, vehicleId, loadVehicle, loadVehicleReminders]);
 
@@ -703,7 +659,9 @@ export default function FleetDetailsPage() {
   const handleSaveStatus = () => saveStatus(currentUserDocumentId, loadCurrentUserProfile);
   const handleSaveDocument = () => saveDocument(currentUserDocumentId);
   const handleSaveReminder = () => saveReminder(currentUserDocumentId, loadVehicle);
-  const handleDeleteReminder = (reminderId: number | string) => deleteReminder(reminderId, loadVehicle);
+  const handleDeleteReminder = useCallback((reminderId: number | string) => {
+    return deleteReminder(reminderId, loadVehicle);
+  }, [deleteReminder, loadVehicle]);
   const handleCancelEdit = () => cancelEdit(vehicleData);
 
   const handleSave = () => {
@@ -794,6 +752,7 @@ export default function FleetDetailsPage() {
             condition={vehicleData.condition}
             imageUrl={displayImageUrl}
             imageAlt={displayImageAlt}
+            imageData={vehicleData.imageData}
             isDeleting={isDeleting}
             onEdit={() => setIsEditing(true)}
             onDelete={() => setIsDeleteDialogOpen(true)}
@@ -817,6 +776,7 @@ export default function FleetDetailsPage() {
             selectedResponsables={selectedResponsables}
             selectedAssignedDrivers={selectedAssignedDrivers}
             selectedInterestedDrivers={selectedInterestedDrivers}
+            selectedCurrentDrivers={selectedCurrentDrivers}
             availableUsers={availableUsers}
             isLoadingUsers={isLoadingUsers}
             onFormDataChange={setFormData}
@@ -831,6 +791,7 @@ export default function FleetDetailsPage() {
             onSelectedResponsablesChange={setSelectedResponsables}
             onSelectedAssignedDriversChange={setSelectedAssignedDrivers}
             onSelectedInterestedDriversChange={setSelectedInterestedDrivers}
+            onSelectedCurrentDriversChange={setSelectedCurrentDrivers}
             onSave={handleSave}
             onCancel={handleCancelEdit}
           />
@@ -926,7 +887,8 @@ export default function FleetDetailsPage() {
           onReminderRecurrenceEndDateChange={setReminderRecurrenceEndDate}
           onSelectedResponsablesChange={setReminderSelectedResponsables}
           onSelectedAssignedDriversChange={setReminderSelectedAssignedDrivers}
-          onSaveReminder={handleSaveReminder}
+          editingReminderId={editingReminderId}
+          onSaveReminder={() => saveReminder(currentUserDocumentId, loadVehicle)}
           onEditReminder={handleEditReminder}
           onDeleteReminder={handleDeleteReminder}
           onToggleReminderActive={(id, isActive) => handleToggleReminderActive(id, isActive, loadVehicle)}

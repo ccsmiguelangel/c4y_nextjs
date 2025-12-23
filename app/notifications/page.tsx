@@ -8,6 +8,16 @@ import { Label } from "@/components_shadcn/ui/label";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components_shadcn/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components_shadcn/ui/alert-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components_shadcn/ui/tabs";
 import { Archive, CheckCheck, Calendar, Plus, UserPlus, Sparkles, Receipt, Car, Bell, Inbox, CheckCircle2, Circle, Pause, Play, ExternalLink, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -37,6 +47,42 @@ interface ManualNotification {
   isRead: boolean;
   timestamp: string;
   createdAt: string;
+  module?: string;
+  reminderType?: "unique" | "recurring";
+  scheduledDate?: string;
+  recurrencePattern?: string;
+  recurrenceEndDate?: string;
+  isActive?: boolean;
+  isCompleted?: boolean;
+  lastTriggered?: string;
+  nextTrigger?: string;
+  authorDocumentId?: string;
+  assignedUsers?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  fleetVehicle?: {
+    id: number;
+    documentId?: string;
+    name: string;
+  };
+  author?: {
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  };
+  // Mantener fleetReminder para compatibilidad con código legacy
   fleetReminder?: {
     id: number;
     documentId?: string;
@@ -205,6 +251,8 @@ export default function NotificationsPage() {
   const [locallyUpdatedReminders, setLocallyUpdatedReminders] = useState<Set<string>>(new Set());
   const [deletingReminders, setDeletingReminders] = useState<Set<string>>(new Set());
   const [recentlyDeletedReminders, setRecentlyDeletedReminders] = useState<Set<string>>(new Set());
+  const [showDeleteReminderDialog, setShowDeleteReminderDialog] = useState(false);
+  const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
   
   // Formulario
   const [formTitle, setFormTitle] = useState("");
@@ -260,54 +308,44 @@ export default function NotificationsPage() {
           cache: "no-store",
         });
 
-        const allNotificationsFromDB: ManualNotification[] = notificationsResponse.ok
-          ? (await notificationsResponse.json()).data || []
-          : [];
+        if (!notificationsResponse.ok) {
+          throw new Error(`Error al obtener notificaciones: ${notificationsResponse.statusText}`);
+        }
+
+        const notificationsData = await notificationsResponse.json();
+        const allNotificationsFromDB: ManualNotification[] = notificationsData.data || [];
 
         // También cargar recordatorios directamente para asegurar que todos aparezcan
         const remindersResponse = await fetch("/api/reminders", {
           cache: "no-store",
         });
         
-        const allReminders: FleetReminder[] = remindersResponse.ok
-          ? (await remindersResponse.json()).data || []
-          : [];
-
-        // Crear un mapa de recordatorios existentes para validar notificaciones
-        const existingReminderIds = new Set<string>();
-        allReminders.forEach(reminder => {
-          if (reminder.documentId) {
-            existingReminderIds.add(reminder.documentId);
-          }
-          if (reminder.id) {
-            existingReminderIds.add(String(reminder.id));
-          }
-        });
+        if (!remindersResponse.ok) {
+          // Si falla obtener recordatorios, continuar solo con notificaciones
+          console.warn("No se pudieron obtener recordatorios:", remindersResponse.statusText);
+        }
+        
+        const remindersData = remindersResponse.ok
+          ? await remindersResponse.json()
+          : { data: [] };
+        const allReminders: FleetReminder[] = remindersData.data || [];
 
         // Crear un mapa de recordatorios ya sincronizados en notificaciones
-        // Usar tanto documentId como id para asegurar que no se dupliquen
-        // SOLO incluir notificaciones cuyo recordatorio todavía existe
+        // Los recordatorios están directamente en notifications con type='reminder'
         const syncedReminderIds = new Set<string>();
         allNotificationsFromDB
-          .filter(n => {
-            // Solo incluir notificaciones que tienen fleetReminder Y el recordatorio todavía existe
-            if (!n.fleetReminder) return false;
-            const reminder = n.fleetReminder;
-            const hasDocumentId = reminder.documentId && existingReminderIds.has(reminder.documentId);
-            const hasId = reminder.id && existingReminderIds.has(String(reminder.id));
-            return hasDocumentId || hasId;
-          })
+          .filter(n => n.type === "reminder")
           .forEach(n => {
-            const reminder = n.fleetReminder!;
-            if (reminder.documentId) {
-              syncedReminderIds.add(reminder.documentId);
+            if (n.documentId) {
+              syncedReminderIds.add(n.documentId);
             }
-            if (reminder.id) {
-              syncedReminderIds.add(String(reminder.id));
+            if (n.id) {
+              syncedReminderIds.add(String(n.id));
             }
           });
 
         // Convertir recordatorios no sincronizados a notificaciones
+        // Solo incluir recordatorios que no están ya en las notificaciones
         const unsyncedRemindersAsNotifications = allReminders
           .filter(reminder => {
             // Verificar tanto documentId como id para evitar duplicados
@@ -344,73 +382,61 @@ export default function NotificationsPage() {
           });
 
         // Convertir todas las notificaciones de la BD al formato de la UI
-        // FILTRAR notificaciones huérfanas (que tienen fleetReminder pero el recordatorio ya no existe)
+        // Los endpoints ya filtran las notificaciones con parentReminderId, así que confiamos en ellos
         const convertedNotifications = allNotificationsFromDB
-          .filter((notification) => {
-            // Si tiene fleetReminder, verificar que el recordatorio todavía existe
-            if (notification.fleetReminder) {
-              const reminder = notification.fleetReminder;
-              const hasDocumentId = reminder.documentId && existingReminderIds.has(reminder.documentId);
-              const hasId = reminder.id && existingReminderIds.has(String(reminder.id));
-              return hasDocumentId || hasId;
-            }
-            // Las notificaciones manuales siempre se incluyen
-            return true;
-          })
           .map((notification) => {
-            // Si tiene fleetReminder, es una notificación sincronizada de recordatorio
-            if (notification.fleetReminder) {
-              const reminder = notification.fleetReminder;
-              const vehicleName = reminder.vehicle?.name || "Vehículo";
-              const description = reminder.description 
-                ? `${reminder.description} - ${vehicleName}`
+            // Si es un recordatorio directo (type='reminder')
+            if (notification.type === "reminder") {
+              const vehicleName = notification.fleetVehicle?.name || "Vehículo";
+              const description = notification.description 
+                ? `${notification.description} - ${vehicleName}`
                 : vehicleName;
               
-              // Usar el timestamp de la notificación (que es el nextTrigger del recordatorio)
-              const reminderTimestamp = notification.timestamp || reminder.nextTrigger;
+              // Usar nextTrigger si está disponible, sino usar timestamp
+              const reminderTimestamp = notification.nextTrigger || notification.timestamp;
               
               return {
-                id: `reminder-${reminder.documentId || reminder.id}`,
-                title: reminder.title,
+                id: `reminder-${notification.documentId || notification.id}`,
+                title: notification.title,
                 description,
                 timestamp: formatRelativeTime(reminderTimestamp),
-                isRead: notification.isRead,
+                isRead: notification.isRead || false,
                 type: "reminder" as const,
                 icon: Calendar,
-                iconBgColor: reminder.isActive && !reminder.isCompleted ? "bg-primary/10" : "bg-muted",
-                iconColor: reminder.isActive && !reminder.isCompleted ? "text-primary" : "text-muted-foreground",
-                reminderId: reminder.id,
-                reminderDocumentId: reminder.documentId,
+                iconBgColor: notification.isActive && !notification.isCompleted ? "bg-primary/10" : "bg-muted",
+                iconColor: notification.isActive && !notification.isCompleted ? "text-primary" : "text-muted-foreground",
+                reminderId: notification.id,
+                // Usar documentId si existe, sino usar el id numérico como string
+                reminderDocumentId: notification.documentId || String(notification.id),
                 notificationId: notification.id,
-                notificationDocumentId: notification.documentId,
+                notificationDocumentId: notification.documentId || String(notification.id),
                 source: "reminder" as const,
                 originalTimestamp: reminderTimestamp, // Guardar para ordenamiento
                 // Campos adicionales para recordatorios
-                isActive: reminder.isActive,
-                isCompleted: reminder.isCompleted,
-                module: (reminder as any).module as ReminderModule || "fleet",
+                isActive: notification.isActive,
+                isCompleted: notification.isCompleted,
+                module: (notification.module as ReminderModule) || "fleet",
                 vehicleName: vehicleName,
-                vehicleDocumentId: reminder.vehicle?.documentId,
-              };
-            } else {
-              // Es una notificación manual
-              const colors = getNotificationColors(notification.type);
-              return {
-                id: `notification-${notification.documentId || notification.id}`,
-                title: notification.title,
-                description: notification.description || "",
-                timestamp: formatRelativeTime(notification.timestamp),
-                isRead: notification.isRead,
-                type: notification.type,
-                icon: getNotificationIcon(notification.type),
-                iconBgColor: colors.bg,
-                iconColor: colors.color,
-                notificationId: notification.id,
-                notificationDocumentId: notification.documentId,
-                source: "manual" as const,
-                originalTimestamp: notification.timestamp, // Guardar para ordenamiento
+                vehicleDocumentId: notification.fleetVehicle?.documentId,
               };
             }
+            // Es una notificación manual
+            const colors = getNotificationColors(notification.type);
+            return {
+              id: `notification-${notification.documentId || notification.id}`,
+              title: notification.title,
+              description: notification.description || "",
+              timestamp: formatRelativeTime(notification.timestamp),
+              isRead: notification.isRead,
+              type: notification.type,
+              icon: getNotificationIcon(notification.type),
+              iconBgColor: colors.bg,
+              iconColor: colors.color,
+              notificationId: notification.id,
+              notificationDocumentId: notification.documentId,
+              source: "manual" as const,
+              originalTimestamp: notification.timestamp, // Guardar para ordenamiento
+            };
           });
         
         // Combinar notificaciones sincronizadas con recordatorios no sincronizados
@@ -421,10 +447,16 @@ export default function NotificationsPage() {
         const notificationsByReminderId = new Map<string, Notification>();
         
         for (const notification of allNotifications) {
-          // Para recordatorios, usar reminderDocumentId como clave única
-          const key = notification.source === "reminder" && notification.reminderDocumentId
-            ? `reminder-${notification.reminderDocumentId}`
-            : notification.id;
+          // Para recordatorios, usar reminderDocumentId o reminderId como clave única
+          let key = notification.id;
+          if (notification.source === "reminder") {
+            const reminderId = notification.reminderDocumentId || 
+                               (notification.reminderId ? String(notification.reminderId) : null) ||
+                               (notification.notificationId ? String(notification.notificationId) : null);
+            if (reminderId) {
+              key = `reminder-${reminderId}`;
+            }
+          }
           
           const existing = notificationsByReminderId.get(key);
           
@@ -576,7 +608,18 @@ export default function NotificationsPage() {
 
   // Marcar recordatorio como completado
   const handleToggleCompleted = async (notification: Notification) => {
-    if (notification.source !== "reminder" || !notification.reminderDocumentId) return;
+    if (notification.source !== "reminder") return;
+    
+    // Usar reminderDocumentId si existe, sino usar reminderId o notificationId
+    const reminderId = notification.reminderDocumentId || 
+                       (notification.reminderId ? String(notification.reminderId) : null) ||
+                       (notification.notificationId ? String(notification.notificationId) : null);
+    
+    if (!reminderId) {
+      console.error("No se pudo obtener el ID del recordatorio para actualizar:", notification);
+      toast.error("Error: No se pudo identificar el recordatorio");
+      return;
+    }
     
     const notificationId = notification.id;
     // Prevenir múltiples clics
@@ -610,8 +653,20 @@ export default function NotificationsPage() {
     );
     
     try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(notification.reminderDocumentId)}`, {
-        method: "PATCH",
+      // Log para depuración
+      if (process.env.NODE_ENV === 'development') {
+        console.log("Actualizando recordatorio:", {
+          reminderId,
+          notificationId: notification.id,
+          reminderDocumentId: notification.reminderDocumentId,
+          reminderIdNum: notification.reminderId,
+          notificationIdNum: notification.notificationId,
+          newCompletedState,
+        });
+      }
+      
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: { isCompleted: newCompletedState },
@@ -619,15 +674,38 @@ export default function NotificationsPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Error al actualizar el recordatorio");
+        let errorMessage = "Error al actualizar el recordatorio";
+        try {
+          // Clonar la respuesta para poder leer el body múltiples veces si es necesario
+          const responseClone = response.clone();
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.error?.message || errorMessage;
+        } catch (parseError) {
+          // Si no se puede parsear como JSON, intentar leer como texto
+          try {
+            const errorText = await response.text();
+            if (errorText) {
+              try {
+                const parsed = JSON.parse(errorText);
+                errorMessage = parsed.error || parsed.error?.message || errorMessage;
+              } catch {
+                errorMessage = errorText || errorMessage;
+              }
+            }
+          } catch (textError) {
+            // Si tampoco se puede leer como texto, usar el mensaje por defecto
+            console.error("Error leyendo respuesta del servidor:", textError);
+            errorMessage = `Error ${response.status}: ${response.statusText}`;
+          }
+        }
+        throw new Error(errorMessage);
       }
 
-      // Marcar que actualizamos este recordatorio localmente (usar reminderDocumentId como string)
-      const reminderIdStr = String(notification.reminderDocumentId);
-      setLocallyUpdatedReminders((prev) => new Set(prev).add(reminderIdStr));
+      // Marcar que actualizamos este recordatorio localmente
+      setLocallyUpdatedReminders((prev) => new Set(prev).add(reminderId));
       
       // Emitir evento para sincronización con otros componentes
-      emitReminderToggleCompleted(notification.reminderDocumentId, newCompletedState);
+      emitReminderToggleCompleted(reminderId, newCompletedState);
       
       // Limpiar la marca después de un tiempo para permitir futuras actualizaciones desde otros componentes
       setTimeout(() => {
@@ -660,7 +738,8 @@ export default function NotificationsPage() {
           return n;
         })
       );
-      toast.error("Error al actualizar el recordatorio");
+      const errorMessage = error instanceof Error ? error.message : "Error al actualizar el recordatorio";
+      toast.error(errorMessage);
     } finally {
       // Remover de la lista de procesando
       setTogglingCompleted((prev) => {
@@ -673,13 +752,24 @@ export default function NotificationsPage() {
 
   // Pausar/Activar recordatorio
   const handleToggleActive = async (notification: Notification) => {
-    if (notification.source !== "reminder" || !notification.reminderDocumentId) return;
+    if (notification.source !== "reminder") return;
+    
+    // Usar reminderDocumentId si existe, sino usar reminderId o notificationId
+    const reminderId = notification.reminderDocumentId || 
+                       (notification.reminderId ? String(notification.reminderId) : null) ||
+                       (notification.notificationId ? String(notification.notificationId) : null);
+    
+    if (!reminderId) {
+      console.error("No se pudo obtener el ID del recordatorio para actualizar:", notification);
+      toast.error("Error: No se pudo identificar el recordatorio");
+      return;
+    }
     
     const newActiveState = !notification.isActive;
     
     try {
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(notification.reminderDocumentId)}`, {
-        method: "PATCH",
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data: { isActive: newActiveState },
@@ -687,7 +777,22 @@ export default function NotificationsPage() {
       });
 
       if (!response.ok) {
-        throw new Error("Error al actualizar el recordatorio");
+        let errorMessage = "Error al actualizar el recordatorio";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.error?.message || errorMessage;
+        } catch {
+          const errorText = await response.text().catch(() => "");
+          if (errorText) {
+            try {
+              const parsed = JSON.parse(errorText);
+              errorMessage = parsed.error || parsed.error?.message || errorMessage;
+            } catch {
+              errorMessage = errorText || errorMessage;
+            }
+          }
+        }
+        throw new Error(errorMessage);
       }
 
       // Actualizar estado local
@@ -700,28 +805,53 @@ export default function NotificationsPage() {
       );
 
       // Emitir evento para sincronización
-      emitReminderToggleActive(notification.reminderDocumentId, newActiveState);
+      emitReminderToggleActive(reminderId, newActiveState);
       toast.success(newActiveState ? "Recordatorio activado" : "Recordatorio pausado");
     } catch (error) {
       console.error("Error actualizando recordatorio:", error);
-      toast.error("Error al actualizar el recordatorio");
+      const errorMessage = error instanceof Error ? error.message : "Error al actualizar el recordatorio";
+      toast.error(errorMessage);
     }
   };
 
-  // Eliminar recordatorio
+  const handleRequestDeleteReminder = (notification: Notification) => {
+    if (notification.source !== "reminder") return;
+    
+    // Usar reminderDocumentId si existe, sino usar reminderId o notificationId
+    const reminderId = notification.reminderDocumentId || 
+                       (notification.reminderId ? String(notification.reminderId) : null) ||
+                       (notification.notificationId ? String(notification.notificationId) : null);
+    
+    if (!reminderId) {
+      console.error("No se pudo obtener el ID del recordatorio para eliminar:", notification);
+      toast.error("Error: No se pudo identificar el recordatorio");
+      return;
+    }
+    
+    if (deletingReminders.has(notification.id)) return;
+    setNotificationToDelete(notification);
+    setShowDeleteReminderDialog(true);
+  };
+
+  // Eliminar recordatorio (lógica real, llamada desde el modal de confirmación)
   const handleDeleteReminder = async (notification: Notification) => {
-    if (notification.source !== "reminder" || !notification.reminderDocumentId) return;
+    if (notification.source !== "reminder") return;
+    
+    // Usar reminderDocumentId si existe, sino usar reminderId o notificationId
+    const reminderId = notification.reminderDocumentId || 
+                       (notification.reminderId ? String(notification.reminderId) : null) ||
+                       (notification.notificationId ? String(notification.notificationId) : null);
+    
+    if (!reminderId) {
+      console.error("No se pudo obtener el ID del recordatorio para eliminar:", notification);
+      toast.error("Error: No se pudo identificar el recordatorio");
+      return;
+    }
     
     const notificationId = notification.id;
-    const reminderId = notification.reminderDocumentId;
     
     // Prevenir múltiples clics
     if (deletingReminders.has(notificationId)) return;
-    
-    // Confirmar eliminación
-    if (!confirm("¿Estás seguro de que deseas eliminar este recordatorio?")) {
-      return;
-    }
     
     // Agregar a la lista de procesando
     setDeletingReminders((prev) => new Set(prev).add(notificationId));
@@ -732,7 +862,7 @@ export default function NotificationsPage() {
     
     try {
       // Obtener información del recordatorio antes de eliminarlo para verificar si es de mantenimiento
-      const reminderResponse = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+      const reminderResponse = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
         cache: "no-store",
       });
       
@@ -746,7 +876,12 @@ export default function NotificationsPage() {
           reminder.title?.toLowerCase().includes("mantenimiento") || 
           reminder.title === "Mantenimiento completo del vehículo";
         
-        if (reminder.vehicle?.documentId) {
+        // Usar fleetVehicle en lugar de vehicle
+        if (reminder.fleetVehicle?.documentId) {
+          vehicleId = reminder.fleetVehicle.documentId;
+        } else if (reminder.fleetVehicle?.id) {
+          vehicleId = String(reminder.fleetVehicle.id);
+        } else if (reminder.vehicle?.documentId) {
           vehicleId = reminder.vehicle.documentId;
         } else if (reminder.vehicle?.id) {
           vehicleId = String(reminder.vehicle.id);
@@ -754,7 +889,7 @@ export default function NotificationsPage() {
       }
       
       // Eliminar el recordatorio
-      const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+      const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
         method: "DELETE",
       });
 
@@ -1279,7 +1414,7 @@ export default function NotificationsPage() {
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteReminder(notification);
+                          handleRequestDeleteReminder(notification);
                         }}
                         title="Eliminar recordatorio"
                         disabled={deletingReminders.has(notification.id)}
@@ -1294,6 +1429,57 @@ export default function NotificationsPage() {
           })
         )}
       </div>
+
+      {/* Diálogo de confirmación para eliminar recordatorios */}
+      <AlertDialog
+        open={showDeleteReminderDialog}
+        onOpenChange={(open) => {
+          setShowDeleteReminderDialog(open);
+          if (!open) {
+            setNotificationToDelete(null);
+          }
+        }}
+      >
+        <AlertDialogContent
+          onClose={() => {
+            setShowDeleteReminderDialog(false);
+            setNotificationToDelete(null);
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este recordatorio?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará el recordatorio de forma permanente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={
+                notificationToDelete ? deletingReminders.has(notificationToDelete.id) : false
+              }
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (notificationToDelete) {
+                  void handleDeleteReminder(notificationToDelete);
+                }
+                setShowDeleteReminderDialog(false);
+                setNotificationToDelete(null);
+              }}
+              disabled={
+                notificationToDelete ? deletingReminders.has(notificationToDelete.id) : false
+              }
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {notificationToDelete && deletingReminders.has(notificationToDelete.id)
+                ? "Eliminando..."
+                : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Floating Action Button */}
       {activeTab === "notifications" && unreadCount > 0 && (

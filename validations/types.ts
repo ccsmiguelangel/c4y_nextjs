@@ -221,6 +221,7 @@ export interface FleetVehicleCard {
   year: number;
   imageUrl?: string;
   imageAlt?: string;
+  imageData?: FleetVehicleImage; // Datos completos de la imagen con formats
   color?: string;
   mileage?: number;
   fuelType?: string;
@@ -248,6 +249,16 @@ export interface FleetVehicleCard {
     };
   }>;
   interestedDrivers?: Array<{
+    id: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+    avatar?: {
+      url?: string;
+      alternativeText?: string;
+    };
+  }>;
+  currentDrivers?: Array<{
     id: number;
     documentId?: string;
     displayName?: string;
@@ -288,6 +299,7 @@ export interface FleetVehicleUpdatePayload {
   responsables?: number[];
   assignedDrivers?: number[];
   interestedDrivers?: number[];
+  currentDrivers?: number[];
   nextMaintenanceDate?: string | null;
   placa?: string | null;
   interestedPersons?: number[];
