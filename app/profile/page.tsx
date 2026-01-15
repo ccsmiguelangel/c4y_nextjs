@@ -15,7 +15,7 @@ import { AdminLayout } from "@/components/admin/admin-layout";
 import { typography, spacing, components } from "@/lib/design-system";
 import { strapiImages } from "@/lib/strapi-images";
 import { Skeleton } from "@/components_shadcn/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Select,
   SelectContent,

@@ -86,32 +86,22 @@ export async function GET() {
     }
 
     // Obtener notificaciones del usuario (incluyendo las relacionadas con recordatorios)
-    // IMPORTANTE: NO incluir notificaciones individuales (con recipient) de recordatorios
-    // Solo obtener:
-    // 1. Notificaciones manuales con recipient (no son recordatorios)
-    // 2. Recordatorios principales donde el usuario esté en assignedUsers (NO tienen recipient)
-    // 3. Recordatorios principales donde el usuario sea el autor (NO tienen recipient)
+    // IMPORTANTE: Obtener todas las notificaciones con recipient (incluyendo type='reminder' manuales)
+    // Y también todos los recordatorios completos (type='reminder' con reminderType/module)
+    // Luego filtrar en el código para separar manuales de completos y excluir notificaciones individuales
     const notificationQuery = qs.stringify({
       filters: {
         $or: [
           {
-            // Notificaciones manuales (no son recordatorios) con recipient
-            type: { $ne: "reminder" },
+            // Notificaciones con recipient (incluye manuales normales Y manuales con type='reminder')
             recipient: {
               documentId: { $eq: currentUser.documentId },
             },
           },
           {
-            // Recordatorios principales (NO tienen recipient, NO tienen parentReminderId en tags)
+            // Obtener TODOS los recordatorios completos (type='reminder' con reminderType o module)
+            // y filtrar después en el código para incluir: assignedUsers, author, responsables, assignedDrivers
             type: { $eq: "reminder" },
-            assignedUsers: {
-              documentId: { $eq: currentUser.documentId },
-            },
-          },
-          {
-            // Recordatorios principales donde el usuario es el autor
-            type: { $eq: "reminder" },
-            authorDocumentId: { $eq: currentUser.documentId },
           },
         ],
       },
@@ -130,6 +120,14 @@ export async function GET() {
         },
         fleetVehicle: {
           fields: ["id", "documentId", "name"],
+          populate: {
+            responsables: {
+              fields: ["id", "documentId", "displayName", "email"],
+            },
+            assignedDrivers: {
+              fields: ["id", "documentId", "displayName", "email"],
+            },
+          },
         },
         author: {
           fields: ["id", "documentId", "displayName", "email"],
@@ -176,57 +174,283 @@ export async function GET() {
 
     const data = await response.json();
     
-    // Filtrar notificaciones duplicadas: excluir notificaciones individuales que tienen parentReminderId en tags
+    // Separar notificaciones manuales de recordatorios
+    // IMPORTANTE: Las notificaciones manuales con type='reminder' (sin reminderType ni module)
+    // deben tratarse como notificaciones manuales, no como recordatorios
+    const manualNotifications = (data.data || []).filter((notification: any) => {
+      // Si no es tipo reminder, es manual
+      if (notification.type !== "reminder") {
+        return true;
+      }
+      // Si es tipo reminder pero NO tiene reminderType ni module, es una notificación manual
+      // (simplemente usa 'reminder' como categoría, no es un recordatorio completo)
+      const hasReminderType = notification.reminderType && typeof notification.reminderType === 'string' && notification.reminderType.trim() !== '';
+      const hasModule = notification.module && typeof notification.module === 'string' && notification.module.trim() !== '';
+      return !hasReminderType && !hasModule;
+    });
+    
+    // Los recordatorios completos son los que tienen type='reminder' Y (reminderType o module)
+    const allReminders = (data.data || []).filter((notification: any) => {
+      if (notification.type !== "reminder") {
+        return false;
+      }
+      const hasReminderType = notification.reminderType && typeof notification.reminderType === 'string' && notification.reminderType.trim() !== '';
+      const hasModule = notification.module && typeof notification.module === 'string' && notification.module.trim() !== '';
+      return hasReminderType || hasModule;
+    });
+    
+    // Filtrar recordatorios: excluir notificaciones individuales y filtrar por usuario
+    // Filtrar notificaciones individuales que tienen parentReminderId en tags
     // Estas son las notificaciones creadas por syncReminderNotifications para usuarios asignados
     // Solo queremos mostrar el recordatorio principal, no las notificaciones individuales
-    const filteredNotifications = (data.data || []).filter((notification: any) => {
+    const filteredReminders = allReminders.filter((reminder: any) => {
       // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales de recordatorios
       // Las notificaciones individuales tienen parentReminderId en tags Y recipient
       // Los recordatorios principales NO tienen parentReminderId en tags NI recipient
-      if (notification.type === 'reminder') {
-        // Si tiene recipient (incluso si es un objeto populado), es una notificación individual
-        if (notification.recipient !== undefined && notification.recipient !== null) {
+      
+      // Si tiene recipient (incluso si es un objeto populado), es una notificación individual
+      if (reminder.recipient !== undefined && reminder.recipient !== null) {
+        // Log en desarrollo para depuración
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [notifications] Excluyendo notificación individual (tiene recipient):', {
+            id: reminder.id,
+            documentId: reminder.documentId,
+            title: reminder.title,
+            recipient: reminder.recipient,
+          });
+        }
+        return false;
+      }
+      
+      try {
+        const tags = typeof reminder.tags === 'string' 
+          ? JSON.parse(reminder.tags) 
+          : reminder.tags;
+        
+        // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
+        if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
           // Log en desarrollo para depuración
           if (process.env.NODE_ENV === 'development') {
-            console.log('🔍 Excluyendo notificación individual (tiene recipient):', {
-              id: notification.id,
-              documentId: notification.documentId,
-              title: notification.title,
-              recipient: notification.recipient,
+            console.log('🔍 [notifications] Excluyendo notificación individual (tiene parentReminderId):', {
+              id: reminder.id,
+              documentId: reminder.documentId,
+              title: reminder.title,
+              parentReminderId: tags.parentReminderId,
             });
           }
           return false;
         }
-        
-        try {
-          const tags = typeof notification.tags === 'string' 
-            ? JSON.parse(notification.tags) 
-            : notification.tags;
-          
-          // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
-          if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
-            // Log en desarrollo para depuración
-            if (process.env.NODE_ENV === 'development') {
-              console.log('🔍 Excluyendo notificación individual (tiene parentReminderId):', {
-                id: notification.id,
-                documentId: notification.documentId,
-                title: notification.title,
-                parentReminderId: tags.parentReminderId,
-              });
-            }
-            return false;
-          }
-        } catch (error) {
-          // Si hay error parseando tags, incluir la notificación por seguridad
-          console.warn('Error parseando tags de notificación:', error);
-        }
+      } catch (error) {
+        // Si hay error parseando tags, incluir la notificación por seguridad
+        console.warn('Error parseando tags de recordatorio:', error);
       }
       
       // Incluir todas las demás notificaciones
       return true;
     });
     
-    return NextResponse.json({ data: filteredNotifications });
+    // Filtrar recordatorios que pertenecen al usuario actual:
+    // 1. Tengan al usuario actual en assignedUsers, O
+    // 2. El usuario actual sea el autor (authorDocumentId), O
+    // 3. El usuario actual sea responsable del vehículo, O
+    // 4. El usuario actual sea conductor asignado del vehículo
+    // IMPORTANTE: Incluir TODOS los recordatorios (completados y no completados) para que aparezcan en la pestaña "completed"
+    const userReminders = filteredReminders.filter((reminder: any) => {
+      // Verificar si el usuario actual es el autor del recordatorio
+      const isAuthor = reminder.authorDocumentId === currentUser.documentId;
+      
+      // Verificar si el usuario actual está en la lista de usuarios asignados
+      const isAssigned = reminder.assignedUsers?.some(
+        (user: any) => user?.documentId === currentUser.documentId
+      );
+      
+      // Verificar si el usuario actual es responsable del vehículo
+      const isResponsable = reminder.fleetVehicle?.responsables?.some(
+        (resp: any) => resp?.documentId === currentUser.documentId
+      );
+      
+      // Verificar si el usuario actual es conductor asignado del vehículo
+      const isAssignedDriver = reminder.fleetVehicle?.assignedDrivers?.some(
+        (driver: any) => driver?.documentId === currentUser.documentId
+      );
+      
+      const shouldInclude = isAuthor || isAssigned || isResponsable || isAssignedDriver;
+      
+      return shouldInclude;
+    });
+    
+    // Filtrar notificaciones manuales: incluir solo las que pertenecen al usuario actual
+    // Excluir notificaciones individuales de recordatorios (tienen parentReminderId en tags)
+    const filteredManualNotifications = manualNotifications.filter((notification: any) => {
+      // Si tiene recipient, verificar que sea el usuario actual
+      if (notification.recipient) {
+        const recipientDocId = typeof notification.recipient === 'object' 
+          ? notification.recipient.documentId 
+          : null;
+        if (recipientDocId !== currentUser.documentId) {
+          return false;
+        }
+      }
+      
+      // Excluir notificaciones individuales de recordatorios (tienen parentReminderId en tags)
+      try {
+        const tags = typeof notification.tags === 'string' 
+          ? JSON.parse(notification.tags) 
+          : notification.tags;
+        if (tags && tags.parentReminderId !== undefined && tags.parentReminderId !== null) {
+          return false; // Es una notificación individual de recordatorio
+        }
+      } catch (error) {
+        // Si hay error parseando tags, continuar
+      }
+      
+      return true;
+    });
+    
+    // Combinar notificaciones manuales filtradas con recordatorios filtrados
+    const filteredNotifications = [...filteredManualNotifications, ...userReminders];
+    
+    // Eliminar duplicados: si hay múltiples recordatorios con el mismo título y vehículo,
+    // mantener solo el más reciente (basado en createdAt o id)
+    // También verificar por documentId para evitar duplicados exactos
+    const notificationsByKey = new Map<string, any>();
+    const notificationsByDocumentId = new Map<string, any>();
+    const notificationsByTitleOnly = new Map<string, any[]>(); // Para detectar duplicados por título
+    
+    for (const notification of filteredNotifications) {
+      // Primera verificación: si ya vimos este documentId, saltarlo (duplicado exacto)
+      if (notification.documentId) {
+        if (notificationsByDocumentId.has(notification.documentId)) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔍 [notifications] Duplicado por documentId, saltando:', {
+              documentId: notification.documentId,
+              title: notification.title,
+              id: notification.id,
+            });
+          }
+          continue;
+        }
+        notificationsByDocumentId.set(notification.documentId, notification);
+      }
+      
+      // Agregar a mapa por título para verificación adicional (solo para recordatorios)
+      if (notification.type === 'reminder') {
+        const normalizedTitle = (notification.title?.trim() || '').toLowerCase();
+        if (!notificationsByTitleOnly.has(normalizedTitle)) {
+          notificationsByTitleOnly.set(normalizedTitle, []);
+        }
+        notificationsByTitleOnly.get(normalizedTitle)!.push(notification);
+      }
+      
+      // Segunda verificación: para recordatorios, crear una clave única basada en título y vehículo
+      if (notification.type === 'reminder') {
+        // Normalizar el título (trim, lowercase) para evitar diferencias por espacios o mayúsculas
+        const normalizedTitle = (notification.title?.trim() || '').toLowerCase();
+        
+        // Buscar si hay otros recordatorios con el mismo título para detectar inconsistencias
+        const sameTitleNotifications = notificationsByTitleOnly.get(normalizedTitle) || [];
+        let vehicleId = notification.fleetVehicle?.documentId || 
+                       (notification.fleetVehicle?.id ? String(notification.fleetVehicle.id) : null);
+        
+        // Si este recordatorio no tiene vehículo, pero hay otro con el mismo título que sí lo tiene,
+        // usar el vehículo del otro (probablemente es el mismo recordatorio con datos inconsistentes)
+        if (!vehicleId && sameTitleNotifications.length > 0) {
+          const notificationWithVehicle = sameTitleNotifications.find((n: any) => 
+            n.fleetVehicle?.documentId || n.fleetVehicle?.id
+          );
+          if (notificationWithVehicle) {
+            vehicleId = notificationWithVehicle.fleetVehicle?.documentId || 
+                       (notificationWithVehicle.fleetVehicle?.id ? String(notificationWithVehicle.fleetVehicle.id) : null);
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔍 [notifications] Recordatorio sin vehículo, usando vehículo de otro con mismo título:', {
+                title: notification.title,
+                foundVehicleId: vehicleId,
+              });
+            }
+          }
+        }
+        
+        // Si aún no hay vehículo, usar 'unknown'
+        vehicleId = vehicleId || 'unknown';
+        const key = `${normalizedTitle}-${vehicleId}`;
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🔍 [notifications] Procesando recordatorio para deduplicación:', {
+            key,
+            title: notification.title,
+            normalizedTitle,
+            vehicleId,
+            vehicleDocumentId: notification.fleetVehicle?.documentId,
+            vehicleIdNum: notification.fleetVehicle?.id,
+            hasVehicle: !!notification.fleetVehicle,
+            notificationDocumentId: notification.documentId,
+            notificationId: notification.id,
+          });
+        }
+        
+        const existing = notificationsByKey.get(key);
+        
+        if (!existing) {
+          // No existe, agregarlo
+          notificationsByKey.set(key, notification);
+        } else {
+          // Ya existe, mantener el más reciente (mayor id o createdAt más reciente)
+          const existingId = existing.id || 0;
+          const newId = notification.id || 0;
+          const existingDate = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+          const newDate = notification.createdAt ? new Date(notification.createdAt).getTime() : 0;
+          
+          // Si el nuevo tiene mayor ID o fecha más reciente, reemplazar
+          if (newId > existingId || newDate > existingDate) {
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔍 [notifications] Reemplazando recordatorio duplicado:', {
+                key,
+                existingId: existing.id,
+                existingDocumentId: existing.documentId,
+                existingVehicle: existing.fleetVehicle?.documentId || existing.fleetVehicle?.id || 'none',
+                newId: notification.id,
+                newDocumentId: notification.documentId,
+                newVehicle: notification.fleetVehicle?.documentId || notification.fleetVehicle?.id || 'none',
+                title: notification.title,
+              });
+            }
+            notificationsByKey.set(key, notification);
+            // También actualizar en notificationsByDocumentId si tiene documentId
+            if (notification.documentId) {
+              notificationsByDocumentId.set(notification.documentId, notification);
+            }
+          } else {
+            if (process.env.NODE_ENV === 'development') {
+              console.log('🔍 [notifications] Manteniendo recordatorio existente (más reciente):', {
+                key,
+                existingId: existing.id,
+                existingDocumentId: existing.documentId,
+                existingVehicle: existing.fleetVehicle?.documentId || existing.fleetVehicle?.id || 'none',
+                newId: notification.id,
+                newDocumentId: notification.documentId,
+                newVehicle: notification.fleetVehicle?.documentId || notification.fleetVehicle?.id || 'none',
+                title: notification.title,
+              });
+            }
+          }
+        }
+      } else {
+        // Para notificaciones no recordatorios, agregarlas directamente (no hay duplicados por título+vehículo)
+        notificationsByKey.set(`manual-${notification.id}`, notification);
+      }
+    }
+    
+    const uniqueNotifications = Array.from(notificationsByKey.values());
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 [notifications] Resumen de deduplicación:', {
+        totalDespuésDeFiltro: filteredNotifications.length,
+        únicosDespuésDeDeduplicación: uniqueNotifications.length,
+        eliminados: filteredNotifications.length - uniqueNotifications.length,
+      });
+    }
+    
+    return NextResponse.json({ data: uniqueNotifications });
   } catch (error) {
     console.error("Error obteniendo notificaciones:", error);
     const errorMessage = error instanceof Error ? error.message : "Error desconocido";
@@ -348,6 +572,15 @@ export async function POST(request: Request) {
           timestamp,
           recipient: recipientId,
         };
+
+        // Log para depuración
+        console.log('📤 [notifications POST] Enviando notificación:', {
+          type,
+          hasReminderType: false,
+          hasModule: false,
+          title,
+          hasRecipient: !!recipientId,
+        });
 
         const createResponse = await fetch(
           `${STRAPI_BASE_URL}/api/notifications`,

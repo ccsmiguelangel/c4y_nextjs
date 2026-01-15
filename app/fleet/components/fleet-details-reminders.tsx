@@ -195,6 +195,7 @@ export function FleetDetailsRemindersCard({
                         type="date"
                         value={reminderScheduledDate}
                         onChange={(e) => onReminderScheduledDateChange(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
                       />
                     </div>
                     <div className="flex flex-row gap-2 lg:flex-1">
@@ -203,6 +204,17 @@ export function FleetDetailsRemindersCard({
                         value={reminderScheduledTime}
                         onChange={(e) => onReminderScheduledTimeChange(e.target.value)}
                         disabled={isAllDay}
+                        min={
+                          reminderScheduledDate === new Date().toISOString().split('T')[0]
+                            ? (() => {
+                                const now = new Date();
+                                now.setMinutes(now.getMinutes() + 30);
+                                const hours = String(now.getHours()).padStart(2, '0');
+                                const minutes = String(now.getMinutes()).padStart(2, '0');
+                                return `${hours}:${minutes}`;
+                              })()
+                            : undefined
+                        }
                       />
                       <div className="flex items-center gap-2">
                         <Checkbox id="reminder-all-day" checked={isAllDay} onCheckedChange={(checked) => onReminderIsAllDayChange(checked === true)} />

@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from "react";
 import type { ChangeEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { FleetDocument, FleetDocumentType } from "@/validations/types";
 
 interface UseVehicleDocumentsReturn {

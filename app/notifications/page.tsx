@@ -22,11 +22,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components_shadcn/ui/tabs";
 import { Archive, CheckCheck, Calendar, Plus, UserPlus, Sparkles, Receipt, Car, Bell, Inbox, CheckCircle2, Circle, Pause, Play, ExternalLink, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { commonClasses, spacing, typography, colors } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { FleetReminder, ReminderModule } from "@/validations/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { REMINDER_EVENTS, emitReminderToggleCompleted, emitReminderToggleActive, emitReminderDeleted } from "@/lib/reminder-events";
 import { MODULE_LABELS, MODULE_COLORS } from "@/components/ui/unified-reminders";
 
@@ -240,7 +241,8 @@ function manualNotificationsToNotifications(notifications: ManualNotification[])
 export default function NotificationsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"notifications" | "paused" | "completed">("notifications");
-  const [notificationList, setNotificationList] = useState<Notification[]>([]);
+  const [rawNotifications, setRawNotifications] = useState<Notification[]>([]);
+  const [rawReminders, setRawReminders] = useState<FleetReminder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<"admin" | "seller" | "driver" | null>(null);
@@ -251,13 +253,17 @@ export default function NotificationsPage() {
   const [locallyUpdatedReminders, setLocallyUpdatedReminders] = useState<Set<string>>(new Set());
   const [deletingReminders, setDeletingReminders] = useState<Set<string>>(new Set());
   const [recentlyDeletedReminders, setRecentlyDeletedReminders] = useState<Set<string>>(new Set());
+  // Refs para prevenir múltiples clics de forma síncrona
+  const togglingCompletedRef = useRef<Set<string>>(new Set());
+  const togglingActiveRef = useRef<Set<string>>(new Set());
+  const deletingRemindersRef = useRef<Set<string>>(new Set());
   const [showDeleteReminderDialog, setShowDeleteReminderDialog] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState<Notification | null>(null);
   
   // Formulario
   const [formTitle, setFormTitle] = useState("");
   const [formDescription, setFormDescription] = useState("");
-  const [formType, setFormType] = useState<"lead" | "sale" | "reminder" | "payment" | "inventory">("reminder");
+  const [formType, setFormType] = useState<"lead" | "sale" | "reminder" | "payment" | "inventory">("lead");
   const [formRecipientType, setFormRecipientType] = useState<"specific" | "all_sellers" | "all_admins" | "all_drivers">("specific");
   const [formRecipientId, setFormRecipientId] = useState("");
 
@@ -330,59 +336,7 @@ export default function NotificationsPage() {
           : { data: [] };
         const allReminders: FleetReminder[] = remindersData.data || [];
 
-        // Crear un mapa de recordatorios ya sincronizados en notificaciones
-        // Los recordatorios están directamente en notifications con type='reminder'
-        const syncedReminderIds = new Set<string>();
-        allNotificationsFromDB
-          .filter(n => n.type === "reminder")
-          .forEach(n => {
-            if (n.documentId) {
-              syncedReminderIds.add(n.documentId);
-            }
-            if (n.id) {
-              syncedReminderIds.add(String(n.id));
-            }
-          });
-
-        // Convertir recordatorios no sincronizados a notificaciones
-        // Solo incluir recordatorios que no están ya en las notificaciones
-        const unsyncedRemindersAsNotifications = allReminders
-          .filter(reminder => {
-            // Verificar tanto documentId como id para evitar duplicados
-            const hasDocumentId = reminder.documentId && syncedReminderIds.has(reminder.documentId);
-            const hasId = reminder.id && syncedReminderIds.has(String(reminder.id));
-            return !hasDocumentId && !hasId;
-          })
-          .map((reminder) => {
-            const vehicleName = reminder.vehicle?.name || "Vehículo";
-            const description = reminder.description 
-              ? `${reminder.description} - ${vehicleName}`
-              : vehicleName;
-            
-            return {
-              id: `reminder-${reminder.documentId || reminder.id}`,
-              title: reminder.title,
-              description,
-              timestamp: formatRelativeTime(reminder.nextTrigger),
-              isRead: false, // Los no sincronizados se consideran no leídos
-              type: "reminder" as const,
-              icon: Calendar,
-              iconBgColor: reminder.isActive && !reminder.isCompleted ? "bg-primary/10" : "bg-muted",
-              iconColor: reminder.isActive && !reminder.isCompleted ? "text-primary" : "text-muted-foreground",
-              reminderId: reminder.id,
-              reminderDocumentId: reminder.documentId,
-              source: "reminder" as const,
-              originalTimestamp: reminder.nextTrigger,
-              isActive: reminder.isActive,
-              isCompleted: reminder.isCompleted,
-              module: (reminder as any).module as ReminderModule || "fleet",
-              vehicleName: vehicleName,
-              vehicleDocumentId: reminder.vehicle?.documentId,
-            };
-          });
-
         // Convertir todas las notificaciones de la BD al formato de la UI
-        // Los endpoints ya filtran las notificaciones con parentReminderId, así que confiamos en ellos
         const convertedNotifications = allNotificationsFromDB
           .map((notification) => {
             // Si es un recordatorio directo (type='reminder')
@@ -439,64 +393,9 @@ export default function NotificationsPage() {
             };
           });
         
-        // Combinar notificaciones sincronizadas con recordatorios no sincronizados
-        const allNotifications = [...convertedNotifications, ...unsyncedRemindersAsNotifications];
-        
-        // Eliminar duplicados: si hay múltiples notificaciones para el mismo recordatorio,
-        // mantener solo la más reciente (basado en originalTimestamp)
-        const notificationsByReminderId = new Map<string, Notification>();
-        
-        for (const notification of allNotifications) {
-          // Para recordatorios, usar reminderDocumentId o reminderId como clave única
-          let key = notification.id;
-          if (notification.source === "reminder") {
-            const reminderId = notification.reminderDocumentId || 
-                               (notification.reminderId ? String(notification.reminderId) : null) ||
-                               (notification.notificationId ? String(notification.notificationId) : null);
-            if (reminderId) {
-              key = `reminder-${reminderId}`;
-            }
-          }
-          
-          const existing = notificationsByReminderId.get(key);
-          
-          if (!existing) {
-            // No existe, agregarlo
-            notificationsByReminderId.set(key, notification);
-          } else if (notification.source === "reminder" && existing.source === "reminder") {
-            // Ambos son recordatorios, mantener el más reciente
-            const existingTimestamp = (existing as any).originalTimestamp || existing.timestamp;
-            const newTimestamp = (notification as any).originalTimestamp || notification.timestamp;
-            const existingDate = new Date(existingTimestamp);
-            const newDate = new Date(newTimestamp);
-            
-            if (newDate > existingDate) {
-              // La nueva es más reciente, reemplazar
-              notificationsByReminderId.set(key, notification);
-            }
-          } else {
-            // No son del mismo tipo, mantener ambos (usar id único)
-            if (notification.id !== existing.id) {
-              notificationsByReminderId.set(notification.id, notification);
-            }
-          }
-        }
-        
-        const uniqueNotifications = Array.from(notificationsByReminderId.values());
-        
-        // Ordenar por fecha (no leídas primero, luego por timestamp)
-        uniqueNotifications.sort((a, b) => {
-          // Las no leídas primero
-          if (a.isRead !== b.isRead) {
-            return a.isRead ? 1 : -1;
-          }
-          // Luego por timestamp (más recientes primero)
-          const dateA = (a as any).originalTimestamp || a.timestamp;
-          const dateB = (b as any).originalTimestamp || b.timestamp;
-          return new Date(dateB).getTime() - new Date(dateA).getTime();
-        });
-        
-      setNotificationList(uniqueNotifications);
+        // Guardar datos raw para procesamiento asíncrono
+        setRawNotifications(convertedNotifications);
+        setRawReminders(allReminders);
     } catch (err) {
       console.error("Error obteniendo notificaciones:", err);
       setError(err instanceof Error ? err.message : "Error desconocido");
@@ -504,6 +403,220 @@ export default function NotificationsPage() {
       setIsLoading(false);
     }
   }, []);
+
+  // Deduplicación asíncrona usando useMemo
+  const notificationList = useMemo(() => {
+    if (rawNotifications.length === 0 && rawReminders.length === 0) {
+      return [];
+    }
+
+    // Crear un mapa de recordatorios ya sincronizados en notificaciones
+    const syncedReminderIds = new Set<string>();
+    const syncedRemindersByKey = new Map<string, any>();
+    const syncedRemindersByTitle = new Map<string, any[]>();
+    
+    rawNotifications
+      .filter(n => n.source === "reminder")
+      .forEach(n => {
+        if (n.reminderDocumentId) {
+          syncedReminderIds.add(n.reminderDocumentId);
+        }
+        if (n.reminderId) {
+          syncedReminderIds.add(String(n.reminderId));
+        }
+        
+        // También crear clave por título + vehículo
+        const normalizedTitle = (n.title?.trim() || '').toLowerCase();
+        const vehicleId = n.vehicleDocumentId || 'unknown';
+        const key = `${normalizedTitle}-${vehicleId}`;
+        syncedRemindersByKey.set(key, n);
+        
+        // Agrupar por título para detectar inconsistencias
+        if (!syncedRemindersByTitle.has(normalizedTitle)) {
+          syncedRemindersByTitle.set(normalizedTitle, []);
+        }
+        syncedRemindersByTitle.get(normalizedTitle)!.push(n);
+      });
+
+    // Convertir recordatorios no sincronizados a notificaciones
+    const unsyncedRemindersAsNotifications = rawReminders
+      .filter(reminder => {
+        // Verificar por documentId o id
+        const hasDocumentId = reminder.documentId && syncedReminderIds.has(reminder.documentId);
+        const hasId = reminder.id && syncedReminderIds.has(String(reminder.id));
+        
+        // Verificar por título + vehículo
+        const normalizedTitle = (reminder.title?.trim() || '').toLowerCase();
+        let vehicleId = reminder.vehicle?.documentId || reminder.vehicle?.id;
+        
+        // Si este recordatorio no tiene vehículo, pero hay otro con el mismo título que sí lo tiene,
+        // usar el vehículo del otro para la comparación
+        if (!vehicleId) {
+          const sameTitleNotifications = syncedRemindersByTitle.get(normalizedTitle) || [];
+          const notificationWithVehicle = sameTitleNotifications.find((n: Notification) => 
+            n.vehicleDocumentId
+          );
+          if (notificationWithVehicle) {
+            vehicleId = notificationWithVehicle.vehicleDocumentId;
+          }
+        }
+        
+        vehicleId = vehicleId || 'unknown';
+        const key = `${normalizedTitle}-${vehicleId}`;
+        const hasSameKey = syncedRemindersByKey.has(key);
+        
+        // Si tiene el mismo documentId, id, o título+vehículo, ya está sincronizado
+        if (hasDocumentId || hasId || hasSameKey) {
+          return false;
+        }
+        
+        return true;
+      })
+      .map((reminder) => {
+        const vehicleName = reminder.vehicle?.name || "Vehículo";
+        const description = reminder.description 
+          ? `${reminder.description} - ${vehicleName}`
+          : vehicleName;
+        
+        return {
+          id: `reminder-${reminder.documentId || reminder.id}`,
+          title: reminder.title,
+          description,
+          timestamp: formatRelativeTime(reminder.nextTrigger),
+          isRead: false,
+          type: "reminder" as const,
+          icon: Calendar,
+          iconBgColor: reminder.isActive && !reminder.isCompleted ? "bg-primary/10" : "bg-muted",
+          iconColor: reminder.isActive && !reminder.isCompleted ? "text-primary" : "text-muted-foreground",
+          reminderId: reminder.id,
+          reminderDocumentId: reminder.documentId,
+          source: "reminder" as const,
+          originalTimestamp: reminder.nextTrigger,
+          isActive: reminder.isActive,
+          isCompleted: reminder.isCompleted,
+          module: (reminder as any).module as ReminderModule || "fleet",
+          vehicleName: vehicleName,
+          vehicleDocumentId: reminder.vehicle?.documentId,
+        };
+      });
+    
+    // Combinar notificaciones sincronizadas con recordatorios no sincronizados
+    const allNotifications = [...rawNotifications, ...unsyncedRemindersAsNotifications];
+    
+    // Eliminar duplicados usando la misma lógica que los endpoints
+    const notificationsByDocumentId = new Map<string, Notification>();
+    const notificationsByKey = new Map<string, Notification>();
+    const notificationsByTitleOnly = new Map<string, Notification[]>();
+    
+    for (const notification of allNotifications) {
+      // Primera verificación: duplicados exactos por documentId
+      const documentId = notification.reminderDocumentId || notification.notificationDocumentId;
+      if (documentId) {
+        if (notificationsByDocumentId.has(documentId)) {
+          continue;
+        }
+        notificationsByDocumentId.set(documentId, notification);
+      }
+      
+      // Agregar a mapa por título para verificación adicional (solo para recordatorios)
+      if (notification.source === "reminder") {
+        const normalizedTitle = (notification.title?.trim() || '').toLowerCase();
+        if (!notificationsByTitleOnly.has(normalizedTitle)) {
+          notificationsByTitleOnly.set(normalizedTitle, []);
+        }
+        notificationsByTitleOnly.get(normalizedTitle)!.push(notification);
+      }
+      
+      // Segunda verificación: para recordatorios, usar título + vehículo como clave
+      if (notification.source === "reminder") {
+        const normalizedTitle = (notification.title?.trim() || '').toLowerCase();
+        
+        // Buscar si hay otros recordatorios con el mismo título para detectar inconsistencias
+        const sameTitleNotifications = notificationsByTitleOnly.get(normalizedTitle) || [];
+        let vehicleId = notification.vehicleDocumentId;
+        
+        // Si este recordatorio no tiene vehículo, pero hay otro con el mismo título que sí lo tiene,
+        // usar el vehículo del otro
+        if (!vehicleId && sameTitleNotifications.length > 0) {
+          const notificationWithVehicle = sameTitleNotifications.find((n: Notification) => 
+            n.vehicleDocumentId
+          );
+          if (notificationWithVehicle) {
+            vehicleId = notificationWithVehicle.vehicleDocumentId;
+          }
+        }
+        
+        // Si aún no hay vehículo, usar vehicleName normalizado o 'unknown'
+        if (!vehicleId) {
+          vehicleId = notification.vehicleName ? notification.vehicleName.toLowerCase().trim() : 'unknown';
+        }
+        const key = `${normalizedTitle}-${vehicleId}`;
+        
+        const existing = notificationsByKey.get(key);
+        
+        if (!existing) {
+          notificationsByKey.set(key, notification);
+        } else {
+          // Ya existe, mantener el más reciente
+          const existingTimestamp = (existing as any).originalTimestamp || existing.timestamp;
+          const newTimestamp = (notification as any).originalTimestamp || notification.timestamp;
+          const existingDate = existingTimestamp ? new Date(existingTimestamp).getTime() : 0;
+          const newDate = newTimestamp ? new Date(newTimestamp).getTime() : 0;
+          
+          const existingId = (existing as any).reminderId || (existing as any).notificationId || 0;
+          const newId = (notification as any).reminderId || (notification as any).notificationId || 0;
+          
+          // Priorizar el que tiene más información (vehículo)
+          const existingHasVehicle = !!(existing.vehicleDocumentId || (existing as any).vehicleName !== 'Vehículo');
+          const newHasVehicle = !!(notification.vehicleDocumentId || notification.vehicleName !== 'Vehículo');
+          
+          if (newHasVehicle && !existingHasVehicle) {
+            notificationsByKey.set(key, notification);
+          } else if (!newHasVehicle && existingHasVehicle) {
+            // Mantener el existente
+          } else if (newDate > existingDate || (newDate === existingDate && newId > existingId)) {
+            notificationsByKey.set(key, notification);
+          }
+        }
+      } else {
+        // Para notificaciones manuales, usar id único
+        notificationsByKey.set(`manual-${notification.id}`, notification);
+      }
+    }
+    
+    // Obtener notificaciones únicas
+    const uniqueNotifications: Notification[] = [];
+    const addedDocumentIds = new Set<string>();
+    
+    // Agregar todas las de notificationsByKey
+    for (const notification of notificationsByKey.values()) {
+      const docId = notification.reminderDocumentId || notification.notificationDocumentId;
+      if (docId) {
+        addedDocumentIds.add(docId);
+      }
+      uniqueNotifications.push(notification);
+    }
+    
+    // Agregar las que solo están en notificationsByDocumentId
+    for (const notification of notificationsByDocumentId.values()) {
+      const docId = notification.reminderDocumentId || notification.notificationDocumentId;
+      if (docId && !addedDocumentIds.has(docId)) {
+        uniqueNotifications.push(notification);
+      }
+    }
+    
+    // Ordenar por fecha (no leídas primero, luego por timestamp)
+    uniqueNotifications.sort((a, b) => {
+      if (a.isRead !== b.isRead) {
+        return a.isRead ? 1 : -1;
+      }
+      const dateA = (a as any).originalTimestamp || a.timestamp;
+      const dateB = (b as any).originalTimestamp || b.timestamp;
+      return new Date(dateB).getTime() - new Date(dateA).getTime();
+    });
+    
+    return uniqueNotifications;
+  }, [rawNotifications, rawReminders]);
 
   // Obtener notificaciones del usuario (ya sincronizadas desde la BD)
   useEffect(() => {
@@ -594,8 +707,8 @@ export default function NotificationsPage() {
         })
       );
       
-      // Actualizar el estado local
-      setNotificationList((prev) =>
+      // Actualizar el estado local (actualizar rawNotifications)
+      setRawNotifications((prev) =>
         prev.map((notification) => ({ ...notification, isRead: true }))
       );
       
@@ -622,33 +735,55 @@ export default function NotificationsPage() {
     }
     
     const notificationId = notification.id;
-    // Prevenir múltiples clics
-    if (togglingCompleted.has(notificationId)) return;
+    
+    // Prevenir múltiples clics de forma síncrona usando ref
+    if (togglingCompletedRef.current.has(notificationId)) {
+      return;
+    }
+    
+    // Agregar inmediatamente al ref (síncrono)
+    togglingCompletedRef.current.add(notificationId);
+    
+    // También actualizar el estado para el disabled del botón
+    setTogglingCompleted((prev) => new Set(prev).add(notificationId));
     
     const newCompletedState = !notification.isCompleted;
     
-    // Agregar a la lista de procesando
-    setTogglingCompleted((prev) => new Set(prev).add(notificationId));
-    
     // Actualización optimista del estado ANTES de la petición
     const previousState = notification.isCompleted;
-    setNotificationList((prev) =>
+    
+    // Actualizar rawNotifications si la notificación viene de ahí
+    setRawNotifications((prev) =>
       prev.map((n) => {
-        if (n.id === notification.id) {
-          // Si es un recordatorio, actualizar también iconos y colores
-          if (n.source === "reminder") {
-            const isActive = n.isActive !== false;
-            const isCompleted = newCompletedState;
-            return {
-              ...n,
-              isCompleted: newCompletedState,
-              iconBgColor: isActive && !isCompleted ? "bg-primary/10" : "bg-muted",
-              iconColor: isActive && !isCompleted ? "text-primary" : "text-muted-foreground",
-            };
-          }
-          return { ...n, isCompleted: newCompletedState };
+        const matchesId = n.id === notification.id || 
+                         (n.reminderDocumentId && n.reminderDocumentId === notification.reminderDocumentId) ||
+                         (n.reminderId && String(n.reminderId) === String(notification.reminderId));
+        if (matchesId && n.source === "reminder") {
+          const isActive = n.isActive !== false;
+          const isCompleted = newCompletedState;
+          return {
+            ...n,
+            isCompleted: newCompletedState,
+            iconBgColor: isActive && !isCompleted ? "bg-primary/10" : "bg-muted",
+            iconColor: isActive && !isCompleted ? "text-primary" : "text-muted-foreground",
+          };
         }
         return n;
+      })
+    );
+    
+    // Actualizar rawReminders si el recordatorio viene de ahí
+    setRawReminders((prev) =>
+      prev.map((r) => {
+        const matchesId = (r.documentId && r.documentId === notification.reminderDocumentId) ||
+                         (r.id && String(r.id) === String(notification.reminderId));
+        if (matchesId) {
+          return {
+            ...r,
+            isCompleted: newCompletedState,
+          };
+        }
+        return r;
       })
     );
     
@@ -711,7 +846,7 @@ export default function NotificationsPage() {
       setTimeout(() => {
         setLocallyUpdatedReminders((prev) => {
           const newSet = new Set(prev);
-          newSet.delete(reminderIdStr);
+          newSet.delete(reminderId);
           return newSet;
         });
       }, 2000);
@@ -720,28 +855,44 @@ export default function NotificationsPage() {
     } catch (error) {
       console.error("Error actualizando recordatorio:", error);
       // Revertir el estado optimista en caso de error
-      setNotificationList((prev) =>
+      setRawNotifications((prev) =>
         prev.map((n) => {
-          if (n.id === notification.id) {
-            if (n.source === "reminder") {
-              const isActive = n.isActive !== false;
-              const isCompleted = previousState;
-              return {
-                ...n,
-                isCompleted: previousState,
-                iconBgColor: isActive && !isCompleted ? "bg-primary/10" : "bg-muted",
-                iconColor: isActive && !isCompleted ? "text-primary" : "text-muted-foreground",
-              };
-            }
-            return { ...n, isCompleted: previousState };
+          const matchesId = n.id === notification.id || 
+                           (n.reminderDocumentId && n.reminderDocumentId === notification.reminderDocumentId) ||
+                           (n.reminderId && String(n.reminderId) === String(notification.reminderId));
+          if (matchesId && n.source === "reminder") {
+            const isActive = n.isActive !== false;
+            const isCompleted = previousState;
+            return {
+              ...n,
+              isCompleted: previousState,
+              iconBgColor: isActive && !isCompleted ? "bg-primary/10" : "bg-muted",
+              iconColor: isActive && !isCompleted ? "text-primary" : "text-muted-foreground",
+            };
           }
           return n;
         })
       );
+      
+      setRawReminders((prev) =>
+        prev.map((r) => {
+          const matchesId = (r.documentId && r.documentId === notification.reminderDocumentId) ||
+                           (r.id && String(r.id) === String(notification.reminderId));
+          if (matchesId) {
+            return {
+              ...r,
+              isCompleted: previousState,
+            };
+          }
+          return r;
+        })
+      );
+      
       const errorMessage = error instanceof Error ? error.message : "Error al actualizar el recordatorio";
       toast.error(errorMessage);
     } finally {
-      // Remover de la lista de procesando
+      // Remover de la lista de procesando (tanto del ref como del estado)
+      togglingCompletedRef.current.delete(notificationId);
       setTogglingCompleted((prev) => {
         const newSet = new Set(prev);
         newSet.delete(notificationId);
@@ -764,6 +915,16 @@ export default function NotificationsPage() {
       toast.error("Error: No se pudo identificar el recordatorio");
       return;
     }
+    
+    const notificationId = notification.id;
+    
+    // Prevenir múltiples clics de forma síncrona usando ref
+    if (togglingActiveRef.current.has(notificationId)) {
+      return;
+    }
+    
+    // Agregar inmediatamente al ref (síncrono)
+    togglingActiveRef.current.add(notificationId);
     
     const newActiveState = !notification.isActive;
     
@@ -796,12 +957,27 @@ export default function NotificationsPage() {
       }
 
       // Actualizar estado local
-      setNotificationList((prev) =>
-        prev.map((n) =>
-          n.id === notification.id
-            ? { ...n, isActive: newActiveState }
-            : n
-        )
+      setRawNotifications((prev) =>
+        prev.map((n) => {
+          const matchesId = n.id === notification.id || 
+                           (n.reminderDocumentId && n.reminderDocumentId === notification.reminderDocumentId) ||
+                           (n.reminderId && String(n.reminderId) === String(notification.reminderId));
+          if (matchesId && n.source === "reminder") {
+            return { ...n, isActive: newActiveState };
+          }
+          return n;
+        })
+      );
+      
+      setRawReminders((prev) =>
+        prev.map((r) => {
+          const matchesId = (r.documentId && r.documentId === notification.reminderDocumentId) ||
+                           (r.id && String(r.id) === String(notification.reminderId));
+          if (matchesId) {
+            return { ...r, isActive: newActiveState };
+          }
+          return r;
+        })
       );
 
       // Emitir evento para sincronización
@@ -811,6 +987,9 @@ export default function NotificationsPage() {
       console.error("Error actualizando recordatorio:", error);
       const errorMessage = error instanceof Error ? error.message : "Error al actualizar el recordatorio";
       toast.error(errorMessage);
+    } finally {
+      // Remover de la lista de procesando
+      togglingActiveRef.current.delete(notificationId);
     }
   };
 
@@ -850,15 +1029,37 @@ export default function NotificationsPage() {
     
     const notificationId = notification.id;
     
-    // Prevenir múltiples clics
-    if (deletingReminders.has(notificationId)) return;
+    // Prevenir múltiples clics de forma síncrona usando ref
+    if (deletingRemindersRef.current.has(notificationId)) {
+      return;
+    }
     
-    // Agregar a la lista de procesando
+    // Agregar inmediatamente al ref (síncrono)
+    deletingRemindersRef.current.add(notificationId);
+    
+    // También actualizar el estado para el disabled del botón
     setDeletingReminders((prev) => new Set(prev).add(notificationId));
     
     // Actualización optimista: remover de la lista inmediatamente
-    const previousNotifications = [...notificationList];
-    setNotificationList((prev) => prev.filter((n) => n.id !== notificationId));
+    const previousRawNotifications = [...rawNotifications];
+    const previousRawReminders = [...rawReminders];
+    
+    setRawNotifications((prev) => 
+      prev.filter((n) => {
+        const matchesId = n.id === notificationId || 
+                         (n.reminderDocumentId && n.reminderDocumentId === reminderId) ||
+                         (n.reminderId && String(n.reminderId) === String(notification.reminderId));
+        return !matchesId;
+      })
+    );
+    
+    setRawReminders((prev) => 
+      prev.filter((r) => {
+        const matchesId = (r.documentId && r.documentId === reminderId) ||
+                         (r.id && String(r.id) === reminderId);
+        return !matchesId;
+      })
+    );
     
     try {
       // Obtener información del recordatorio antes de eliminarlo para verificar si es de mantenimiento
@@ -947,12 +1148,14 @@ export default function NotificationsPage() {
     } catch (error) {
       console.error("Error eliminando recordatorio:", error);
       // Revertir el estado optimista en caso de error
-      setNotificationList(previousNotifications);
+      setRawNotifications(previousRawNotifications);
+      setRawReminders(previousRawReminders);
       toast.error("Error al eliminar el recordatorio", {
         description: error instanceof Error ? error.message : "Error desconocido",
       });
     } finally {
-      // Remover de la lista de procesando
+      // Remover de la lista de procesando (tanto del ref como del estado)
+      deletingRemindersRef.current.delete(notificationId);
       setDeletingReminders((prev) => {
         const newSet = new Set(prev);
         newSet.delete(notificationId);
@@ -967,42 +1170,69 @@ export default function NotificationsPage() {
       return;
     }
 
+    // Validar que si es tipo "specific", tenga un usuario seleccionado
+    if (formRecipientType === "specific" && !formRecipientId) {
+      toast.error("Por favor selecciona un usuario");
+      return;
+    }
+
     setIsCreating(true);
+    
+    const requestData = {
+      title: formTitle.trim(),
+      description: formDescription.trim() || null,
+      type: formType,
+      recipientType: formRecipientType,
+      recipientId: formRecipientType === "specific" ? formRecipientId : null,
+    };
+
+    console.log('📤 [notifications] Enviando petición para crear notificación:', requestData);
+
     try {
       const response = await fetch("/api/notifications", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          title: formTitle.trim(),
-          description: formDescription.trim() || null,
-          type: formType,
-          recipientType: formRecipientType,
-          recipientId: formRecipientType === "specific" ? formRecipientId : null,
-        }),
+        body: JSON.stringify(requestData),
+      });
+
+      console.log('📥 [notifications] Respuesta recibida:', {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Error al crear notificación");
+        let errorMessage = "Error al crear notificación";
+        try {
+          const error = await response.json();
+          errorMessage = error.error || error.message || errorMessage;
+          console.error('❌ [notifications] Error del servidor:', error);
+        } catch (parseError) {
+          const errorText = await response.text();
+          console.error('❌ [notifications] Error al parsear respuesta:', errorText);
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
+      console.log('✅ [notifications] Notificación creada exitosamente:', result);
       toast.success(result.message || "Notificación creada exitosamente");
       
       // Limpiar formulario
       setFormTitle("");
       setFormDescription("");
-      setFormType("reminder");
+      setFormType("lead"); // Cambiar el valor por defecto a "lead" en lugar de "reminder"
       setFormRecipientType("specific");
       setFormRecipientId("");
       setIsDialogOpen(false);
 
       // Recargar notificaciones
-      window.location.reload();
+      await fetchNotifications();
     } catch (err) {
-      console.error("Error creando notificación:", err);
+      console.error("❌ [notifications] Error creando notificación:", err);
       toast.error(err instanceof Error ? err.message : "Error al crear notificación");
     } finally {
       setIsCreating(false);
@@ -1035,8 +1265,8 @@ export default function NotificationsPage() {
         // Mostrar SOLO activos que NO están completados
         return notificationList.filter((n) => {
           if (n.source === "reminder") {
-            // Recordatorios: deben estar activos Y no completados
-            return n.isActive !== false && !n.isCompleted;
+            // Recordatorios: deben estar activos Y no completados (verificar explícitamente)
+            return n.isActive !== false && n.isCompleted !== true && n.isCompleted !== 1;
           }
           // Notificaciones manuales: deben estar no leídas
           return !n.isRead;
@@ -1083,82 +1313,111 @@ export default function NotificationsPage() {
                 Crear Notificación
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>Crear Nueva Notificación</DialogTitle>
+            <DialogContent className="max-w-md h-[90vh] p-0 !flex !flex-col overflow-hidden">
+              <DialogHeader className={`${spacing.card.header} border-b shrink-0`}>
+                <DialogTitle className={typography.h2}>Crear Nueva Notificación</DialogTitle>
               </DialogHeader>
-              <div className="flex flex-col gap-4 py-4">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="title">Título *</Label>
-                  <Input
-                    id="title"
-                    value={formTitle}
-                    onChange={(e) => setFormTitle(e.target.value)}
-                    placeholder="Ej: Reunión importante"
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="description">Descripción</Label>
-                  <Textarea
-                    id="description"
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    placeholder="Descripción de la notificación..."
-                    rows={3}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select value={formType} onValueChange={(value: any) => setFormType(value)}>
-                    <SelectTrigger id="type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="reminder">Recordatorio</SelectItem>
-                      <SelectItem value="lead">Lead</SelectItem>
-                      <SelectItem value="sale">Venta</SelectItem>
-                      <SelectItem value="payment">Pago</SelectItem>
-                      <SelectItem value="inventory">Inventario</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="recipientType">Destinatario</Label>
-                  <Select value={formRecipientType} onValueChange={(value: any) => setFormRecipientType(value)}>
-                    <SelectTrigger id="recipientType">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="specific">Usuario específico</SelectItem>
-                      <SelectItem value="all_sellers">Todos los vendedores</SelectItem>
-                      <SelectItem value="all_admins">Todos los administradores</SelectItem>
-                      <SelectItem value="all_drivers">Todos los conductores</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {formRecipientType === "specific" && (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="recipientId">Usuario</Label>
-                    <Select value={formRecipientId} onValueChange={setFormRecipientId}>
-                      <SelectTrigger id="recipientId">
-                        <SelectValue placeholder="Selecciona un usuario" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.map((user) => (
-                          <SelectItem key={user.documentId} value={user.documentId}>
-                            {user.displayName} ({user.role === "admin" ? "Admin" : user.role === "seller" ? "Vendedor" : "Conductor"})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              
+              <ScrollAreaPrimitive.Root className="relative flex-1 min-h-0 overflow-hidden">
+                <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+                  <div className={`flex flex-col ${spacing.gap.medium} ${spacing.card.content} pt-6`}>
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="title" className={typography.label}>
+                        Título <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="title"
+                        value={formTitle}
+                        onChange={(e) => setFormTitle(e.target.value)}
+                        placeholder="Ej: Reunión importante"
+                        className="rounded-lg"
+                      />
+                    </div>
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="description" className={typography.label}>
+                        Descripción
+                      </Label>
+                      <Textarea
+                        id="description"
+                        value={formDescription}
+                        onChange={(e) => setFormDescription(e.target.value)}
+                        placeholder="Descripción de la notificación..."
+                        rows={3}
+                        className="rounded-lg resize-none"
+                      />
+                    </div>
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="type" className={typography.label}>
+                        Tipo
+                      </Label>
+                      <Select value={formType} onValueChange={(value: any) => setFormType(value)}>
+                        <SelectTrigger id="type" className="rounded-lg">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="lead">Lead</SelectItem>
+                          <SelectItem value="sale">Venta</SelectItem>
+                          <SelectItem value="payment">Pago</SelectItem>
+                          <SelectItem value="inventory">Inventario</SelectItem>
+                          <SelectItem value="reminder">Aviso/Recordatorio</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {formType === "reminder" && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Nota: Esta es una notificación manual. Los recordatorios completos con fecha programada se crean desde la sección de Flota.
+                        </p>
+                      )}
+                    </div>
+                    <div className={`flex flex-col ${spacing.gap.small}`}>
+                      <Label htmlFor="recipientType" className={typography.label}>
+                        Destinatario
+                      </Label>
+                      <Select value={formRecipientType} onValueChange={(value: any) => setFormRecipientType(value)}>
+                        <SelectTrigger id="recipientType" className="rounded-lg">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="specific">Usuario específico</SelectItem>
+                          <SelectItem value="all_sellers">Todos los vendedores</SelectItem>
+                          <SelectItem value="all_admins">Todos los administradores</SelectItem>
+                          <SelectItem value="all_drivers">Todos los conductores</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formRecipientType === "specific" && (
+                      <div className={`flex flex-col ${spacing.gap.small}`}>
+                        <Label htmlFor="recipientId" className={typography.label}>
+                          Usuario
+                        </Label>
+                        <Select value={formRecipientId} onValueChange={setFormRecipientId}>
+                          <SelectTrigger id="recipientId" className="rounded-lg">
+                            <SelectValue placeholder="Selecciona un usuario" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {users.map((user) => (
+                              <SelectItem key={user.documentId} value={user.documentId}>
+                                {user.displayName} ({user.role === "admin" ? "Admin" : user.role === "seller" ? "Vendedor" : "Conductor"})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                </ScrollAreaPrimitive.Viewport>
+                <ScrollAreaPrimitive.Scrollbar
+                  className="flex touch-none select-none transition-colors h-2 bg-transparent p-[2px] group relative"
+                  orientation="vertical"
+                >
+                  <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border" />
+                </ScrollAreaPrimitive.Scrollbar>
+              </ScrollAreaPrimitive.Root>
+              
+              <DialogFooter className={`${spacing.card.header} border-t shrink-0`}>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="rounded-lg">
                   Cancelar
                 </Button>
-                <Button onClick={handleCreateNotification} disabled={isCreating}>
+                <Button onClick={handleCreateNotification} disabled={isCreating} className="rounded-lg">
                   {isCreating ? "Creando..." : "Crear"}
                 </Button>
               </DialogFooter>
@@ -1259,7 +1518,13 @@ export default function NotificationsPage() {
             const isReminder = notification.source === "reminder";
             const moduleColors = notification.module ? MODULE_COLORS[notification.module] : null;
             
-            return (
+            const handleCardClick = () => {
+              if (isReminder && notification.vehicleDocumentId) {
+                router.push(`/fleet/details/${notification.vehicleDocumentId}`);
+              }
+            };
+
+            const cardContent = (
               <Card
                 key={notification.id}
                 className={`${commonClasses.card} transition-all hover:bg-muted/50 w-full ${
@@ -1267,11 +1532,7 @@ export default function NotificationsPage() {
                 } ${!notification.isActive && isReminder ? "border-dashed" : ""} ${
                   isReminder && notification.vehicleDocumentId ? "cursor-pointer" : ""
                 }`}
-                onClick={() => {
-                  if (isReminder && notification.vehicleDocumentId) {
-                    router.push(`/fleet/details/${notification.vehicleDocumentId}`);
-                  }
-                }}
+                onClick={handleCardClick}
               >
                 <CardContent className={`flex items-center ${spacing.gap.medium} ${spacing.card.padding}`}>
                   {/* Indicador de completado (solo para recordatorios) */}
@@ -1378,15 +1639,14 @@ export default function NotificationsPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          asChild
                           title="Ver en vehículo"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            router.push(`/fleet/details/${notification.vehicleDocumentId}`);
+                          }}
                         >
-                          <Link 
-                            href={`/fleet/details/${notification.vehicleDocumentId}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                          </Link>
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       )}
                       {!notification.isCompleted && (
@@ -1426,6 +1686,8 @@ export default function NotificationsPage() {
                 </CardContent>
               </Card>
             );
+
+            return cardContent;
           })
         )}
       </div>
@@ -1496,3 +1758,4 @@ export default function NotificationsPage() {
     </AdminLayout>
   );
 }
+

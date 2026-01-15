@@ -410,6 +410,7 @@ export function CreateVehicleDialog({
                                     setMaintenanceScheduledDate(`${year}-${month}-${day}`);
                                   }
                                 }}
+                                disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
                                 initialFocus
                                 locale={dayPickerEs}
                                 captionLayout="dropdown"
@@ -455,7 +456,24 @@ export function CreateVehicleDialog({
                                     const hour12 = parseInt(value, 10);
                                     const hour24 =
                                       hour12 === 12 ? (isPM ? 12 : 0) : isPM ? hour12 + 12 : hour12;
-                                    setMaintenanceScheduledTime(`${String(hour24).padStart(2, "0")}:${currentMinutes}`);
+                                    const newTime = `${String(hour24).padStart(2, "0")}:${currentMinutes}`;
+                                    
+                                    // Validar si la fecha es hoy y la hora es menor a 30 minutos después de ahora
+                                    if (maintenanceScheduledDate === new Date().toISOString().split('T')[0]) {
+                                      const now = new Date();
+                                      const minTime = new Date(now.getTime() + 30 * 60000); // 30 minutos después
+                                      const selectedDateTime = new Date(`${maintenanceScheduledDate}T${newTime}`);
+                                      
+                                      if (selectedDateTime < minTime) {
+                                        // Ajustar a la hora mínima permitida
+                                        const minHours = String(minTime.getHours()).padStart(2, '0');
+                                        const minMinutes = String(minTime.getMinutes()).padStart(2, '0');
+                                        setMaintenanceScheduledTime(`${minHours}:${minMinutes}`);
+                                        return;
+                                      }
+                                    }
+                                    
+                                    setMaintenanceScheduledTime(newTime);
                                   }
                                   if (!maintenanceScheduledTime) {
                                     setMaintenanceIsAllDay(false);
@@ -479,7 +497,24 @@ export function CreateVehicleDialog({
                                     ? maintenanceScheduledTime.split(":")[0] || "00"
                                     : "00";
                                   const minutes = value === "" ? "00" : String(parseInt(value, 10)).padStart(2, "0");
-                                  setMaintenanceScheduledTime(`${currentHours}:${minutes}`);
+                                  const newTime = `${currentHours}:${minutes}`;
+                                  
+                                  // Validar si la fecha es hoy y la hora es menor a 30 minutos después de ahora
+                                  if (maintenanceScheduledDate === new Date().toISOString().split('T')[0]) {
+                                    const now = new Date();
+                                    const minTime = new Date(now.getTime() + 30 * 60000); // 30 minutos después
+                                    const selectedDateTime = new Date(`${maintenanceScheduledDate}T${newTime}`);
+                                    
+                                    if (selectedDateTime < minTime) {
+                                      // Ajustar a la hora mínima permitida
+                                      const minHours = String(minTime.getHours()).padStart(2, '0');
+                                      const minMinutes = String(minTime.getMinutes()).padStart(2, '0');
+                                      setMaintenanceScheduledTime(`${minHours}:${minMinutes}`);
+                                      return;
+                                    }
+                                  }
+                                  
+                                  setMaintenanceScheduledTime(newTime);
                                   if (!maintenanceScheduledTime) {
                                     setMaintenanceIsAllDay(false);
                                   }
@@ -502,7 +537,24 @@ export function CreateVehicleDialog({
                                   newHour24 = hour24 - 12;
                                 }
 
-                                setMaintenanceScheduledTime(`${String(newHour24).padStart(2, "0")}:${minutes}`);
+                                const newTime = `${String(newHour24).padStart(2, "0")}:${minutes}`;
+                                
+                                // Validar si la fecha es hoy y la hora es menor a 30 minutos después de ahora
+                                if (maintenanceScheduledDate === new Date().toISOString().split('T')[0]) {
+                                  const now = new Date();
+                                  const minTime = new Date(now.getTime() + 30 * 60000); // 30 minutos después
+                                  const selectedDateTime = new Date(`${maintenanceScheduledDate}T${newTime}`);
+                                  
+                                  if (selectedDateTime < minTime) {
+                                    // Ajustar a la hora mínima permitida
+                                    const minHours = String(minTime.getHours()).padStart(2, '0');
+                                    const minMinutes = String(minTime.getMinutes()).padStart(2, '0');
+                                    setMaintenanceScheduledTime(`${minHours}:${minMinutes}`);
+                                    return;
+                                  }
+                                }
+                                
+                                setMaintenanceScheduledTime(newTime);
                                 if (!maintenanceScheduledTime) {
                                   setMaintenanceIsAllDay(false);
                                 }

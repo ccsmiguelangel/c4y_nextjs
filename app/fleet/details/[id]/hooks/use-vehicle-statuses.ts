@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from "react";
 import type { ChangeEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { VehicleStatus } from "@/validations/types";
 
 interface UseVehicleStatusesReturn {

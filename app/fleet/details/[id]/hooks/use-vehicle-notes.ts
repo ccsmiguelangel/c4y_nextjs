@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { FleetNote } from "@/components/ui/notes-timeline";
 
 interface UseVehicleNotesReturn {

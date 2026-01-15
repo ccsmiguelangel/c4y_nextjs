@@ -456,5 +456,88 @@
     backdrop-filter: none !important;
     opacity: 1 !important;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    touch-action: pan-x pan-y !important;
+    cursor: grab !important;
+    user-select: none !important;
+  }
+
+  [data-sonner-toast]:active {
+    cursor: grabbing !important;
+  }
+
+  /* Estilo del botón de acción "Marcar como leído" - igual al botón de referencia */
+  [data-sonner-toast] button[data-action] {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    white-space: nowrap !important;
+    border-radius: 0.375rem !important;
+    font-size: 0 !important;
+    font-weight: 500 !important;
+    transition: all 0.2s !important;
+    height: 1.75rem !important;
+    width: 1.75rem !important;
+    min-width: 1.75rem !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    color: var(--muted-foreground) !important;
+    cursor: pointer !important;
+    position: relative !important;
+  }
+
+  /* Ocultar el texto del label */
+  [data-sonner-toast] button[data-action] > span {
+    display: none !important;
+  }
+
+  /* Agregar ícono Circle mediante SVG inline (estado inicial - light mode) */
+  [data-sonner-toast] button[data-action]:not([data-read])::before {
+    content: "" !important;
+    display: block !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3C/svg%3E") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+  }
+
+  /* Agregar ícono Circle blanco en dark mode */
+  .dark [data-sonner-toast] button[data-action]:not([data-read])::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3C/svg%3E") !important;
+  }
+
+  /* Agregar ícono CheckCircle2 cuando está marcado como leído */
+  [data-sonner-toast] button[data-action][data-read]::before {
+    content: "" !important;
+    display: block !important;
+    width: 1rem !important;
+    height: 1rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2316a34a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E") !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+  }
+
+  /* Cambiar color cuando está marcado como leído */
+  [data-sonner-toast] button[data-action][data-read] {
+    color: rgb(22, 163, 74) !important; /* green-600 */
+  }
+
+  [data-sonner-toast] button[data-action]:hover {
+    background: var(--accent) !important;
+    color: var(--accent-foreground) !important;
+  }
+
+  [data-sonner-toast] button[data-action]:focus-visible {
+    outline: none !important;
+    box-shadow: 0 0 0 2px var(--ring) !important;
+  }
+
+  [data-sonner-toast] button[data-action]:disabled {
+    pointer-events: none !important;
+    opacity: 0.5 !important;
   }
 }

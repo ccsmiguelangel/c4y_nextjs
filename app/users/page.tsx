@@ -13,7 +13,7 @@ import { AdminLayout } from "@/components/admin/admin-layout";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { strapiImages } from "@/lib/strapi-images";
 import { Skeleton } from "@/components_shadcn/ui/skeleton";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 interface UserProfile {
   id: number;

@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import type { FleetVehicleCard, FleetVehicleCondition } from "@/validations/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   FleetHeaderActions,
   FleetViewMode,

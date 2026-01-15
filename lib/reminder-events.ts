@@ -121,9 +121,7 @@ export function subscribeToReminderEvents(
   }
   if (handlers.onRefresh) {
     window.addEventListener(REMINDER_EVENTS.REFRESH, handlers.onRefresh);
-  }
-
-  // Retorna función de limpieza
+  }  // Retorna función de limpieza
   return () => {
     if (handlers.onCreated) {
       window.removeEventListener(REMINDER_EVENTS.CREATED, createHandler(handlers.onCreated));
@@ -145,4 +143,3 @@ export function subscribeToReminderEvents(
     }
   };
 }
-

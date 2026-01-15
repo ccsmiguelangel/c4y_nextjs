@@ -92,7 +92,13 @@ export function SignInForm({ data }: SignInFormProps) {
                         placeholder={email_placeholder} 
                         type="email" 
                         className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                        {...field} 
+                        {...field}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !form.formState.isSubmitting && !formState.success) {
+                            e.preventDefault();
+                            form.handleSubmit(onSubmit)();
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormError error={formState.zodErrors?.email} />
@@ -110,7 +116,13 @@ export function SignInForm({ data }: SignInFormProps) {
                         placeholder={password_placeholder} 
                         type="password" 
                         className="h-14 px-5 text-base rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground"
-                        {...field} 
+                        {...field}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !form.formState.isSubmitting && !formState.success) {
+                            e.preventDefault();
+                            form.handleSubmit(onSubmit)();
+                          }
+                        }}
                       />
                     </FormControl>
                     <FormError error={formState.zodErrors?.password} />

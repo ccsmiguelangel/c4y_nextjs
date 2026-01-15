@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components_shadcn/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { FleetDetailsDocumentsCard } from "@/app/fleet/components/fleet-details-documents";

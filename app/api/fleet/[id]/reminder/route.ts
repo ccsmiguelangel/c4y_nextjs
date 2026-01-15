@@ -252,10 +252,19 @@ export async function GET(_: Request, context: RouteContext) {
     let reminders = (reminderData.data || []).filter((reminder: any) => {
       // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales
       // Las notificaciones individuales tienen parentReminderId en tags Y recipient
-      // Los recordatorios principales NO tienen parentReminderId en tags
+      // Los recordatorios principales NO tienen parentReminderId en tags NI recipient
       if (reminder.type === 'reminder') {
-        // Si tiene recipient, es una notificación individual y debe ser excluida
+        // Si tiene recipient (incluso si es un objeto populado), es una notificación individual
         if (reminder.recipient !== undefined && reminder.recipient !== null) {
+          // Log en desarrollo para depuración
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔍 [fleet/${id}/reminder] Excluyendo notificación individual (tiene recipient):`, {
+              id: reminder.id,
+              documentId: reminder.documentId,
+              title: reminder.title,
+              recipient: reminder.recipient,
+            });
+          }
           return false;
         }
         
@@ -266,6 +275,15 @@ export async function GET(_: Request, context: RouteContext) {
           
           // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
           if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+            // Log en desarrollo para depuración
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`🔍 [fleet/${id}/reminder] Excluyendo notificación individual (tiene parentReminderId):`, {
+                id: reminder.id,
+                documentId: reminder.documentId,
+                title: reminder.title,
+                parentReminderId: tags.parentReminderId,
+              });
+            }
             return false;
           }
         } catch (error) {
@@ -351,8 +369,17 @@ export async function GET(_: Request, context: RouteContext) {
         reminders = (fallbackData.data || []).filter((reminder: any) => {
           // VALIDACIÓN CRÍTICA: Excluir notificaciones individuales
           if (reminder.type === 'reminder') {
-            // Si tiene recipient, es una notificación individual y debe ser excluida
+            // Si tiene recipient (incluso si es un objeto populado), es una notificación individual
             if (reminder.recipient !== undefined && reminder.recipient !== null) {
+              // Log en desarrollo para depuración
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`🔍 [fleet/${id}/reminder] Excluyendo notificación individual en fallback (tiene recipient):`, {
+                  id: reminder.id,
+                  documentId: reminder.documentId,
+                  title: reminder.title,
+                  recipient: reminder.recipient,
+                });
+              }
               return false;
             }
             
@@ -360,6 +387,15 @@ export async function GET(_: Request, context: RouteContext) {
               const tags = typeof reminder.tags === 'string' ? JSON.parse(reminder.tags) : reminder.tags;
               // Si tiene parentReminderId (como número, string o cualquier valor truthy), es una notificación individual
               if (tags && (tags.parentReminderId !== undefined && tags.parentReminderId !== null)) {
+                // Log en desarrollo para depuración
+                if (process.env.NODE_ENV === 'development') {
+                  console.log(`🔍 [fleet/${id}/reminder] Excluyendo notificación individual en fallback (tiene parentReminderId):`, {
+                    id: reminder.id,
+                    documentId: reminder.documentId,
+                    title: reminder.title,
+                    parentReminderId: tags.parentReminderId,
+                  });
+                }
                 return false; // Excluir notificaciones individuales
               }
             } catch {
@@ -398,9 +434,81 @@ export async function GET(_: Request, context: RouteContext) {
       }
     }
     
+    // Eliminar duplicados: si hay múltiples recordatorios con el mismo título y vehículo,
+    // mantener solo el más reciente (basado en createdAt o id)
+    // También verificar por documentId para evitar duplicados exactos
+    const remindersByKey = new Map<string, any>();
+    const remindersByDocumentId = new Map<string, any>();
+    
+    for (const reminder of reminders) {
+      // Primera verificación: si ya vimos este documentId, saltarlo (duplicado exacto)
+      if (reminder.documentId) {
+        if (remindersByDocumentId.has(reminder.documentId)) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔍 [fleet/${id}/reminder] Duplicado por documentId, saltando:`, {
+              documentId: reminder.documentId,
+              title: reminder.title,
+              id: reminder.id,
+            });
+          }
+          continue;
+        }
+        remindersByDocumentId.set(reminder.documentId, reminder);
+      }
+      
+      // Segunda verificación: crear una clave única basada en título y vehículo
+      const vehicleId = reminder.fleetVehicle?.id || reminder.fleetVehicle?.documentId || 'unknown';
+      const key = `${reminder.title?.trim() || ''}-${vehicleId}`;
+      
+      const existing = remindersByKey.get(key);
+      
+      if (!existing) {
+        // No existe, agregarlo
+        remindersByKey.set(key, reminder);
+      } else {
+        // Ya existe, mantener el más reciente (mayor id o createdAt más reciente)
+        const existingId = existing.id || 0;
+        const newId = reminder.id || 0;
+        const existingDate = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+        const newDate = reminder.createdAt ? new Date(reminder.createdAt).getTime() : 0;
+        
+        // Si el nuevo tiene mayor ID o fecha más reciente, reemplazar
+        if (newId > existingId || newDate > existingDate) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔍 [fleet/${id}/reminder] Reemplazando recordatorio duplicado:`, {
+              key,
+              existingId: existing.id,
+              newId: reminder.id,
+              title: reminder.title,
+            });
+          }
+          remindersByKey.set(key, reminder);
+        } else {
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔍 [fleet/${id}/reminder] Manteniendo recordatorio existente (más reciente):`, {
+              key,
+              existingId: existing.id,
+              newId: reminder.id,
+              title: reminder.title,
+            });
+          }
+        }
+      }
+    }
+    
+    const uniqueReminders = Array.from(remindersByKey.values());
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`📊 [fleet/${id}/reminder] Resumen de deduplicación:`, {
+        totalDespuésDeFiltro: reminders.length,
+        únicosDespuésDeDeduplicación: uniqueReminders.length,
+        eliminados: reminders.length - uniqueReminders.length,
+      });
+    }
+    
     // Mapear recordatorios y agregar información adicional
     const remindersWithAuthor = await Promise.all(
-      reminders.map(async (reminder: any) => {
+      uniqueReminders.map(async (reminder: any) => {
         // Mapear fleetVehicle a vehicle para compatibilidad con código existente
         if (reminder.fleetVehicle) {
           reminder.vehicle = reminder.fleetVehicle;

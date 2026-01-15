@@ -22,7 +22,7 @@ import {
 import { Badge } from "@/components_shadcn/ui/badge";
 import { format, formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { REMINDER_EVENTS, emitReminderDeleted, emitReminderToggleCompleted } from "@/lib/reminder-events";
 
 interface AdminHeaderProps {
@@ -54,12 +54,40 @@ export function AdminHeader({
           const { data } = await response.json();
           // Filtrar recordatorios activos y no completados
           // No filtrar por fecha para mostrar también los pendientes que ya pasaron
+          // Excluir explícitamente los completados (verificar tanto false como valores falsy)
           const activeReminders = (data || []).filter((r: any) => 
-            r.isActive && !r.isCompleted
+            r.isActive && r.isCompleted !== true && r.isCompleted !== 1
           );
+          
+          // Aplicar deduplicación adicional en el frontend por si acaso
+          const remindersByKey = new Map<string, any>();
+          for (const reminder of activeReminders) {
+            const normalizedTitle = (reminder.title?.trim() || '').toLowerCase();
+            const vehicleId = reminder.vehicle?.documentId || reminder.vehicle?.id || 
+                            (reminder.vehicle?.name ? reminder.vehicle.name.toLowerCase().trim() : 'unknown');
+            const key = `${normalizedTitle}-${vehicleId}`;
+            
+            const existing = remindersByKey.get(key);
+            if (!existing) {
+              remindersByKey.set(key, reminder);
+            } else {
+              // Mantener el más reciente
+              const existingDate = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+              const newDate = reminder.createdAt ? new Date(reminder.createdAt).getTime() : 0;
+              const existingId = existing.id || 0;
+              const newId = reminder.id || 0;
+              
+              if (newDate > existingDate || (newDate === existingDate && newId > existingId)) {
+                remindersByKey.set(key, reminder);
+              }
+            }
+          }
+          
+          const uniqueReminders = Array.from(remindersByKey.values());
+          
           // Ordenar: primero los que ya pasaron (urgentes), luego por fecha próxima
           const now = new Date();
-          activeReminders.sort((a: any, b: any) => {
+          uniqueReminders.sort((a: any, b: any) => {
             const dateA = new Date(a.nextTrigger);
             const dateB = new Date(b.nextTrigger);
             const isPastA = dateA < now;
@@ -72,7 +100,7 @@ export function AdminHeader({
             // Luego por fecha
             return dateA.getTime() - dateB.getTime();
           });
-          setReminders(activeReminders.slice(0, 5)); // Mostrar solo los 5 más próximos/urgentes
+          setReminders(uniqueReminders.slice(0, 5)); // Mostrar solo los 5 más próximos/urgentes
         }
       } catch (error) {
         console.error("Error cargando recordatorios:", error);
@@ -286,8 +314,9 @@ export function AdminHeader({
             <span>Recordatorios</span>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <ScrollAreaPrimitive.Root className="relative overflow-hidden h-[400px]">
+          <ScrollAreaPrimitive.Root className="relative overflow-hidden max-h-[240px] min-h-[120px]">
             <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
+              <div className="py-1">
               {isLoadingReminders ? (
                 <div className="p-4 text-center text-sm text-muted-foreground">
                   Cargando recordatorios...
@@ -387,6 +416,7 @@ export function AdminHeader({
                   );
                 })
               )}
+              </div>
             </ScrollAreaPrimitive.Viewport>
             <ScrollAreaPrimitive.ScrollAreaScrollbar
               orientation="vertical"
