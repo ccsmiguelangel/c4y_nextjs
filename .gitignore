@@ -9,8 +9,6 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
-/components_shadcn/
-!/components_shadcn/.gitkeep
 # testing
 /coverage
 
