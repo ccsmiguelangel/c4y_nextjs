@@ -1,4 +1,6 @@
-import { toast as sonnerToast, type ToastOptions } from "sonner";
+import { toast as sonnerToast } from "sonner";
+
+type ToastOptions = Parameters<typeof sonnerToast.success>[1];
 
 /**
  * Wrapper personalizado para toast que agrega automáticamente
@@ -37,7 +39,7 @@ const createToastWithReadAction = (
         
         // Intentar encontrar el toast padre desde el evento
         const target = event.target as HTMLElement;
-        const toastElement = target.closest('[data-sonner-toast]');
+        const toastElement = target.closest('[data-sonner-toast]') as HTMLElement | null;
         
         // Cerrar el toast después de un breve delay para mostrar el cambio de estado
         setTimeout(() => {

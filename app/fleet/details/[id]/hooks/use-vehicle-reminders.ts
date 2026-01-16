@@ -39,13 +39,13 @@ interface UseVehicleRemindersReturn {
   setReminderRecurrenceEndDate: (date: string) => void;
   setSelectedResponsables: (ids: number[]) => void;
   setSelectedAssignedDrivers: (ids: number[]) => void;
-  loadVehicleReminders: () => Promise<void>;
+  loadVehicleReminders: () => Promise<FleetReminder[]>;
   loadAvailableUsers: () => Promise<void>;
-  handleSaveReminder: (currentUserDocumentId: string | null, loadVehicle: () => Promise<void>) => Promise<void>;
+  handleSaveReminder: (currentUserDocumentId: string | null, loadVehicle: () => Promise<unknown>) => Promise<void>;
   handleEditReminder: (reminder: FleetReminder) => void;
-  handleDeleteReminder: (reminderId: number | string, loadVehicle: () => Promise<void>) => Promise<void>;
-  handleToggleReminderActive: (reminderId: number | string, isActive: boolean, loadVehicle?: () => Promise<void>) => Promise<void>;
-  handleToggleReminderCompleted: (reminderId: number | string, isCompleted: boolean, loadVehicle?: () => Promise<void>) => Promise<void>;
+  handleDeleteReminder: (reminderId: number | string, loadVehicle: () => Promise<unknown>) => Promise<void>;
+  handleToggleReminderActive: (reminderId: number | string, isActive: boolean, loadVehicle?: () => Promise<unknown>) => Promise<void>;
+  handleToggleReminderCompleted: (reminderId: number | string, isCompleted: boolean, loadVehicle?: () => Promise<unknown>) => Promise<void>;
   handleOpenReminderForm: () => void;
   handleCancelReminderForm: () => void;
   setVehicleReminders: React.Dispatch<React.SetStateAction<FleetReminder[]>>;
@@ -157,7 +157,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     };
   }, [loadVehicleReminders]);
 
-  const handleSaveReminder = async (currentUserDocumentId: string | null, loadVehicle: () => Promise<void>) => {
+  const handleSaveReminder = async (currentUserDocumentId: string | null, loadVehicle: () => Promise<unknown>) => {
     if (!reminderTitle?.trim() || !reminderScheduledDate) {
       toast.error("Error", {
         description: "El título y la fecha programada son requeridos",
@@ -397,7 +397,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     }
   };
 
-  const handleDeleteReminder = async (reminderId: number | string, loadVehicle: () => Promise<void>) => {
+  const handleDeleteReminder = async (reminderId: number | string, loadVehicle: () => Promise<unknown>) => {
     try {
       const reminderIdStr = String(reminderId);
       
@@ -594,7 +594,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     }
   };
 
-  const handleToggleReminderActive = async (reminderId: number | string, isActive: boolean, loadVehicle?: () => Promise<void>) => {
+  const handleToggleReminderActive = async (reminderId: number | string, isActive: boolean, loadVehicle?: () => Promise<unknown>) => {
     const reminderIdStr = String(reminderId);
     const newActiveState = !isActive;
     
@@ -676,7 +676,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
     }
   };
 
-  const handleToggleReminderCompleted = async (reminderId: number | string, isCompleted: boolean, loadVehicle?: () => Promise<void>) => {
+  const handleToggleReminderCompleted = async (reminderId: number | string, isCompleted: boolean, loadVehicle?: () => Promise<unknown>) => {
     const reminderIdStr = String(reminderId);
     const newCompletedState = !isCompleted;
     

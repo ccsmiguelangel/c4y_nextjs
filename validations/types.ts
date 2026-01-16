@@ -1,6 +1,12 @@
 export interface StrapiImage {
   url: string;
   alternativeText: string;
+  formats?: {
+    thumbnail?: { url?: string };
+    small?: { url?: string };
+    medium?: { url?: string };
+    large?: { url?: string };
+  };
 }
 
 export interface StrapiLink {
@@ -143,6 +149,7 @@ export interface FleetVehicleRawAttributes {
   brand: string;
   model: string;
   year: number;
+  stockQuantity?: number;
   color?: string;
   mileage?: number;
   fuelType?: string;
@@ -164,6 +171,17 @@ export interface FleetVehicleRawAttributes {
     }>;
   };
   responsables?: {
+    data?: Array<{
+      id: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+        avatar?: FleetVehicleImage | { data?: { attributes?: FleetVehicleImage } | null };
+      };
+    }>;
+  };
+  currentDrivers?: {
     data?: Array<{
       id: number;
       documentId?: string;
@@ -435,7 +453,7 @@ export interface FleetReminderPayload {
   scheduledDate: string;
   recurrencePattern?: RecurrencePattern;
   recurrenceEndDate?: string;
-  assignedUserIds?: number[];
+  assignedUserIds?: Array<number | string>;
   authorDocumentId?: string;
 }
 

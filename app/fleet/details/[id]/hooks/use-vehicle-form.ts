@@ -55,10 +55,10 @@ interface UseVehicleFormReturn {
   handleSaveChanges: (
     vehicleData: FleetVehicleCard | null,
     vehicleId: string,
-    loadVehicle: () => Promise<void>,
+    loadVehicle: () => Promise<FleetVehicleCard | null>,
     syncMaintenanceReminder: (date: string, time: string, isAllDay: boolean, pattern: RecurrencePattern, endDate?: string) => Promise<void>,
     vehicleReminders: any[],
-    loadVehicleReminders: () => Promise<void>,
+    loadVehicleReminders: () => Promise<any>,
     setErrorMessage: (msg: string | null) => void
   ) => Promise<void>;
 }
@@ -249,10 +249,10 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
   const handleSaveChanges = async (
     vehicleData: FleetVehicleCard | null,
     vehicleIdParam: string,
-    loadVehicle: () => Promise<void>,
+    loadVehicle: () => Promise<FleetVehicleCard | null>,
     syncMaintenanceReminder: (date: string, time: string, isAllDay: boolean, pattern: RecurrencePattern, endDate?: string) => Promise<void>,
     vehicleReminders: any[],
-    loadVehicleReminders: () => Promise<void>,
+    loadVehicleReminders: () => Promise<any>,
     setErrorMessage: (msg: string | null) => void
   ) => {
     if (!vehicleData) return;

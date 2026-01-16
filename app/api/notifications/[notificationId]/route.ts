@@ -11,9 +11,10 @@ interface RouteContext {
 
 // PUT - Actualizar una notificación/recordatorio (campos genéricos como isCompleted, isActive, etc.)
 export async function PUT(request: Request, context: RouteContext) {
+  let notificationId: string | undefined;
   try {
     const params = await context.params;
-    const { notificationId } = params;
+    notificationId = params.notificationId;
 
     if (!notificationId) {
       return NextResponse.json(
@@ -586,9 +587,12 @@ export async function PUT(request: Request, context: RouteContext) {
     });
   } catch (error) {
     // Verificar si es un error de conexión
-    const isConnectionError = error instanceof Error && 
-      ('code' in error && error.code === 'ECONNREFUSED') ||
-      (error.message && error.message.includes('fetch failed'));
+    const isConnectionError =
+      error instanceof Error &&
+      (
+        ('code' in error && (error as any).code === 'ECONNREFUSED') ||
+        (typeof error.message === 'string' && error.message.includes('fetch failed'))
+      );
     
     if (isConnectionError) {
       console.error("❌ Error de conexión con Strapi:", {

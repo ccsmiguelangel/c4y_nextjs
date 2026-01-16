@@ -25,7 +25,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     let body;
     try {
       body = (await request.json()) as { 
-        data?: Partial<FleetReminderPayload & { isActive?: boolean }> 
+        data?: Partial<FleetReminderPayload & { isActive?: boolean; nextTrigger?: string }> 
       };
     } catch (parseError) {
       console.error("Error parseando body:", parseError);

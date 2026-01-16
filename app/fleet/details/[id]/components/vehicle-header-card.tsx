@@ -13,15 +13,14 @@ import {
 } from "@/components_shadcn/ui/dropdown-menu";
 import { spacing, typography } from "@/lib/design-system";
 import { strapiImages } from "@/lib/strapi-images";
-import type { FleetVehicleCondition } from "@/validations/types";
-import type { StrapiImage } from "@/validations/types";
+import type { FleetVehicleCondition, FleetVehicleImage, StrapiImage } from "@/validations/types";
 
 interface VehicleHeaderCardProps {
   name: string;
   condition: FleetVehicleCondition;
   imageUrl: string | null;
   imageAlt: string;
-  imageData?: StrapiImage | null; // Datos completos de la imagen con formats
+  imageData?: StrapiImage | FleetVehicleImage | null; // Datos completos de la imagen con formats
   isDeleting: boolean;
   onEdit: () => void;
   onDelete: () => void;
@@ -34,7 +33,7 @@ interface VehicleHeaderCardProps {
  */
 const getOptimalImageUrl = (
   imageUrl: string | null,
-  imageData?: StrapiImage | null
+  imageData?: StrapiImage | FleetVehicleImage | null
 ): string | null => {
   if (!imageUrl) return null;
   

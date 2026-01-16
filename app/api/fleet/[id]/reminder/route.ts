@@ -429,7 +429,7 @@ export async function GET(_: Request, context: RouteContext) {
       console.log(`[GET /api/fleet/${id}/reminder] Recordatorios después de filtrar:`, reminders.length);
       if (reminders.length > 0) {
         console.log(`[GET /api/fleet/${id}/reminder] IDs de recordatorios devueltos:`, 
-          reminders.map(r => ({ id: r.id, documentId: r.documentId, title: r.title }))
+          reminders.map((r: any) => ({ id: r.id, documentId: r.documentId, title: r.title }))
         );
       }
     }
@@ -785,7 +785,7 @@ export async function POST(
       const firstId = body.data.assignedUserIds[0];
       if (typeof firstId === 'string' && !/^\d+$/.test(firstId)) {
         // Son documentIds, convertir a ids numéricos
-        const numericIds = await convertDocumentIdsToIds(body.data.assignedUserIds);
+        const numericIds = await convertDocumentIdsToIds(body.data.assignedUserIds as string[]);
         numericIds.forEach(id => allAssignedUserIds.add(id));
       } else {
         // Ya son ids numéricos o strings numéricos

@@ -243,7 +243,8 @@ export default function DashboardUserRoute() {
     return notifications.filter((n) => {
       if (n.source === "reminder") {
         // Excluir explícitamente los completados
-        return n.isActive !== false && n.isCompleted !== true && n.isCompleted !== 1;
+        const isCompletedFlag = n.isCompleted === true || Number(n.isCompleted) === 1;
+        return n.isActive !== false && !isCompletedFlag;
       }
       return !n.isRead;
     }).slice(0, 5); // Solo las primeras 5
@@ -253,7 +254,8 @@ export default function DashboardUserRoute() {
     return notifications.filter((n) => {
       if (n.source === "reminder") {
         // Excluir explícitamente los completados
-        return n.isActive !== false && n.isCompleted !== true && n.isCompleted !== 1;
+        const isCompletedFlag = n.isCompleted === true || Number(n.isCompleted) === 1;
+        return n.isActive !== false && !isCompletedFlag;
       }
       return !n.isRead;
     }).length;

@@ -12,6 +12,9 @@ if (!STRAPI_BASE_URL) {
 
 const nextConfig: NextConfig = {
   // cacheComponents: true,
+  turbopack: {
+    root: process.cwd(),
+  },
   images: {
     remotePatterns: [
       {

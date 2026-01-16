@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui
 import { Plus } from "lucide-react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { spacing, typography } from "@/lib/design-system";
-import { FleetNote } from "@/validations/types";
+import { FleetNote } from "@/components/ui/notes-timeline";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { NotesTimeline } from "@/components/ui/notes-timeline";
 

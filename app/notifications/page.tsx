@@ -439,7 +439,7 @@ export default function NotificationsPage() {
       });
 
     // Convertir recordatorios no sincronizados a notificaciones
-    const unsyncedRemindersAsNotifications = rawReminders
+    const unsyncedRemindersAsNotifications: Notification[] = rawReminders
       .filter(reminder => {
         // Verificar por documentId o id
         const hasDocumentId = reminder.documentId && syncedReminderIds.has(reminder.documentId);
@@ -490,6 +490,7 @@ export default function NotificationsPage() {
           iconColor: reminder.isActive && !reminder.isCompleted ? "text-primary" : "text-muted-foreground",
           reminderId: reminder.id,
           reminderDocumentId: reminder.documentId,
+          notificationDocumentId: undefined,
           source: "reminder" as const,
           originalTimestamp: reminder.nextTrigger,
           isActive: reminder.isActive,
@@ -1266,7 +1267,8 @@ export default function NotificationsPage() {
         return notificationList.filter((n) => {
           if (n.source === "reminder") {
             // Recordatorios: deben estar activos Y no completados (verificar explícitamente)
-            return n.isActive !== false && n.isCompleted !== true && n.isCompleted !== 1;
+            const isCompletedFlag = n.isCompleted === true || Number(n.isCompleted) === 1;
+            return n.isActive !== false && !isCompletedFlag;
           }
           // Notificaciones manuales: deben estar no leídas
           return !n.isRead;

@@ -6,7 +6,7 @@ interface UseVehicleDataReturn {
   isLoading: boolean;
   errorMessage: string | null;
   setErrorMessage: (message: string | null) => void;
-  loadVehicle: () => Promise<void>;
+  loadVehicle: () => Promise<FleetVehicleCard | null>;
   setVehicleData: React.Dispatch<React.SetStateAction<FleetVehicleCard | null>>;
 }
 

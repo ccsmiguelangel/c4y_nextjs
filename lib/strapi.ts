@@ -41,7 +41,7 @@ export async function getStrapiPage<T = any>(contentType: string, query?: Record
   const path = queryString ? `${contentType}?${queryString}` : contentType;
   const response = await getStrapiData(path);
   
-  return response?.data || null;
+  return response?.data ? (response.data as T) : null;
 } 
 
 export async function registerUserService (userData: object) {

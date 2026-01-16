@@ -57,6 +57,7 @@ export function FleetVehiclesSection({
   onDuplicateVehicle,
   onRequestDeleteVehicle,
   onPageChange,
+  onRetry,
 }: FleetVehiclesSectionProps) {
   if (isLoading) {
     return (
