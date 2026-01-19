@@ -171,7 +171,10 @@ export function MultiSelectCombobox({
   }, [valueToOptionMap, selectedValues]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -225,11 +228,10 @@ export function MultiSelectCombobox({
                   return (
                     <CommandItem
                       key={option.value}
+                      data-cmdk-item
+                      data-option-value={String(option.value)}
                       value={searchValue}
-                      onSelect={(currentValue) => {
-                        // El onSelect recibe el value del item, pero necesitamos usar option.value
-                        handleSelect(option.value);
-                      }}
+                      onSelect={() => handleSelect(option.value)}
                       className="cursor-pointer"
                       aria-selected={isSelected}
                       keywords={[option.label, option.email || ""].filter(Boolean)}
@@ -288,11 +290,10 @@ export function MultiSelectCombobox({
                     return (
                       <CommandItem
                         key={option.value}
+                        data-cmdk-item
+                        data-option-value={String(option.value)}
                         value={searchValue}
-                        onSelect={(currentValue) => {
-                          // El onSelect recibe el value del item, pero necesitamos usar option.value
-                          handleSelect(option.value);
-                        }}
+                        onSelect={() => handleSelect(option.value)}
                         className="cursor-pointer"
                         aria-selected={isSelected}
                         keywords={[option.label, option.email || ""].filter(Boolean)}
@@ -345,11 +346,10 @@ export function MultiSelectCombobox({
                   return (
                     <CommandItem
                       key={option.value}
+                      data-cmdk-item
+                      data-option-value={String(option.value)}
                       value={searchValue}
-                      onSelect={(currentValue) => {
-                        // El onSelect recibe el value del item, pero necesitamos usar option.value
-                        handleSelect(option.value);
-                      }}
+                      onSelect={() => handleSelect(option.value)}
                       className="cursor-pointer"
                       aria-selected={isSelected}
                       keywords={[option.label, option.email || ""].filter(Boolean)}

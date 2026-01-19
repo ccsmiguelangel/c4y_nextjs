@@ -1,7 +1,7 @@
 "use server"
 import { z } from "zod"
 
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { STRAPI_BASE_URL_HOSTNAME } from "@/lib/config"
 import { STRAPI_BASE_URL_PORT, STRAPI_BASE_URL_PROTOCOL } from "@/lib/config"
@@ -9,13 +9,21 @@ import { STRAPI_BASE_URL_PORT, STRAPI_BASE_URL_PROTOCOL } from "@/lib/config"
 import { SignUpFormSchema, SignInFormSchema, type FormState } from "@/validations/auth"
 import { registerUserService, loginUserService, createUserProfile } from "@/lib/strapi"
 
-const cookieConfig = {
-  maxAge: 60 * 60 * 24 * 7, // 1 week,
-  path: '/',
-  httpOnly: true, // only accessible by the server
-  domain: STRAPI_BASE_URL_HOSTNAME,
-  secure: process.env.NODE_ENV === 'production',
-}
+const buildCookieConfig = async () => {
+  const headerList = await headers();
+  const host = headerList.get("host") || "";
+  const hostname = host.split(":")[0];
+  const isLocalhost =
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "";
+  const domain = isLocalhost ? undefined : hostname;
+  return {
+    maxAge: 60 * 60 * 24 * 7, // 1 week,
+    path: '/',
+    httpOnly: true, // only accessible by the server
+    domain,
+    secure: process.env.NODE_ENV === 'production',
+  };
+};
 
 export async function registerUserAction(prevState: FormState, formData: FormData): Promise<FormState> {
 
@@ -68,11 +76,13 @@ export async function registerUserAction(prevState: FormState, formData: FormDat
   }
 
   const cookieStore = await cookies()
+  const cookieConfig = await buildCookieConfig()
   cookieStore.set('jwt', response.jwt, cookieConfig)
   redirect('/dashboard')
 }
 
 export async function loginUserAction(prevState: FormState, formData: FormData): Promise<FormState> {
+  const headerList = await headers();
   const fields = {
     identifier: formData.get('email') as string,
     password: formData.get('password') as string,
@@ -108,6 +118,7 @@ export async function loginUserAction(prevState: FormState, formData: FormData):
   }
 
   const cookieStore = await cookies()
+  const cookieConfig = await buildCookieConfig()
   cookieStore.set('jwt', response.jwt, cookieConfig)
   redirect('/dashboard')
 }

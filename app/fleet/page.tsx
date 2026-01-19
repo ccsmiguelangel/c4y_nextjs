@@ -614,7 +614,7 @@ export default function FleetPage() {
                 createData.recurrenceEndDate = `${maintenanceRecurrenceEndDate}T00:00:00`;
               }
               
-              await fetch(`/api/fleet/${data.documentId}/reminder`, {
+              await fetch(`/api/fleet/${data.documentId}/reminders`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

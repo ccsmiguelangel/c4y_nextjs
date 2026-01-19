@@ -352,7 +352,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
         if (maintenanceReminder) {
           const reminderId = maintenanceReminder.documentId || String(maintenanceReminder.id);
           try {
-            await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+            await fetch(`/api/fleet-reminders/${encodeURIComponent(reminderId)}`, {
               method: "DELETE",
             });
             await loadVehicleReminders();

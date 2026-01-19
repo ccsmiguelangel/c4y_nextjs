@@ -771,7 +771,6 @@ export function VehicleEditForm({
               }}
               placeholder="Selecciona responsables..."
               emptyMessage="No hay usuarios disponibles"
-              disabled={isLoadingUsers}
             />
           </div>
           <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -790,7 +789,6 @@ export function VehicleEditForm({
               }}
               placeholder="Selecciona conductores..."
               emptyMessage="No hay usuarios disponibles"
-              disabled={isLoadingUsers}
             />
           </div>
           <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -809,7 +807,6 @@ export function VehicleEditForm({
               }}
               placeholder="Selecciona conductores interesados..."
               emptyMessage="No hay usuarios disponibles"
-              disabled={isLoadingUsers}
             />
           </div>
           <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -828,7 +825,6 @@ export function VehicleEditForm({
               }}
               placeholder="Selecciona conductores actuales..."
               emptyMessage="No hay usuarios disponibles"
-              disabled={isLoadingUsers}
             />
           </div>
         </div>

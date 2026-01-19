@@ -910,7 +910,7 @@ export default function UserDetailsPage() {
                 isLoading={false}
                 onToggleCompleted={async (reminderId, isCompleted) => {
                   try {
-                    const response = await fetch(`/api/fleet-reminder/${encodeURIComponent(reminderId)}`, {
+                    const response = await fetch(`/api/fleet-reminders/${encodeURIComponent(reminderId)}`, {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({

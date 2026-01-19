@@ -44,7 +44,7 @@ export function useVehicleDocuments(vehicleId: string): UseVehicleDocumentsRetur
   const loadVehicleDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
     try {
-      const response = await fetch(`/api/fleet/${vehicleId}/document`, { cache: "no-store" });
+      const response = await fetch(`/api/fleet/${vehicleId}/documents`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error("No pudimos obtener los documentos");
       }
@@ -134,7 +134,7 @@ export function useVehicleDocuments(vehicleId: string): UseVehicleDocumentsRetur
         requestBody.data.authorDocumentId = currentUserDocumentId;
       }
 
-      const response = await fetch(`/api/fleet/${vehicleId}/document`, {
+      const response = await fetch(`/api/fleet/${vehicleId}/documents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -180,7 +180,7 @@ export function useVehicleDocuments(vehicleId: string): UseVehicleDocumentsRetur
   const handleDeleteDocument = async (documentId: number | string) => {
     try {
       const documentIdStr = String(documentId);
-      const response = await fetch(`/api/fleet-document/${encodeURIComponent(documentIdStr)}`, {
+      const response = await fetch(`/api/fleet-documents/${encodeURIComponent(documentIdStr)}`, {
         method: "DELETE",
       });
 

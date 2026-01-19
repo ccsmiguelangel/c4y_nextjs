@@ -49,7 +49,7 @@ export function useVehicleStatuses(vehicleId: string): UseVehicleStatusesReturn 
   const loadVehicleStatuses = useCallback(async () => {
     setIsLoadingStatuses(true);
     try {
-      const response = await fetch(`/api/fleet/${vehicleId}/status`, { cache: "no-store" });
+      const response = await fetch(`/api/fleet/${vehicleId}/statuses`, { cache: "no-store" });
       if (!response.ok) {
         if (response.status === 404) {
           console.warn("Tipo de contenido 'fleet-statuses' no encontrado en Strapi. Retornando array vacío.");
@@ -169,7 +169,7 @@ export function useVehicleStatuses(vehicleId: string): UseVehicleStatusesReturn 
         requestBody.data.authorDocumentId = currentUserDocumentId;
       }
 
-      const response = await fetch(`/api/fleet/${vehicleId}/status`, {
+      const response = await fetch(`/api/fleet/${vehicleId}/statuses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -209,7 +209,7 @@ export function useVehicleStatuses(vehicleId: string): UseVehicleStatusesReturn 
       await new Promise((resolve) => setTimeout(resolve, 500));
       
       try {
-        const getResponse = await fetch(`/api/fleet/${vehicleId}/status`, { cache: "no-store" });
+        const getResponse = await fetch(`/api/fleet/${vehicleId}/statuses`, { cache: "no-store" });
         if (getResponse.ok) {
           const { data: allStatuses } = (await getResponse.json()) as { data: VehicleStatus[] };
           const updatedStatus = allStatuses.find(
@@ -253,7 +253,7 @@ export function useVehicleStatuses(vehicleId: string): UseVehicleStatusesReturn 
   const handleEditStatus = async (statusId: number | string, editComment: string, imageIds?: number[], newImages?: File[]) => {
     try {
       const statusIdStr = String(statusId);
-      const url = `/api/fleet-status/${encodeURIComponent(statusIdStr)}`;
+      const url = `/api/fleet-statuses/${encodeURIComponent(statusIdStr)}`;
       
       let uploadedImageIds: number[] = [];
       if (newImages && newImages.length > 0) {
@@ -333,7 +333,7 @@ export function useVehicleStatuses(vehicleId: string): UseVehicleStatusesReturn 
   const handleDeleteStatus = async (statusId: number | string) => {
     try {
       const statusIdStr = String(statusId);
-      const response = await fetch(`/api/fleet-status/${encodeURIComponent(statusIdStr)}`, {
+      const response = await fetch(`/api/fleet-statuses/${encodeURIComponent(statusIdStr)}`, {
         method: "DELETE",
       });
 

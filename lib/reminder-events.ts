@@ -102,9 +102,7 @@ export function subscribeToReminderEvents(
       const customEvent = event as CustomEvent<ReminderEventDetail>;
       handler?.(customEvent.detail);
     };
-  };
-
-  if (handlers.onCreated) {
+  };  if (handlers.onCreated) {
     window.addEventListener(REMINDER_EVENTS.CREATED, createHandler(handlers.onCreated));
   }
   if (handlers.onUpdated) {

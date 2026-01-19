@@ -272,7 +272,6 @@ export function FleetDetailsRemindersCard({
                   placeholder="Selecciona responsables..."
                   searchPlaceholder="Buscar responsables..."
                   emptyMessage="No se encontraron usuarios."
-                  disabled={isSavingReminder}
                 />
               </div>
               <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -289,7 +288,6 @@ export function FleetDetailsRemindersCard({
                   placeholder="Selecciona conductores..."
                   searchPlaceholder="Buscar conductores..."
                   emptyMessage="No se encontraron usuarios."
-                  disabled={isSavingReminder}
                 />
               </div>
             </div>

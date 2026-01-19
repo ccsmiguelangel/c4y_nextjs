@@ -670,7 +670,6 @@ export function CreateVehicleDialog({
                       onSelectionChange={onResponsablesChange}
                       placeholder="Selecciona responsables..."
                       emptyMessage="No hay usuarios disponibles"
-                      disabled={isLoadingUsers}
                     />
                   </div>
 
@@ -682,7 +681,6 @@ export function CreateVehicleDialog({
                       onSelectionChange={onDriversChange}
                       placeholder="Selecciona conductores..."
                       emptyMessage="No hay usuarios disponibles"
-                      disabled={isLoadingUsers}
                     />
                   </div>
                 </div>

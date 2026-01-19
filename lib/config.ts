@@ -1,6 +1,6 @@
 // for optimization, i dont want to use the process.env.NEXT_PUBLIC_STRAPI_BASE_URL in the future
 export const STRAPI_BASE_URL = "https://big-breeze-b8fd1e4629.strapiapp.com"; // SETUP YOUR STRAPI_BASE_URL HERE
-// export const STRAPI_BASE_URL = "http://localhost:1337"; // SETUP YOUR STRAPI_BASE_URL HERE
+//export const STRAPI_BASE_URL = "http://localhost:1337"; // SETUP YOUR STRAPI_BASE_URL HERE
 
 
 // Token de API de Strapi - SOLO SERVER-SIDE, nunca se expone al cliente

@@ -110,7 +110,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
   const loadVehicleReminders = useCallback(async (): Promise<FleetReminder[]> => {
     setIsLoadingReminders(true);
     try {
-      const response = await fetch(`/api/fleet/${vehicleId}/reminder`, { cache: "no-store" });
+      const response = await fetch(`/api/fleet/${vehicleId}/reminders`, { cache: "no-store" });
       if (!response.ok) {
         throw new Error("No pudimos obtener los recordatorios");
       }
@@ -320,7 +320,7 @@ export function useVehicleReminders(vehicleId: string): UseVehicleRemindersRetur
           });
         }
         
-        const response = await fetch(`/api/fleet/${vehicleId}/reminder`, {
+        const response = await fetch(`/api/fleet/${vehicleId}/reminders`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(createBody),
