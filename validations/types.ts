@@ -737,3 +737,212 @@ export interface BillingDocumentCreatePayload {
   record: number | string;
 }
 
+// ============================================
+// Deal Types (Contratos y acuerdos comerciales)
+// ============================================
+
+export type DealType = "conduccion" | "arrendamiento" | "servicio";
+export type DealStatus = "pendiente" | "firmado" | "archivado";
+export type DealPaymentAgreement = "semanal" | "quincenal";
+
+export interface DealClauseRawAttributes {
+  title: string;
+  description?: string;
+  documentId?: string;
+}
+
+export type DealClauseRaw =
+  | ({ id?: number | string; documentId?: string } & DealClauseRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: DealClauseRawAttributes & { documentId?: string };
+    };
+
+export interface DealDiscountRawAttributes {
+  title: string;
+  description?: string;
+  amount: number | string;
+  documentId?: string;
+}
+
+export type DealDiscountRaw =
+  | ({ id?: number | string; documentId?: string } & DealDiscountRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: DealDiscountRawAttributes & { documentId?: string };
+    };
+
+export interface DealRawAttributes {
+  title?: string;
+  type: DealType;
+  status: DealStatus;
+  generatedAt?: string;
+  signedAt?: string;
+  price?: number | string;
+  paymentAgreement?: DealPaymentAgreement;
+  summary?: string;
+  documentId?: string;
+  client?: {
+    id?: number;
+    documentId?: string;
+    fullName?: string;
+    email?: string;
+    phone?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        fullName?: string;
+        email?: string;
+        phone?: string;
+      };
+    } | null;
+  };
+  vehicle?: {
+    id?: number;
+    documentId?: string;
+    name?: string;
+    placa?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        name?: string;
+        placa?: string;
+      };
+    } | null;
+  };
+  seller?: {
+    id?: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+      };
+    } | null;
+  };
+  clauses?: DealClauseRaw[] | {
+    data?: Array<{
+      id?: number;
+      documentId?: string;
+      attributes?: DealClauseRawAttributes;
+    }>;
+  };
+  discounts?: DealDiscountRaw[] | {
+    data?: Array<{
+      id?: number;
+      documentId?: string;
+      attributes?: DealDiscountRawAttributes;
+    }>;
+  };
+}
+
+export type DealRaw =
+  | ({ id?: number | string; documentId?: string } & DealRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: DealRawAttributes & { documentId?: string };
+    };
+
+export interface DealClause {
+  id: string;
+  documentId?: string;
+  title: string;
+  description?: string;
+}
+
+export interface DealDiscount {
+  id: string;
+  documentId?: string;
+  title: string;
+  description?: string;
+  amount: number;
+  amountLabel: string;
+}
+
+export interface DealCard {
+  id: string;
+  documentId: string;
+  title?: string;
+  type: DealType;
+  typeLabel: string;
+  status: DealStatus;
+  statusLabel: string;
+  generatedAt?: string;
+  generatedAtLabel?: string;
+  signedAt?: string;
+  signedAtLabel?: string;
+  price?: number;
+  priceLabel?: string;
+  paymentAgreement: DealPaymentAgreement;
+  paymentAgreementLabel: string;
+  summary?: string;
+  clientName?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientId?: string;
+  clientDocumentId?: string;
+  vehicleName?: string;
+  vehiclePlaca?: string;
+  vehicleId?: string;
+  vehicleDocumentId?: string;
+  sellerName?: string;
+  sellerEmail?: string;
+  sellerId?: string;
+  sellerDocumentId?: string;
+  clauses: DealClause[];
+  discounts: DealDiscount[];
+}
+
+export interface DealCreatePayload {
+  title?: string;
+  type: DealType;
+  status?: DealStatus;
+  generatedAt?: string;
+  signedAt?: string;
+  price?: number;
+  paymentAgreement?: DealPaymentAgreement;
+  summary?: string;
+  client?: number | string;
+  vehicle?: number | string;
+  seller?: number | string;
+}
+
+export interface DealUpdatePayload {
+  title?: string;
+  type?: DealType;
+  status?: DealStatus;
+  generatedAt?: string;
+  signedAt?: string;
+  price?: number;
+  paymentAgreement?: DealPaymentAgreement;
+  summary?: string;
+  client?: number | string | null;
+  vehicle?: number | string | null;
+  seller?: number | string | null;
+}
+
+export interface DealClauseCreatePayload {
+  title: string;
+  description?: string;
+  deal: number | string;
+}
+
+export interface DealDiscountCreatePayload {
+  title: string;
+  description?: string;
+  amount: number;
+  deal: number | string;
+}
+
