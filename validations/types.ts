@@ -457,3 +457,283 @@ export interface FleetReminderPayload {
   authorDocumentId?: string;
 }
 
+// ============================================
+// Service Types (Servicios de mantenimiento)
+// ============================================
+
+export type ServiceCoverage = "cliente" | "empresa";
+
+export interface ServiceRawAttributes {
+  name: string;
+  price: number;
+  coverage: ServiceCoverage;
+  description?: string;
+  category?: string;
+  documentId?: string;
+}
+
+export type ServiceRaw =
+  | ({ id?: number | string; documentId?: string } & ServiceRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: ServiceRawAttributes & { documentId?: string };
+    };
+
+export interface ServiceCard {
+  id: string;
+  documentId: string;
+  name: string;
+  price: number;
+  priceLabel: string;
+  coverage: ServiceCoverage;
+  coverageLabel: string;
+  isFree: boolean;
+  description?: string;
+  category?: string;
+}
+
+export interface ServiceCreatePayload {
+  name: string;
+  price: number;
+  coverage: ServiceCoverage;
+  description?: string;
+  category?: string;
+}
+
+export interface ServiceUpdatePayload {
+  name?: string;
+  price?: number;
+  coverage?: ServiceCoverage;
+  description?: string;
+  category?: string;
+}
+
+// ============================================
+// Inventory Types (Inventario de piezas)
+// ============================================
+
+export type StockStatus = "high" | "medium" | "low";
+export type InventoryIcon = "filter" | "disc" | "bolt" | "tire";
+
+export interface InventoryItemRawAttributes {
+  code: string;
+  description: string;
+  stock: number;
+  assignedTo?: string;
+  minStock?: number;
+  maxStock?: number;
+  unit?: string;
+  location?: string;
+  supplier?: string;
+  lastRestocked?: string;
+  icon?: InventoryIcon;
+  documentId?: string;
+}
+
+export type InventoryItemRaw =
+  | ({ id?: number | string; documentId?: string } & InventoryItemRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: InventoryItemRawAttributes & { documentId?: string };
+    };
+
+export interface InventoryItemCard {
+  id: string;
+  documentId: string;
+  code: string;
+  description: string;
+  stock: number;
+  stockStatus: StockStatus;
+  assignedTo?: string;
+  minStock?: number;
+  maxStock?: number;
+  unit?: string;
+  location?: string;
+  supplier?: string;
+  lastRestocked?: string;
+  icon: InventoryIcon;
+}
+
+export interface InventoryItemCreatePayload {
+  code: string;
+  description: string;
+  stock: number;
+  assignedTo?: string;
+  minStock?: number;
+  maxStock?: number;
+  unit?: string;
+  location?: string;
+  supplier?: string;
+  lastRestocked?: string;
+  icon?: InventoryIcon;
+}
+
+export interface InventoryItemUpdatePayload {
+  code?: string;
+  description?: string;
+  stock?: number;
+  assignedTo?: string;
+  minStock?: number;
+  maxStock?: number;
+  unit?: string;
+  location?: string;
+  supplier?: string;
+  lastRestocked?: string;
+  icon?: InventoryIcon;
+}
+
+// ============================================
+// Billing Types (Facturación y pagos)
+// ============================================
+
+export type BillingStatus = "pagado" | "pendiente" | "retrasado";
+
+export interface BillingDocumentFile {
+  id?: number;
+  url?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  alternativeText?: string;
+}
+
+export interface BillingDocumentRawAttributes {
+  name: string;
+  file?: BillingDocumentFile | { data?: { attributes?: BillingDocumentFile } | null };
+  documentId?: string;
+}
+
+export type BillingDocumentRaw =
+  | ({ id?: number | string; documentId?: string } & BillingDocumentRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: BillingDocumentRawAttributes & { documentId?: string };
+    };
+
+export interface BillingRecordRawAttributes {
+  invoiceNumber: string;
+  amount: number | string;
+  currency?: string;
+  status: BillingStatus;
+  dueDate?: string;
+  paymentDate?: string;
+  notes?: string;
+  remindersSent?: number;
+  documentId?: string;
+  client?: {
+    id?: number;
+    documentId?: string;
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    avatar?: StrapiImage | { data?: { attributes?: StrapiImage } | null };
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        fullName?: string;
+        email?: string;
+        phone?: string;
+        avatar?: StrapiImage | { data?: { attributes?: StrapiImage } | null };
+      };
+    } | null;
+  };
+  vehicle?: {
+    id?: number;
+    documentId?: string;
+    name?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        name?: string;
+      };
+    } | null;
+  };
+  documents?: BillingDocumentRaw[] | {
+    data?: Array<{
+      id?: number;
+      documentId?: string;
+      attributes?: BillingDocumentRawAttributes;
+    }>;
+  };
+}
+
+export type BillingRecordRaw =
+  | ({ id?: number | string; documentId?: string } & BillingRecordRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: BillingRecordRawAttributes & { documentId?: string };
+    };
+
+export interface BillingDocument {
+  id: string;
+  documentId?: string;
+  name: string;
+  url?: string;
+  mime?: string;
+  size?: number;
+}
+
+export interface BillingRecordCard {
+  id: string;
+  documentId: string;
+  invoiceNumber: string;
+  amount: number;
+  amountLabel: string;
+  currency: string;
+  status: BillingStatus;
+  dueDate?: string;
+  dueDateLabel?: string;
+  paymentDate?: string;
+  paymentDateLabel?: string;
+  notes?: string;
+  remindersSent: number;
+  clientName?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientId?: string;
+  clientDocumentId?: string;
+  vehicleName?: string;
+  vehicleId?: string;
+  vehicleDocumentId?: string;
+  documents: BillingDocument[];
+}
+
+export interface BillingRecordCreatePayload {
+  invoiceNumber: string;
+  amount: number;
+  currency?: string;
+  status?: BillingStatus;
+  dueDate?: string;
+  paymentDate?: string;
+  notes?: string;
+  client?: number | string;
+  vehicle?: number | string;
+}
+
+export interface BillingRecordUpdatePayload {
+  invoiceNumber?: string;
+  amount?: number;
+  currency?: string;
+  status?: BillingStatus;
+  dueDate?: string;
+  paymentDate?: string;
+  notes?: string;
+  remindersSent?: number;
+  client?: number | string | null;
+  vehicle?: number | string | null;
+}
+
+export interface BillingDocumentCreatePayload {
+  name: string;
+  file: number;
+  record: number | string;
+}
+

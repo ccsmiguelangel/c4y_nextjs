@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -8,6 +8,7 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Input } from "@/components_shadcn/ui/input";
 import { Label } from "@/components_shadcn/ui/label";
+import { Skeleton } from "@/components_shadcn/ui/skeleton";
 import { 
   ArrowLeft, 
   MoreVertical, 
@@ -15,10 +16,8 @@ import {
   Trash2,
   DollarSign,
   Settings,
-  Droplet,
   Wrench,
-  Car,
-  Activity
+  Loader2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -33,110 +32,74 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components_shadcn/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components_shadcn/ui/alert-dialog";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
-
-interface ServiceData {
-  id: string;
-  name: string;
-  price: string;
-  coverage: string;
-  description?: string;
-  duration?: string;
-  category?: string;
-  icon: React.ReactNode;
-  isFree?: boolean;
-}
-
-const getServiceData = (id: string): ServiceData | null => {
-  const services: Record<string, ServiceData> = {
-    "1": {
-      id: "1",
-      name: "Cambio de Aceite",
-      price: "$80.00 USD",
-      coverage: "Pagado por el cliente",
-      description: "Servicio completo de cambio de aceite incluyendo filtro de aceite y verificación de niveles.",
-      duration: "30 minutos",
-      category: "Mantenimiento",
-      icon: <Droplet className="h-5 w-5" />,
-      isFree: false,
-    },
-    "2": {
-      id: "2",
-      name: "Rotación de Neumáticos",
-      price: "$50.00 USD",
-      coverage: "Pagado por el cliente",
-      description: "Rotación de neumáticos para garantizar un desgaste uniforme y prolongar la vida útil.",
-      duration: "45 minutos",
-      category: "Mantenimiento",
-      icon: <Wrench className="h-5 w-5" />,
-      isFree: false,
-    },
-    "3": {
-      id: "3",
-      name: "Revisión de Frenos",
-      price: "$120.00 USD",
-      coverage: "Pagado por el cliente",
-      description: "Inspección completa del sistema de frenos incluyendo pastillas, discos y líquido de frenos.",
-      duration: "1 hora",
-      category: "Reparación",
-      icon: <Car className="h-5 w-5" />,
-      isFree: false,
-    },
-    "4": {
-      id: "4",
-      name: "Diagnóstico General",
-      price: "$95.00 USD",
-      coverage: "Pagado por el cliente",
-      description: "Diagnóstico completo del vehículo usando equipos de última generación.",
-      duration: "1 hora",
-      category: "Diagnóstico",
-      icon: <Activity className="h-5 w-5" />,
-      isFree: false,
-    },
-    "5": {
-      id: "5",
-      name: "Mantenimiento 50.000km",
-      price: "Gratuito",
-      coverage: "Cubierto por la empresa",
-      description: "Mantenimiento completo incluido en la garantía del vehículo.",
-      duration: "2 horas",
-      category: "Mantenimiento",
-      icon: <Settings className="h-5 w-5" />,
-      isFree: true,
-    },
-  };
-  return services[id] || null;
-};
+import { toast } from "@/lib/toast";
+import type { ServiceCard, ServiceCoverage } from "@/validations/types";
 
 export default function AdmServicesDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const serviceId = params.id as string;
+  
+  const [service, setService] = useState<ServiceCard | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [note, setNote] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     price: "",
-    coverage: "Pagado por el cliente",
+    coverage: "cliente" as ServiceCoverage,
     description: "",
-    duration: "",
+    category: "",
   });
 
-  const serviceData = getServiceData(serviceId);
-
-  // Inicializar formData cuando se carga el servicio
-  useEffect(() => {
-    if (serviceData && !formData.name) {
-      setFormData({
-        name: serviceData.name,
-        price: serviceData.price.replace("$", "").replace(" USD", "").replace("Gratuito", ""),
-        coverage: serviceData.coverage,
-        description: serviceData.description || "",
-        duration: serviceData.duration || "",
-      });
+  const loadService = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/services/${serviceId}`, { cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 404) {
+          setService(null);
+          return;
+        }
+        throw new Error("Service request failed");
+      }
+      const { data } = (await response.json()) as { data?: ServiceCard };
+      setService(data || null);
+      if (data) {
+        setFormData({
+          name: data.name,
+          price: data.isFree ? "" : String(data.price),
+          coverage: data.coverage,
+          description: data.description || "",
+          category: data.category || "",
+        });
+      }
+    } catch (error) {
+      console.error("Error loading service:", error);
+      toast.error("No pudimos cargar el servicio. Intenta nuevamente.");
+      setService(null);
+    } finally {
+      setIsLoading(false);
     }
-  }, [serviceData]);
+  }, [serviceId]);
+
+  useEffect(() => {
+    loadService();
+  }, [loadService]);
 
   const backButton = (
     <Button
@@ -149,7 +112,100 @@ export default function AdmServicesDetailsPage() {
     </Button>
   );
 
-  if (!serviceData) {
+  const handleSaveChanges = async () => {
+    if (!formData.name.trim()) {
+      toast.error("El nombre del servicio es requerido.");
+      return;
+    }
+
+    const price = parseFloat(formData.price) || 0;
+    if (price < 0) {
+      toast.error("El precio no puede ser negativo.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/services/${serviceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            name: formData.name.trim(),
+            price,
+            coverage: formData.coverage,
+            description: formData.description.trim() || undefined,
+            category: formData.category.trim() || undefined,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo actualizar el servicio");
+      }
+
+      toast.success("Servicio actualizado exitosamente");
+      setIsEditing(false);
+      await loadService();
+    } catch (error) {
+      console.error("Error updating service:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo actualizar el servicio");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteService = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/services/${serviceId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo eliminar el servicio");
+      }
+
+      toast.success("Servicio eliminado exitosamente");
+      router.push("/adm-services");
+    } catch (error) {
+      console.error("Error deleting service:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo eliminar el servicio");
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Cargando..." showFilterAction leftActions={backButton}>
+        <section className={`flex flex-col ${spacing.gap.large}`}>
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardContent className="flex flex-col items-center gap-4 p-6">
+              <Skeleton className="h-16 w-16 rounded-full" />
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-32" />
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <Skeleton className="h-5 w-40" />
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 px-6 pb-6">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-4 w-1/2" />
+            </CardContent>
+          </Card>
+        </section>
+      </AdminLayout>
+    );
+  }
+
+  if (!service) {
     return (
       <AdminLayout title="Servicio no encontrado" showFilterAction leftActions={backButton}>
         <section className={`flex flex-col items-center justify-center ${spacing.gap.base} min-h-[400px]`}>
@@ -162,18 +218,8 @@ export default function AdmServicesDetailsPage() {
     );
   }
 
-  const handleSaveNote = () => {
-    console.log("Nota guardada:", note, "para servicio:", serviceId);
-    setNote("");
-  };
-
-  const handleSaveChanges = () => {
-    console.log("Cambios guardados:", formData, "para servicio:", serviceId);
-    setIsEditing(false);
-  };
-
   return (
-    <AdminLayout title={serviceData.name} showFilterAction leftActions={backButton}>
+    <AdminLayout title={service.name} showFilterAction leftActions={backButton}>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información del Servicio */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
@@ -198,34 +244,37 @@ export default function AdmServicesDetailsPage() {
                   <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(true)}>
                     Editar Servicio
                   </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" className="cursor-pointer">
+                  <DropdownMenuItem 
+                    variant="destructive" 
+                    className="cursor-pointer"
+                    onClick={() => setShowDeleteDialog(true)}
+                  >
                     Eliminar Servicio
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
 
             {/* Icono */}
-            <div className={`flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mt-8`}>
-              {serviceData.icon}
+            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mt-8">
+              <Wrench className="h-6 w-6" />
             </div>
 
             {/* Nombre y Badge */}
             <div className="flex flex-col items-center text-center">
               <h2 className={`${typography.h3} text-center`}>
-                {serviceData.name}
+                {service.name}
               </h2>
-              {serviceData.category && (
+              {service.category && (
                 <p className={`${typography.body.small} mt-1 text-muted-foreground`}>
-                  {serviceData.category}
+                  {service.category}
                 </p>
               )}
               <div className="mt-2">
                 <Badge className={`rounded-full px-3 py-1 text-xs font-medium ${
-                  serviceData.isFree ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
+                  service.isFree ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
                 }`}>
-                  {serviceData.coverage}
+                  {service.coverageLabel}
                 </Badge>
               </div>
             </div>
@@ -244,9 +293,7 @@ export default function AdmServicesDetailsPage() {
                 variant="outline"
                 size="icon"
                 className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                onClick={() => {
-                  // Acción de eliminar
-                }}
+                onClick={() => setShowDeleteDialog(true)}
               >
                 <Trash2 className="h-5 w-5 flex-shrink-0" />
               </Button>
@@ -269,6 +316,7 @@ export default function AdmServicesDetailsPage() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Cambio de Aceite"
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -283,20 +331,38 @@ export default function AdmServicesDetailsPage() {
                       onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                       className="pl-7"
                       placeholder="80.00"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      disabled={isSaving}
                     />
                   </div>
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
                   <Label htmlFor="coverage">Cobertura del coste</Label>
-                  <Select value={formData.coverage} onValueChange={(value) => setFormData({ ...formData, coverage: value })}>
+                  <Select 
+                    value={formData.coverage} 
+                    onValueChange={(value: ServiceCoverage) => setFormData({ ...formData, coverage: value })}
+                    disabled={isSaving}
+                  >
                     <SelectTrigger id="coverage">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Pagado por el cliente">Pagado por el cliente</SelectItem>
-                      <SelectItem value="Cubierto por la empresa">Cubierto por la empresa</SelectItem>
+                      <SelectItem value="cliente">Pagado por el cliente</SelectItem>
+                      <SelectItem value="empresa">Cubierto por la empresa</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className={`flex flex-col ${spacing.gap.small}`}>
+                  <Label htmlFor="category">Categoría</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    placeholder="Mantenimiento"
+                    disabled={isSaving}
+                  />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
                   <Label htmlFor="description">Descripción</Label>
@@ -306,15 +372,7 @@ export default function AdmServicesDetailsPage() {
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
                     placeholder="Descripción del servicio..."
-                  />
-                </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="duration">Duración</Label>
-                  <Input
-                    id="duration"
-                    value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-                    placeholder="30 minutos"
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex ${spacing.gap.small} mt-2`}>
@@ -322,13 +380,33 @@ export default function AdmServicesDetailsPage() {
                     variant="default"
                     className="flex-1"
                     onClick={handleSaveChanges}
+                    disabled={isSaving}
                   >
-                    Guardar Cambios
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="animate-spin mr-2" />
+                        Guardando...
+                      </>
+                    ) : (
+                      "Guardar Cambios"
+                    )}
                   </Button>
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => {
+                      setIsEditing(false);
+                      if (service) {
+                        setFormData({
+                          name: service.name,
+                          price: service.isFree ? "" : String(service.price),
+                          coverage: service.coverage,
+                          description: service.description || "",
+                          category: service.category || "",
+                        });
+                      }
+                    }}
+                    disabled={isSaving}
                   >
                     Cancelar
                   </Button>
@@ -341,9 +419,9 @@ export default function AdmServicesDetailsPage() {
                   <div className="flex-1">
                     <p className={`${typography.body.small} text-muted-foreground`}>Precio</p>
                     <p className={`${typography.body.large} font-semibold ${
-                      serviceData.isFree ? "text-green-600" : ""
+                      service.isFree ? "text-green-600" : ""
                     }`}>
-                      {serviceData.price}
+                      {service.priceLabel}
                     </p>
                   </div>
                 </div>
@@ -351,23 +429,23 @@ export default function AdmServicesDetailsPage() {
                   <Settings className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
                     <p className={`${typography.body.small} text-muted-foreground`}>Cobertura</p>
-                    <p className={typography.body.base}>{serviceData.coverage}</p>
+                    <p className={typography.body.base}>{service.coverageLabel}</p>
                   </div>
                 </div>
-                {serviceData.duration && (
+                {service.category && (
                   <div className={`flex items-center ${spacing.gap.medium}`}>
-                    <Settings className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <Wrench className="h-5 w-5 text-muted-foreground shrink-0" />
                     <div className="flex-1">
-                      <p className={`${typography.body.small} text-muted-foreground`}>Duración</p>
-                      <p className={typography.body.base}>{serviceData.duration}</p>
+                      <p className={`${typography.body.small} text-muted-foreground`}>Categoría</p>
+                      <p className={typography.body.base}>{service.category}</p>
                     </div>
                   </div>
                 )}
-                {serviceData.description && (
+                {service.description && (
                   <div className={`flex items-start ${spacing.gap.medium} pt-2`}>
                     <div className="flex-1">
                       <p className={`${typography.body.small} text-muted-foreground`}>Descripción</p>
-                      <p className={typography.body.base}>{serviceData.description}</p>
+                      <p className={typography.body.base}>{service.description}</p>
                     </div>
                   </div>
                 )}
@@ -375,32 +453,37 @@ export default function AdmServicesDetailsPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* Notas y Comentarios */}
-        <Card className="shadow-sm ring-1 ring-inset ring-border/50">
-          <CardHeader className="px-6 pt-6 pb-4">
-            <CardTitle className={typography.h4}>Notas y Comentarios</CardTitle>
-          </CardHeader>
-          <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
-            <Textarea
-              placeholder="Añadir una nota sobre el servicio..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={4}
-              className="min-h-24 resize-y"
-            />
-            <Button
-              onClick={handleSaveNote}
-              variant="default"
-              className="btn-black"
-              disabled={!note.trim()}
-            >
-              Guardar Nota
-            </Button>
-          </CardContent>
-        </Card>
       </section>
+
+      {/* Diálogo de confirmación de eliminación */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar servicio?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente el servicio 
+              <strong> {service.name}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteService}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Eliminando...
+                </>
+              ) : (
+                "Eliminar"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }
-

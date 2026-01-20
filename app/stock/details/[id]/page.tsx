@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -8,6 +8,7 @@ import { Badge } from "@/components_shadcn/ui/badge";
 import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Input } from "@/components_shadcn/ui/input";
 import { Label } from "@/components_shadcn/ui/label";
+import { Skeleton } from "@/components_shadcn/ui/skeleton";
 import { 
   ArrowLeft, 
   MoreVertical, 
@@ -20,7 +21,8 @@ import {
   Filter,
   CircleDot,
   Zap,
-  Wrench
+  Wrench,
+  Loader2
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -30,90 +32,10 @@ import {
 } from "@/components_shadcn/ui/dropdown-menu";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import { toast } from "@/lib/toast";
+import type { InventoryItemCard, StockStatus, InventoryIcon } from "@/validations/types";
 
-interface InventoryItemData {
-  id: string;
-  code: string;
-  description: string;
-  assignedTo: string;
-  stock: number;
-  minStock?: number;
-  maxStock?: number;
-  unit?: string;
-  location?: string;
-  supplier?: string;
-  lastRestocked?: string;
-  icon: "filter" | "disc" | "bolt" | "tire";
-  stockStatus: "high" | "medium" | "low";
-}
-
-const getInventoryItemData = (id: string): InventoryItemData | null => {
-  const items: Record<string, InventoryItemData> = {
-    "1": {
-      id: "1",
-      code: "FLTR-001",
-      description: "Filtro de aceite motor 1.6L",
-      assignedTo: "Taller Mecánico",
-      stock: 50,
-      minStock: 20,
-      maxStock: 100,
-      unit: "unidades",
-      location: "Almacén A - Estante 3",
-      supplier: "Repuestos ABC",
-      lastRestocked: "2024-09-15",
-      icon: "filter",
-      stockStatus: "high",
-    },
-    "2": {
-      id: "2",
-      code: "BRK-PAD-012",
-      description: "Pastillas de freno delanteras",
-      assignedTo: "J. Pérez",
-      stock: 12,
-      minStock: 15,
-      maxStock: 50,
-      unit: "pares",
-      location: "Almacén B - Estante 1",
-      supplier: "Frenos XYZ",
-      lastRestocked: "2024-08-20",
-      icon: "disc",
-      stockStatus: "medium",
-    },
-    "3": {
-      id: "3",
-      code: "SPRK-PLG-08",
-      description: "Bujía de encendido Iridium",
-      assignedTo: "Almacén Central",
-      stock: 120,
-      minStock: 30,
-      maxStock: 200,
-      unit: "unidades",
-      location: "Almacén Central - Estante 5",
-      supplier: "Spark Plugs Co.",
-      lastRestocked: "2024-10-01",
-      icon: "bolt",
-      stockStatus: "high",
-    },
-    "4": {
-      id: "4",
-      code: "TYR-205-55R16",
-      description: "Neumático Michelin Primacy 4",
-      assignedTo: "Almacén Principal",
-      stock: 4,
-      minStock: 10,
-      maxStock: 30,
-      unit: "unidades",
-      location: "Almacén Principal - Zona Neumáticos",
-      supplier: "Michelin Distribuidor",
-      lastRestocked: "2024-07-10",
-      icon: "tire",
-      stockStatus: "low",
-    },
-  };
-  return items[id] || null;
-};
-
-const getStockBadge = (status: "high" | "medium" | "low", stock: number) => {
+const getStockBadge = (status: StockStatus, stock: number) => {
   switch (status) {
     case "high":
       return (
@@ -136,7 +58,7 @@ const getStockBadge = (status: "high" | "medium" | "low", stock: number) => {
   }
 };
 
-const getIcon = (icon: "filter" | "disc" | "bolt" | "tire") => {
+const getIcon = (icon: InventoryIcon) => {
   switch (icon) {
     case "filter":
       return Filter;
@@ -154,6 +76,10 @@ export default function StockDetailsPage() {
   const params = useParams();
   const itemId = params.id as string;
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [itemData, setItemData] = useState<InventoryItemCard | null>(null);
   const [note, setNote] = useState("");
   const [formData, setFormData] = useState({
     stock: "",
@@ -162,19 +88,39 @@ export default function StockDetailsPage() {
     description: "",
   });
 
-  const itemData = getInventoryItemData(itemId);
-
-  // Inicializar formData cuando se carga el item
-  useEffect(() => {
-    if (itemData && !formData.stock) {
-      setFormData({
-        stock: itemData.stock.toString(),
-        assignedTo: itemData.assignedTo,
-        location: itemData.location || "",
-        description: itemData.description,
-      });
+  const loadItem = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, { cache: "no-store" });
+      if (!response.ok) {
+        if (response.status === 404) {
+          setItemData(null);
+          return;
+        }
+        throw new Error("Failed to fetch inventory item");
+      }
+      const { data } = (await response.json()) as { data?: InventoryItemCard };
+      setItemData(data || null);
+      if (data) {
+        setFormData({
+          stock: data.stock.toString(),
+          assignedTo: data.assignedTo || "",
+          location: data.location || "",
+          description: data.description,
+        });
+      }
+    } catch (error) {
+      console.error("Error loading inventory item:", error);
+      toast.error("No pudimos cargar la información de la pieza.");
+      setItemData(null);
+    } finally {
+      setIsLoading(false);
     }
-  }, [itemData]);
+  }, [itemId]);
+
+  useEffect(() => {
+    loadItem();
+  }, [loadItem]);
 
   const backButton = (
     <Button
@@ -186,6 +132,108 @@ export default function StockDetailsPage() {
       <ArrowLeft className="h-5 w-5" />
     </Button>
   );
+
+  const handleSaveNote = () => {
+    console.log("Nota guardada:", note, "para pieza:", itemId);
+    toast.success("Nota guardada correctamente.");
+    setNote("");
+  };
+
+  const handleSaveChanges = async () => {
+    if (!itemData) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            stock: parseInt(formData.stock, 10) || 0,
+            assignedTo: formData.assignedTo || undefined,
+            location: formData.location || undefined,
+            description: formData.description,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al guardar los cambios");
+      }
+
+      const { data } = (await response.json()) as { data: InventoryItemCard };
+      setItemData(data);
+      setIsEditing(false);
+      toast.success("Cambios guardados correctamente.");
+    } catch (error) {
+      console.error("Error saving changes:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudieron guardar los cambios.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!itemData) return;
+
+    if (!confirm("¿Estás seguro de que deseas eliminar esta pieza del inventario?")) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al eliminar la pieza");
+      }
+
+      toast.success("Pieza eliminada correctamente.");
+      router.push("/stock");
+    } catch (error) {
+      console.error("Error deleting item:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo eliminar la pieza.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Cargando..." showFilterAction leftActions={backButton}>
+        <section className={`flex flex-col ${spacing.gap.large}`}>
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardContent className={`flex flex-col items-center ${spacing.gap.base} p-6`}>
+              <Skeleton className="h-16 w-16 rounded-lg mt-8" />
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-6 w-20 rounded-full" />
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm ring-1 ring-inset ring-border/50">
+            <CardHeader className="px-6 pt-6 pb-4">
+              <Skeleton className="h-5 w-48" />
+            </CardHeader>
+            <CardContent className={`flex flex-col ${spacing.gap.base} px-6 pb-6`}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className={`flex items-center ${spacing.gap.medium}`}>
+                  <Skeleton className="h-5 w-5 rounded" />
+                  <div className="flex-1">
+                    <Skeleton className="h-3 w-24 mb-1" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      </AdminLayout>
+    );
+  }
 
   if (!itemData) {
     return (
@@ -199,16 +247,6 @@ export default function StockDetailsPage() {
       </AdminLayout>
     );
   }
-
-  const handleSaveNote = () => {
-    console.log("Nota guardada:", note, "para pieza:", itemId);
-    setNote("");
-  };
-
-  const handleSaveChanges = () => {
-    console.log("Cambios guardados:", formData, "para pieza:", itemId);
-    setIsEditing(false);
-  };
 
   const IconComponent = getIcon(itemData.icon);
 
@@ -238,8 +276,13 @@ export default function StockDetailsPage() {
                   <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(true)}>
                     Editar Pieza
                   </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" className="cursor-pointer">
-                    Eliminar Pieza
+                  <DropdownMenuItem 
+                    variant="destructive" 
+                    className="cursor-pointer"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Eliminando..." : "Eliminar Pieza"}
                   </DropdownMenuItem>
                   <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
                 </DropdownMenuContent>
@@ -269,6 +312,7 @@ export default function StockDetailsPage() {
                 size="icon"
                 className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
                 onClick={() => setIsEditing(!isEditing)}
+                disabled={isSaving}
               >
                 <Edit className="h-5 w-5 flex-shrink-0" />
               </Button>
@@ -276,11 +320,14 @@ export default function StockDetailsPage() {
                 variant="outline"
                 size="icon"
                 className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                onClick={() => {
-                  // Acción de eliminar
-                }}
+                onClick={handleDelete}
+                disabled={isDeleting}
               >
-                <Trash2 className="h-5 w-5 flex-shrink-0" />
+                {isDeleting ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-5 w-5 flex-shrink-0" />
+                )}
               </Button>
             </div>
           </CardContent>
@@ -302,6 +349,7 @@ export default function StockDetailsPage() {
                     value={formData.stock}
                     onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
                     placeholder="50"
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -311,6 +359,7 @@ export default function StockDetailsPage() {
                     value={formData.assignedTo}
                     onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
                     placeholder="Taller Mecánico"
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -320,6 +369,7 @@ export default function StockDetailsPage() {
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     placeholder="Almacén A - Estante 3"
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -329,6 +379,7 @@ export default function StockDetailsPage() {
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
+                    disabled={isSaving}
                   />
                 </div>
                 <div className={`flex ${spacing.gap.small} mt-2`}>
@@ -336,13 +387,32 @@ export default function StockDetailsPage() {
                     variant="default"
                     className="flex-1"
                     onClick={handleSaveChanges}
+                    disabled={isSaving}
                   >
-                    Guardar Cambios
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      "Guardar Cambios"
+                    )}
                   </Button>
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => {
+                      setIsEditing(false);
+                      if (itemData) {
+                        setFormData({
+                          stock: itemData.stock.toString(),
+                          assignedTo: itemData.assignedTo || "",
+                          location: itemData.location || "",
+                          description: itemData.description,
+                        });
+                      }
+                    }}
+                    disabled={isSaving}
                   >
                     Cancelar
                   </Button>
@@ -377,13 +447,15 @@ export default function StockDetailsPage() {
                     </div>
                   </div>
                 )}
-                <div className={`flex items-center ${spacing.gap.medium}`}>
-                  <User className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1">
-                    <p className={`${typography.body.small} text-muted-foreground`}>Asignado a</p>
-                    <p className={typography.body.base}>{itemData.assignedTo}</p>
+                {itemData.assignedTo && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <User className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Asignado a</p>
+                      <p className={typography.body.base}>{itemData.assignedTo}</p>
+                    </div>
                   </div>
-                </div>
+                )}
                 {itemData.location && (
                   <div className={`flex items-center ${spacing.gap.medium}`}>
                     <Package className="h-5 w-5 text-muted-foreground shrink-0" />
@@ -445,4 +517,3 @@ export default function StockDetailsPage() {
     </AdminLayout>
   );
 }
-

@@ -20,62 +20,22 @@ import {
   Edit,
   ChevronDown,
   X,
+  Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import type { BillingRecordCard, BillingStatus } from "@/validations/types";
+import { toast } from "sonner";
+import {
+  CreateBillingDialog,
+  initialBillingFormData,
+  validateBillingForm,
+  type CreateBillingFormData,
+} from "./components/billing-dialogs";
 
-interface Payment {
-  id: string;
-  clientName: string;
-  invoiceNumber: string;
-  amount: number;
-  status: "pagado" | "pendiente" | "retrasado";
-  dateLabel: string;
-  date: string;
-}
-
-const payments: Payment[] = [
-  {
-    id: "1",
-    clientName: "Ana López",
-    invoiceNumber: "Factura #2024-015",
-    amount: 350.0,
-    status: "retrasado",
-    dateLabel: "Vence:",
-    date: "01/06/2024",
-  },
-  {
-    id: "2",
-    clientName: "Jorge Martinez",
-    invoiceNumber: "Factura #2024-014",
-    amount: 500.0,
-    status: "pagado",
-    dateLabel: "Pagado:",
-    date: "02/06/2024",
-  },
-  {
-    id: "3",
-    clientName: "Laura Gómez",
-    invoiceNumber: "Factura #2024-012",
-    amount: 275.5,
-    status: "pendiente",
-    dateLabel: "Vence:",
-    date: "15/06/2024",
-  },
-  {
-    id: "4",
-    clientName: "Ricardo Pérez",
-    invoiceNumber: "Factura #2024-011",
-    amount: 420.0,
-    status: "retrasado",
-    dateLabel: "Vence:",
-    date: "28/05/2024",
-  },
-];
-
-const getStatusBadge = (status: Payment["status"]) => {
+const getStatusBadge = (status: BillingStatus) => {
   switch (status) {
     case "pagado":
       return (
@@ -99,7 +59,7 @@ const getStatusBadge = (status: Payment["status"]) => {
   }
 };
 
-const getAmountColor = (status: Payment["status"]) => {
+const getAmountColor = (status: BillingStatus) => {
   switch (status) {
     case "pagado":
       return "text-green-600";
@@ -110,7 +70,7 @@ const getAmountColor = (status: Payment["status"]) => {
   }
 };
 
-const getActionButton = (status: Payment["status"], onClick: (e: React.MouseEvent) => void) => {
+const getActionButton = (status: BillingStatus, onClick: (e: React.MouseEvent) => void) => {
   switch (status) {
     case "pagado":
       return (
@@ -148,26 +108,107 @@ const getActionButton = (status: Payment["status"], onClick: (e: React.MouseEven
   }
 };
 
+const getDateLabel = (record: BillingRecordCard): { label: string; date: string } => {
+  if (record.status === "pagado" && record.paymentDateLabel) {
+    return { label: "Pagado:", date: record.paymentDateLabel };
+  }
+  if (record.dueDateLabel) {
+    return { label: "Vence:", date: record.dueDateLabel };
+  }
+  return { label: "", date: "" };
+};
+
 export default function BillingPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState("");
+  const [records, setRecords] = useState<BillingRecordCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredPayments = payments.filter((payment) => {
+  // Estado del modal de crear pago
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [createFormData, setCreateFormData] = useState<CreateBillingFormData>(initialBillingFormData);
+  const [isCreating, setIsCreating] = useState(false);
+
+  const fetchRecords = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await fetch("/api/billing");
+      if (!response.ok) {
+        throw new Error("Error al cargar los registros de facturación");
+      }
+      const data = await response.json();
+      setRecords(data.data || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRecords();
+  }, [fetchRecords]);
+
+  const handleCreatePayment = async () => {
+    try {
+      setIsCreating(true);
+      const response = await fetch("/api/billing", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: {
+            invoiceNumber: createFormData.invoiceNumber,
+            amount: parseFloat(createFormData.amount),
+            currency: createFormData.currency,
+            status: createFormData.status,
+            dueDate: createFormData.dueDate || null,
+            paymentDate: createFormData.paymentDate || null,
+            notes: createFormData.notes || null,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al crear el pago");
+      }
+
+      toast.success("Pago registrado correctamente");
+      setIsCreateDialogOpen(false);
+      setCreateFormData(initialBillingFormData);
+      fetchRecords();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al registrar el pago");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleCancelCreate = () => {
+    setIsCreateDialogOpen(false);
+    setCreateFormData(initialBillingFormData);
+  };
+
+  const isFormValid = validateBillingForm(createFormData);
+
+  const filteredRecords = records.filter((record) => {
     const matchesSearch =
-      payment.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      payment.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      (record.clientName?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+      record.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus =
-      statusFilter === "all" || payment.status === statusFilter;
+      statusFilter === "all" || record.status === statusFilter;
     
     // Filtro por fecha
     let matchesDate = true;
-    if (dateFilter) {
-      // Convertir la fecha del pago (dd/mm/yyyy) a formato yyyy-mm-dd para comparar
-      const [day, month, year] = payment.date.split("/");
-      const paymentDateFormatted = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-      matchesDate = paymentDateFormatted === dateFilter;
+    if (dateFilter && record.dueDate) {
+      // La fecha viene en formato ISO, comparar directamente
+      matchesDate = record.dueDate === dateFilter;
     }
     
     return matchesSearch && matchesStatus && matchesDate;
@@ -180,11 +221,26 @@ export default function BillingPage() {
     >
       {/* Botón de Registrar Pago */}
       <div className="px-0">
-        <Button className="w-full rounded-lg bg-primary h-12 text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 flex items-center justify-center gap-2">
+        <Button
+          className="w-full rounded-lg bg-primary h-12 text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 flex items-center justify-center gap-2"
+          onClick={() => setIsCreateDialogOpen(true)}
+        >
           <CreditCard className="h-5 w-5" />
           Registrar Pago Manual
         </Button>
       </div>
+
+      {/* Modal de Crear Pago */}
+      <CreateBillingDialog
+        isOpen={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        formData={createFormData}
+        setFormData={setCreateFormData}
+        isCreating={isCreating}
+        isFormValid={isFormValid}
+        onConfirm={handleCreatePayment}
+        onCancel={handleCancelCreate}
+      />
 
       {/* Filtros */}
       <div className={`flex flex-col ${spacing.gap.small} px-0`}>
@@ -256,48 +312,89 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Estado de carga */}
+      {isLoading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
+
+      {/* Estado de error */}
+      {error && !isLoading && (
+        <Card className={commonClasses.card}>
+          <CardContent className={spacing.card.padding}>
+            <p className="text-center text-red-600">{error}</p>
+            <Button
+              variant="outline"
+              className="mt-4 w-full"
+              onClick={fetchRecords}
+            >
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Estado vacío */}
+      {!isLoading && !error && filteredRecords.length === 0 && (
+        <Card className={commonClasses.card}>
+          <CardContent className={spacing.card.padding}>
+            <p className="text-center text-muted-foreground">
+              {records.length === 0
+                ? "No hay registros de facturación"
+                : "No se encontraron registros con los filtros aplicados"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Lista de Pagos */}
-      <div className={`flex flex-col ${spacing.gap.medium} px-0`}>
-        {filteredPayments.map((payment) => (
-          <Card
-            key={payment.id}
-            className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
-            onClick={() => router.push(`/billing/details/${payment.id}`)}
-          >
-            <CardContent className={spacing.card.padding}>
-              <div className={`flex items-start justify-between ${spacing.gap.base}`}>
-                <div className="flex flex-col">
-                  <p className={`${typography.body.large} font-bold`}>
-                    {payment.clientName}
-                  </p>
-                  <p className={typography.body.base}>
-                    {payment.invoiceNumber}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p
-                    className={`${typography.metric.base} font-bold ${getAmountColor(payment.status)}`}
-                  >
-                    $ {payment.amount.toFixed(2)}
-                  </p>
-                  <div className="mt-1">{getStatusBadge(payment.status)}</div>
-                </div>
-              </div>
-              <div
-                className={`mt-4 flex items-center justify-between ${typography.body.base}`}
+      {!isLoading && !error && filteredRecords.length > 0 && (
+        <div className={`flex flex-col ${spacing.gap.medium} px-0`}>
+          {filteredRecords.map((record) => {
+            const dateInfo = getDateLabel(record);
+            return (
+              <Card
+                key={record.id}
+                className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+                onClick={() => router.push(`/billing/details/${record.documentId}`)}
               >
-                <p className={typography.body.small}>
-                  {payment.dateLabel} {payment.date}
-                </p>
-                {getActionButton(payment.status, (e) => {
-                  e.stopPropagation();
-                  router.push(`/billing/details/${payment.id}`);
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <CardContent className={spacing.card.padding}>
+                  <div className={`flex items-start justify-between ${spacing.gap.base}`}>
+                    <div className="flex flex-col">
+                      <p className={`${typography.body.large} font-bold`}>
+                        {record.clientName || "Cliente no asignado"}
+                      </p>
+                      <p className={typography.body.base}>
+                        Factura #{record.invoiceNumber}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p
+                        className={`${typography.metric.base} font-bold ${getAmountColor(record.status)}`}
+                      >
+                        {record.amountLabel}
+                      </p>
+                      <div className="mt-1">{getStatusBadge(record.status)}</div>
+                    </div>
+                  </div>
+                  <div
+                    className={`mt-4 flex items-center justify-between ${typography.body.base}`}
+                  >
+                    <p className={typography.body.small}>
+                      {dateInfo.label} {dateInfo.date}
+                    </p>
+                    {getActionButton(record.status, (e) => {
+                      e.stopPropagation();
+                      router.push(`/billing/details/${record.documentId}`);
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </AdminLayout>
   );
 }

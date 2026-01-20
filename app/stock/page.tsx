@@ -4,62 +4,34 @@ import { SearchInput } from "@/components/ui/search-input";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
 import { Badge } from "@/components_shadcn/ui/badge";
-import { MoreVertical, Filter, CircleDot, Zap, Wrench, Plus, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { MoreVertical, Filter, CircleDot, Zap, Wrench, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { commonClasses, spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import { Skeleton } from "@/components_shadcn/ui/skeleton";
+import { toast } from "@/lib/toast";
+import type { InventoryItemCard, StockStatus, InventoryIcon } from "@/validations/types";
+import {
+  AddInventoryItemButton,
+  CreateInventoryItemDialog,
+  CreateInventoryItemFormData,
+} from "./components/stock-dialogs";
 
-interface InventoryItem {
-  id: string;
-  code: string;
-  description: string;
-  assignedTo: string;
-  stock: number;
-  icon: "filter" | "disc" | "bolt" | "tire";
-  stockStatus: "high" | "medium" | "low";
-}
+const createInitialFormData = (): CreateInventoryItemFormData => ({
+  code: "",
+  description: "",
+  stock: "",
+  minStock: "",
+  maxStock: "",
+  unit: "",
+  assignedTo: "",
+  location: "",
+  supplier: "",
+  icon: "filter",
+});
 
-const inventoryItems: InventoryItem[] = [
-  {
-    id: "1",
-    code: "FLTR-001",
-    description: "Filtro de aceite motor 1.6L",
-    assignedTo: "Taller Mecánico",
-    stock: 50,
-    icon: "filter",
-    stockStatus: "high",
-  },
-  {
-    id: "2",
-    code: "BRK-PAD-012",
-    description: "Pastillas de freno delanteras",
-    assignedTo: "J. Pérez",
-    stock: 12,
-    icon: "disc",
-    stockStatus: "medium",
-  },
-  {
-    id: "3",
-    code: "SPRK-PLG-08",
-    description: "Bujía de encendido Iridium",
-    assignedTo: "Almacén Central",
-    stock: 120,
-    icon: "bolt",
-    stockStatus: "high",
-  },
-  {
-    id: "4",
-    code: "TYR-205-55R16",
-    description: "Neumático Michelin Primacy 4",
-    assignedTo: "Almacén Principal",
-    stock: 4,
-    icon: "tire",
-    stockStatus: "low",
-  },
-];
-
-const getStockBadge = (status: "high" | "medium" | "low", stock: number) => {
+const getStockBadge = (status: StockStatus, stock: number) => {
   switch (status) {
     case "high":
       return (
@@ -82,7 +54,7 @@ const getStockBadge = (status: "high" | "medium" | "low", stock: number) => {
   }
 };
 
-const getIcon = (icon: "filter" | "disc" | "bolt" | "tire") => {
+const getIcon = (icon: InventoryIcon) => {
   switch (icon) {
     case "filter":
       return <Filter className="h-6 w-6" />;
@@ -98,11 +70,137 @@ const getIcon = (icon: "filter" | "disc" | "bolt" | "tire") => {
 export default function StockPage() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const [items, setItems] = useState<InventoryItemCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  // Estados para el diálogo de crear item
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState<CreateInventoryItemFormData>(() => createInitialFormData());
 
-  const filteredItems = inventoryItems.filter((item) =>
+  const loadItems = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/inventory", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Inventory request failed");
+      }
+      const { data } = (await response.json()) as { data?: InventoryItemCard[] };
+      setItems(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error loading inventory:", error);
+      toast.error("No pudimos cargar el inventario. Intenta nuevamente.");
+      setItems([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadItems();
+  }, [loadItems]);
+
+  const filteredItems = items.filter((item) =>
     item.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Validar si todos los campos requeridos están llenos
+  const isFormValid = useMemo(() => {
+    const stock = Number(formData.stock);
+    
+    return (
+      formData.code.trim() !== "" &&
+      formData.description.trim() !== "" &&
+      formData.stock.trim() !== "" &&
+      !isNaN(stock) &&
+      stock >= 0
+    );
+  }, [formData]);
+
+  const resetForm = () => {
+    setFormData(createInitialFormData());
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      resetForm();
+    }
+  };
+
+  const handleCancelCreateDialog = () => {
+    setIsDialogOpen(false);
+    resetForm();
+  };
+
+  const handleCreateItem = async () => {
+    // Validar campos requeridos
+    if (!formData.code || !formData.description || !formData.stock) {
+      toast.error("Por favor completa todos los campos requeridos");
+      return;
+    }
+
+    // Validar stock
+    const stock = Number(formData.stock);
+    if (isNaN(stock) || stock < 0) {
+      toast.error("El stock debe ser un número válido mayor o igual a 0");
+      return;
+    }
+
+    // Validar minStock si está presente
+    if (formData.minStock && (isNaN(Number(formData.minStock)) || Number(formData.minStock) < 0)) {
+      toast.error("El stock mínimo debe ser un número válido mayor o igual a 0");
+      return;
+    }
+
+    // Validar maxStock si está presente
+    if (formData.maxStock && (isNaN(Number(formData.maxStock)) || Number(formData.maxStock) < 0)) {
+      toast.error("El stock máximo debe ser un número válido mayor o igual a 0");
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const payload = {
+        code: formData.code,
+        description: formData.description,
+        stock: stock,
+        minStock: formData.minStock ? Number(formData.minStock) : undefined,
+        maxStock: formData.maxStock ? Number(formData.maxStock) : undefined,
+        unit: formData.unit || undefined,
+        assignedTo: formData.assignedTo || undefined,
+        location: formData.location || undefined,
+        supplier: formData.supplier || undefined,
+        icon: formData.icon,
+      };
+
+      const response = await fetch("/api/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: payload }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo crear la pieza");
+      }
+
+      const { data } = (await response.json()) as { data: InventoryItemCard };
+      
+      toast.success("Pieza creada exitosamente");
+      setIsDialogOpen(false);
+      resetForm();
+      await loadItems();
+      // Navegar al detalle de la pieza creada
+      router.push(`/stock/details/${data.documentId ?? data.id}`);
+    } catch (error) {
+      console.error("Error creating inventory item:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo crear la pieza");
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   return (
     <AdminLayout
@@ -121,51 +219,88 @@ export default function StockPage() {
 
         {/* Inventory List */}
         <div className={`flex flex-col ${spacing.gap.base}`}>
-          {filteredItems.map((item) => (
-            <Card 
-              key={item.id} 
-              className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
-              onClick={() => router.push(`/stock/details/${item.id}`)}
-            >
-              <CardContent className={spacing.card.padding}>
-                <div className={`flex flex-col ${spacing.gap.medium} justify-between`}>
-                  <div className="flex items-start gap-4">
-                    <div className="text-muted-foreground flex items-center justify-center rounded-lg bg-muted shrink-0 size-12">
-                      {getIcon(item.icon)}
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <Card key={index} className={`${commonClasses.card}`}>
+                <CardContent className={spacing.card.padding}>
+                  <div className={`flex flex-col ${spacing.gap.medium} justify-between`}>
+                    <div className="flex items-start gap-4">
+                      <Skeleton className="h-12 w-12 rounded-lg" />
+                      <div className="flex flex-1 flex-col justify-center min-w-0 gap-2">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <Skeleton className="h-10 w-10 rounded" />
+                        <Skeleton className="h-5 w-5" />
+                      </div>
                     </div>
-                    <div className="flex flex-1 flex-col justify-center min-w-0">
-                      <p className={`${typography.body.large} font-bold`}>{item.code}</p>
-                      <p className={typography.body.base}>{item.description}</p>
-                      <p className={`${typography.body.small} mt-1`}>Asignado a: {item.assignedTo}</p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-10 w-10 text-muted-foreground flex items-center justify-center"
-                        onClick={(e) => { e.stopPropagation(); }}
-                      >
-                        <MoreVertical className="h-5 w-5" />
-                      </Button>
-                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    <div className="flex justify-end">
+                      <Skeleton className="h-6 w-20 rounded-full" />
                     </div>
                   </div>
-                  <div className="flex justify-end">
-                    {getStockBadge(item.stockStatus, item.stock)}
+                </CardContent>
+              </Card>
+            ))
+          ) : filteredItems.length === 0 ? (
+            <p className={`${typography.body.base} text-muted-foreground text-center py-8`}>
+              {searchQuery ? "No se encontraron resultados." : "No hay piezas en el inventario."}
+            </p>
+          ) : (
+            filteredItems.map((item) => (
+              <Card 
+                key={item.id} 
+                className={`${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+                onClick={() => router.push(`/stock/details/${item.documentId}`)}
+              >
+                <CardContent className={spacing.card.padding}>
+                  <div className={`flex flex-col ${spacing.gap.medium} justify-between`}>
+                    <div className="flex items-start gap-4">
+                      <div className="text-muted-foreground flex items-center justify-center rounded-lg bg-muted shrink-0 size-12">
+                        {getIcon(item.icon)}
+                      </div>
+                      <div className="flex flex-1 flex-col justify-center min-w-0">
+                        <p className={`${typography.body.large} font-bold`}>{item.code}</p>
+                        <p className={typography.body.base}>{item.description}</p>
+                        {item.assignedTo && (
+                          <p className={`${typography.body.small} mt-1`}>Asignado a: {item.assignedTo}</p>
+                        )}
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-10 w-10 text-muted-foreground flex items-center justify-center"
+                          onClick={(e) => { e.stopPropagation(); }}
+                        >
+                          <MoreVertical className="h-5 w-5" />
+                        </Button>
+                        <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      {getStockBadge(item.stockStatus, item.stock)}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
 
-      {/* Floating Action Button */}
-      <Button
-        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg bg-primary text-white hover:bg-primary/90"
-        size="icon"
-      >
-        <Plus className="h-6 w-6" />
-      </Button>
+      <AddInventoryItemButton onClick={() => setIsDialogOpen(true)} />
+
+      <CreateInventoryItemDialog
+        isOpen={isDialogOpen}
+        onOpenChange={handleDialogOpenChange}
+        formData={formData}
+        setFormData={setFormData}
+        isCreating={isCreating}
+        isFormValid={isFormValid}
+        onConfirm={handleCreateItem}
+        onCancel={handleCancelCreateDialog}
+      />
     </AdminLayout>
   );
 }

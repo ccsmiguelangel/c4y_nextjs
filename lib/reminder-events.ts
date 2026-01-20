@@ -82,9 +82,7 @@ export function emitReminderRefresh() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(REMINDER_EVENTS.REFRESH));
   }
-}
-
-/**
+}/**
  * Hook helper para escuchar eventos de recordatorios
  */
 export function subscribeToReminderEvents(

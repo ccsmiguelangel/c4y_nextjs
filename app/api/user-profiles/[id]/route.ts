@@ -162,6 +162,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       );
     }
 
+    // Limpiar campos de fecha: convertir strings vacías a null
+    const dateFields = ['dateOfBirth', 'hireDate'];
+    const cleanedData = { ...body.data };
+    for (const field of dateFields) {
+      if (cleanedData[field] === '' || cleanedData[field] === undefined) {
+        cleanedData[field] = null;
+      }
+    }
+
     const response = await fetch(
       `${STRAPI_BASE_URL}/api/user-profiles/${id}`,
       {
@@ -170,7 +179,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           Authorization: `Bearer ${STRAPI_API_TOKEN}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ data: body.data }),
+        body: JSON.stringify({ data: cleanedData }),
         cache: "no-store",
       }
     );

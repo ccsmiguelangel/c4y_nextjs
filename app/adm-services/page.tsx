@@ -11,69 +11,88 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components_shadcn/ui/select";
-import { Plus, Droplet, Wrench, Car, Activity, Settings, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { Plus, Wrench, ChevronRight, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
-
-interface Service {
-  id: string;
-  name: string;
-  price: string;
-  coverage: string;
-  icon: React.ReactNode;
-  isFree?: boolean;
-}
+import { toast } from "@/lib/toast";
+import { Skeleton } from "@/components_shadcn/ui/skeleton";
+import type { ServiceCard, ServiceCoverage } from "@/validations/types";
 
 export default function AdmServicesPage() {
   const router = useRouter();
+  const [services, setServices] = useState<ServiceCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
   const [serviceName, setServiceName] = useState("");
   const [servicePrice, setServicePrice] = useState("");
-  const [serviceCoverage, setServiceCoverage] = useState("Pagado por el cliente");
+  const [serviceCoverage, setServiceCoverage] = useState<ServiceCoverage>("cliente");
 
-  const predefinedServices: Service[] = [
-    {
-      id: "1",
-      name: "Cambio de Aceite",
-      price: "$80.00 USD",
-      coverage: "Pagado por el cliente",
-      icon: <Droplet className="h-5 w-5" />,
-    },
-    {
-      id: "2",
-      name: "Rotación de Neumáticos",
-      price: "$50.00 USD",
-      coverage: "Pagado por el cliente",
-      icon: <Wrench className="h-5 w-5" />,
-    },
-    {
-      id: "3",
-      name: "Revisión de Frenos",
-      price: "$120.00 USD",
-      coverage: "Pagado por el cliente",
-      icon: <Car className="h-5 w-5" />,
-    },
-    {
-      id: "4",
-      name: "Diagnóstico General",
-      price: "$95.00 USD",
-      coverage: "Pagado por el cliente",
-      icon: <Activity className="h-5 w-5" />,
-    },
-    {
-      id: "5",
-      name: "Mantenimiento 50.000km",
-      price: "Gratuito",
-      coverage: "Cubierto por la empresa",
-      icon: <Settings className="h-5 w-5" />,
-      isFree: true,
-    },
-  ];
+  const loadServices = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/services", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("Services request failed");
+      }
+      const { data } = (await response.json()) as { data?: ServiceCard[] };
+      setServices(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error loading services:", error);
+      toast.error("No pudimos cargar los servicios. Intenta nuevamente.");
+      setServices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  const handleAddService = () => {
-    // TODO: Implementar lógica para añadir servicio
-    console.log({ serviceName, servicePrice, serviceCoverage });
+  useEffect(() => {
+    loadServices();
+  }, [loadServices]);
+
+  const handleAddService = async () => {
+    if (!serviceName.trim()) {
+      toast.error("El nombre del servicio es requerido.");
+      return;
+    }
+
+    const price = parseFloat(servicePrice) || 0;
+    if (price < 0) {
+      toast.error("El precio no puede ser negativo.");
+      return;
+    }
+
+    setIsCreating(true);
+    try {
+      const response = await fetch("/api/services", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            name: serviceName.trim(),
+            price,
+            coverage: serviceCoverage,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "No se pudo crear el servicio");
+      }
+
+      toast.success("Servicio creado exitosamente");
+      setServiceName("");
+      setServicePrice("");
+      setServiceCoverage("cliente");
+      await loadServices();
+    } catch (error) {
+      console.error("Error creating service:", error);
+      toast.error(error instanceof Error ? error.message : "No se pudo crear el servicio");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -81,45 +100,69 @@ export default function AdmServicesPage() {
       title="Gestión de Servicios"
       showFilterAction
     >
-        {/* Sección: Servicios Predefinidos */}
+        {/* Sección: Servicios */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
           <CardHeader className={spacing.card.header}>
-            <CardTitle className="text-base font-semibold">Servicios Predefinidos</CardTitle>
+            <CardTitle className="text-base font-semibold">Servicios</CardTitle>
           </CardHeader>
           <CardContent className={`flex flex-col ${spacing.gap.base} ${spacing.card.content}`}>
-            {predefinedServices.map((service) => (
-              <Card 
-                key={service.id} 
-                className="shadow-sm ring-1 ring-inset ring-border/50 cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted"
-                onClick={() => router.push(`/adm-services/details/${service.id}`)}
-              >
-                <CardContent className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      {service.icon}
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <Card key={index} className="shadow-sm ring-1 ring-inset ring-border/50">
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-4">
+                      <Skeleton className="h-10 w-10 rounded-full" />
+                      <Skeleton className="h-4 w-32" />
                     </div>
-                    <p className={typography.body.base}>{service.name}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <p
-                        className={`${typography.body.base} font-semibold ${
-                          service.isFree ? "text-green-600" : ""
-                        }`}
-                      >
-                        {service.price}
-                      </p>
-                      <p className={`text-xs ${
-                        service.isFree ? "text-green-600" : "text-muted-foreground"
-                      }`}>
-                        {service.coverage}
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <Skeleton className="h-4 w-20 mb-1" />
+                        <Skeleton className="h-3 w-24" />
+                      </div>
+                      <Skeleton className="h-5 w-5" />
                     </div>
-                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))
+            ) : services.length === 0 ? (
+              <p className={`${typography.body.base} text-muted-foreground text-center py-8`}>
+                No hay servicios registrados. Añade uno nuevo.
+              </p>
+            ) : (
+              services.map((service) => (
+                <Card 
+                  key={service.id} 
+                  className="shadow-sm ring-1 ring-inset ring-border/50 cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted"
+                  onClick={() => router.push(`/adm-services/details/${service.documentId}`)}
+                >
+                  <CardContent className="flex items-center justify-between p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <Wrench className="h-5 w-5" />
+                      </div>
+                      <p className={typography.body.base}>{service.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-right">
+                        <p
+                          className={`${typography.body.base} font-semibold ${
+                            service.isFree ? "text-green-600" : ""
+                          }`}
+                        >
+                          {service.priceLabel}
+                        </p>
+                        <p className={`text-xs ${
+                          service.isFree ? "text-green-600" : "text-muted-foreground"
+                        }`}>
+                          {service.coverageLabel}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </CardContent>
         </Card>
 
@@ -139,6 +182,7 @@ export default function AdmServicesPage() {
                 placeholder="Ej. Alineación y Balanceo"
                 value={serviceName}
                 onChange={(e) => setServiceName(e.target.value)}
+                disabled={isCreating}
               />
             </div>
 
@@ -155,6 +199,10 @@ export default function AdmServicesPage() {
                   className="pl-7 pr-12"
                   value={servicePrice}
                   onChange={(e) => setServicePrice(e.target.value)}
+                  disabled={isCreating}
+                  type="number"
+                  min="0"
+                  step="0.01"
                 />
                 <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-sm text-muted-foreground">
                   USD
@@ -164,15 +212,19 @@ export default function AdmServicesPage() {
 
             <div className={`flex flex-col ${spacing.gap.small}`}>
               <Label htmlFor="service-coverage">Cobertura del coste</Label>
-              <Select value={serviceCoverage} onValueChange={setServiceCoverage}>
+              <Select 
+                value={serviceCoverage} 
+                onValueChange={(value: ServiceCoverage) => setServiceCoverage(value)}
+                disabled={isCreating}
+              >
                 <SelectTrigger id="service-coverage" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Pagado por el cliente">
+                  <SelectItem value="cliente">
                     Pagado por el cliente
                   </SelectItem>
-                  <SelectItem value="Cubierto por la empresa">
+                  <SelectItem value="empresa">
                     Cubierto por la empresa
                   </SelectItem>
                 </SelectContent>
@@ -183,9 +235,14 @@ export default function AdmServicesPage() {
               variant="default"
               className="btn-black flex items-center justify-center"
               onClick={handleAddService}
+              disabled={isCreating || !serviceName.trim()}
             >
-              <Plus />
-              Añadir Servicio
+              {isCreating ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Plus />
+              )}
+              {isCreating ? "Añadiendo..." : "Añadir Servicio"}
             </Button>
           </CardContent>
         </Card>
