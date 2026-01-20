@@ -946,3 +946,183 @@ export interface DealDiscountCreatePayload {
   deal: number | string;
 }
 
+// ============================================
+// Appointment Types (Citas y agenda)
+// ============================================
+
+export type AppointmentType = "venta" | "prueba" | "mantenimiento";
+export type AppointmentStatus = "confirmada" | "pendiente" | "cancelada";
+
+export interface AppointmentRawAttributes {
+  title?: string;
+  type: AppointmentType;
+  status: AppointmentStatus;
+  scheduledAt: string;
+  durationMinutes?: number;
+  description?: string;
+  price?: number | string;
+  notes?: string;
+  location?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  documentId?: string;
+  client?: {
+    id?: number;
+    documentId?: string;
+    fullName?: string;
+    email?: string;
+    phone?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        fullName?: string;
+        email?: string;
+        phone?: string;
+      };
+    } | null;
+  };
+  vehicle?: {
+    id?: number;
+    documentId?: string;
+    name?: string;
+    placa?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        name?: string;
+        placa?: string;
+      };
+    } | null;
+  };
+  deal?: {
+    id?: number;
+    documentId?: string;
+    title?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        title?: string;
+      };
+    } | null;
+  };
+  assignedTo?: {
+    id?: number;
+    documentId?: string;
+    displayName?: string;
+    email?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        displayName?: string;
+        email?: string;
+      };
+    } | null;
+  };
+  serviceOrder?: {
+    id?: number;
+    documentId?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+    } | null;
+  };
+}
+
+export type AppointmentRaw =
+  | ({ id?: number | string; documentId?: string } & AppointmentRawAttributes)
+  | {
+      id?: number | string;
+      documentId?: string;
+      attributes: AppointmentRawAttributes & { documentId?: string };
+    };
+
+export interface AppointmentCard {
+  id: string;
+  documentId: string;
+  title?: string;
+  type: AppointmentType;
+  typeLabel: string;
+  status: AppointmentStatus;
+  statusLabel: string;
+  scheduledAt: string;
+  scheduledAtLabel: string;
+  time: string;
+  period: "AM" | "PM";
+  day: number;
+  month: number;
+  year: number;
+  durationMinutes?: number;
+  description?: string;
+  price?: number;
+  priceLabel?: string;
+  notes?: string;
+  location?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  clientName?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientId?: string;
+  clientDocumentId?: string;
+  vehicleName?: string;
+  vehiclePlaca?: string;
+  vehicleId?: string;
+  vehicleDocumentId?: string;
+  dealTitle?: string;
+  dealId?: string;
+  dealDocumentId?: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  assignedToId?: string;
+  assignedToDocumentId?: string;
+  serviceOrderId?: string;
+  serviceOrderDocumentId?: string;
+}
+
+export interface AppointmentCreatePayload {
+  title?: string;
+  type: AppointmentType;
+  status?: AppointmentStatus;
+  scheduledAt: string;
+  durationMinutes?: number;
+  description?: string;
+  price?: number;
+  notes?: string;
+  location?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  client?: number | string;
+  vehicle?: number | string;
+  deal?: number | string;
+  assignedTo?: number | string;
+  serviceOrder?: number | string;
+}
+
+export interface AppointmentUpdatePayload {
+  title?: string;
+  type?: AppointmentType;
+  status?: AppointmentStatus;
+  scheduledAt?: string;
+  durationMinutes?: number | null;
+  description?: string | null;
+  price?: number | null;
+  notes?: string | null;
+  location?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  client?: number | string | null;
+  vehicle?: number | string | null;
+  deal?: number | string | null;
+  assignedTo?: number | string | null;
+  serviceOrder?: number | string | null;
+}
+

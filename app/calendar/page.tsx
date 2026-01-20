@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components_shadcn/ui/button";
 import { Card, CardContent } from "@/components_shadcn/ui/card";
@@ -8,139 +8,172 @@ import { ToggleGroup, ToggleGroupItem } from "@/components_shadcn/ui/toggle-grou
 import { Separator } from "@/components_shadcn/ui/separator";
 import { Badge } from "@/components_shadcn/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
-import { ChevronLeft, ChevronRight, Plus, MoreVertical, Car, ShoppingCart, Wrench, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreVertical, Car, ShoppingCart, Wrench, ChevronRight as ChevronRightIcon, Loader2 } from "lucide-react";
 import { typography, spacing, commonClasses } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
+import { 
+  AddAppointmentButton, 
+  CreateAppointmentDialog, 
+  initialFormData,
+  type CreateAppointmentFormData 
+} from "./components/calendar-dialogs";
+import type { AppointmentCard, AppointmentType as AppointmentTypeEnum, AppointmentStatus } from "@/validations/types";
 
-type AppointmentType = "all" | "venta" | "prueba" | "mantenimiento";
+type AppointmentFilterType = "all" | AppointmentTypeEnum;
 
-interface Appointment {
-  id: string;
-  time: string;
-  period: "AM" | "PM";
-  client: string;
-  type: "venta" | "prueba" | "mantenimiento";
-  description: string;
-  status: "confirmada" | "pendiente" | "cancelada";
-  price?: string;
-  icon: "car" | "sell" | "maintenance";
-  iconColor: "green" | "orange" | "blue" | "red";
-  opacity?: number;
-  day?: number;
-}
+// Helper para obtener el icono del tipo
+const getTypeIcon = (type: AppointmentTypeEnum) => {
+  switch (type) {
+    case "prueba":
+      return "car";
+    case "venta":
+      return "sell";
+    case "mantenimiento":
+      return "maintenance";
+    default:
+      return "car";
+  }
+};
+
+// Helper para obtener el color del icono basado en tipo y estado
+const getIconColor = (type: AppointmentTypeEnum, status: AppointmentStatus) => {
+  if (status === "cancelada") return "red";
+  switch (type) {
+    case "prueba":
+      return "green";
+    case "venta":
+      return "orange";
+    case "mantenimiento":
+      return "blue";
+    default:
+      return "green";
+  }
+};
 
 export default function CalendarPage() {
   const router = useRouter();
   const [viewType, setViewType] = useState<"monthly" | "weekly">("monthly");
-  const [selectedFilter, setSelectedFilter] = useState<AppointmentType>("all");
+  const [selectedFilter, setSelectedFilter] = useState<AppointmentFilterType>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentMonth, setCurrentMonth] = useState(new Date(2024, 9, 1)); // Octubre 2024
-  const [currentWeek, setCurrentWeek] = useState(0); // Semana actual (0 = primera semana del mes)
-  const [selectedDay, setSelectedDay] = useState<number | null>(5); // Día seleccionado
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [currentWeek, setCurrentWeek] = useState(0);
+  const [selectedDay, setSelectedDay] = useState<number | null>(() => new Date().getDate());
+  
+  // Estado para datos de Strapi
+  const [appointments, setAppointments] = useState<AppointmentCard[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Estado para el diálogo de crear cita
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [createFormData, setCreateFormData] = useState<CreateAppointmentFormData>(initialFormData);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const appointments: Appointment[] = [
-    {
-      id: "1",
-      time: "09:00",
-      period: "AM",
-      client: "Carlos Rodriguez",
-      type: "prueba",
-      description: "Prueba de Conducción - SUV Eléctrico",
-      status: "confirmada",
-      icon: "car",
-      iconColor: "green",
-      day: 5,
-    },
-    {
-      id: "2",
-      time: "11:30",
-      period: "AM",
-      client: "Laura Gómez",
-      type: "venta",
-      description: "Venta - Sedán Híbrido",
-      status: "pendiente",
-      price: "Cotización: $42,500",
-      icon: "sell",
-      iconColor: "orange",
-      day: 5,
-    },
-    {
-      id: "3",
-      time: "02:00",
-      period: "PM",
-      client: "Javier Fernández",
-      type: "mantenimiento",
-      description: "Mantenimiento - 50.000km",
-      status: "confirmada",
-      price: "Costo: $350",
-      icon: "maintenance",
-      iconColor: "blue",
-      day: 5,
-    },
-    {
-      id: "4",
-      time: "04:30",
-      period: "PM",
-      client: "Miguel Torres",
-      type: "prueba",
-      description: "Prueba de Conducción - Coupé Deportivo",
-      status: "cancelada",
-      icon: "car",
-      iconColor: "red",
-      opacity: 0.6,
-      day: 5,
-    },
-    {
-      id: "5",
-      time: "10:00",
-      period: "AM",
-      client: "Ana Martínez",
-      type: "venta",
-      description: "Venta - Coupé Deportivo",
-      status: "confirmada",
-      price: "Cotización: $38,000",
-      icon: "sell",
-      iconColor: "green",
-      day: 11,
-    },
-    {
-      id: "6",
-      time: "03:00",
-      period: "PM",
-      client: "Pedro Sánchez",
-      type: "mantenimiento",
-      description: "Mantenimiento - 30.000km",
-      status: "pendiente",
-      price: "Costo: $280",
-      icon: "maintenance",
-      iconColor: "orange",
-      day: 16,
-    },
-    {
-      id: "7",
-      time: "09:30",
-      period: "AM",
-      client: "María López",
-      type: "prueba",
-      description: "Prueba de Conducción - SUV Híbrido",
-      status: "confirmada",
-      icon: "car",
-      iconColor: "green",
-      day: 24,
-    },
-  ];
+  // Fetch de citas desde la API
+  const fetchAppointments = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await fetch("/api/calendar");
+      if (!response.ok) {
+        throw new Error("Error al cargar las citas");
+      }
+      const result = await response.json();
+      setAppointments(result.data || []);
+    } catch (err) {
+      console.error("Error fetching appointments:", err);
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAppointments();
+  }, [fetchAppointments]);
+
+  // Validación del formulario de creación
+  const isFormValid = Boolean(
+    createFormData.type && 
+    createFormData.scheduledDate && 
+    createFormData.scheduledTime
+  );
+
+  // Función para crear una nueva cita
+  const handleCreateAppointment = async () => {
+    if (!isFormValid) return;
+    
+    try {
+      setIsCreating(true);
+      
+      // Construir el datetime ISO
+      const scheduledAt = new Date(
+        `${createFormData.scheduledDate}T${createFormData.scheduledTime}:00`
+      ).toISOString();
+      
+      const payload = {
+        data: {
+          type: createFormData.type,
+          status: createFormData.status,
+          scheduledAt,
+          title: createFormData.title || undefined,
+          description: createFormData.description || undefined,
+          price: createFormData.price ? parseFloat(createFormData.price) : undefined,
+          durationMinutes: createFormData.durationMinutes ? parseInt(createFormData.durationMinutes, 10) : undefined,
+          location: createFormData.location || undefined,
+          contactPhone: createFormData.contactPhone || undefined,
+          contactEmail: createFormData.contactEmail || undefined,
+          notes: createFormData.notes || undefined,
+        },
+      };
+      
+      const response = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al crear la cita");
+      }
+      
+      // Cerrar el diálogo y recargar las citas
+      setIsCreateDialogOpen(false);
+      setCreateFormData(initialFormData);
+      await fetchAppointments();
+    } catch (err) {
+      console.error("Error creating appointment:", err);
+      alert(err instanceof Error ? err.message : "Error al crear la cita");
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  // Cancelar creación
+  const handleCancelCreate = () => {
+    setIsCreateDialogOpen(false);
+    setCreateFormData(initialFormData);
+  };
+
+  // Filtrar citas por mes actual
+  const appointmentsInCurrentMonth = appointments.filter(apt => {
+    return apt.month === currentMonth.getMonth() && apt.year === currentMonth.getFullYear();
+  });
 
   // Calcular días con citas dinámicamente
   const daysWithAppointments = Array.from(
-    new Set(appointments.map(apt => apt.day).filter((day): day is number => day !== undefined))
+    new Set(appointmentsInCurrentMonth.map(apt => apt.day))
   );
 
   const handlePreviousMonth = () => {
     const newMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
     setCurrentMonth(newMonth);
     setCurrentWeek(0);
-    // Mantener el día seleccionado si existe en el nuevo mes, sino seleccionar el día 1
     const daysInNewMonth = new Date(newMonth.getFullYear(), newMonth.getMonth() + 1, 0).getDate();
     if (selectedDay && selectedDay <= daysInNewMonth) {
       // Mantener el día seleccionado
@@ -153,7 +186,6 @@ export default function CalendarPage() {
     const newMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
     setCurrentMonth(newMonth);
     setCurrentWeek(0);
-    // Mantener el día seleccionado si existe en el nuevo mes, sino seleccionar el día 1
     const daysInNewMonth = new Date(newMonth.getFullYear(), newMonth.getMonth() + 1, 0).getDate();
     if (selectedDay && selectedDay <= daysInNewMonth) {
       // Mantener el día seleccionado
@@ -166,7 +198,6 @@ export default function CalendarPage() {
     if (currentWeek > 0) {
       setCurrentWeek(currentWeek - 1);
     } else {
-      // Cambiar al mes anterior
       const previousMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
       const daysInPreviousMonth = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0).getDate();
       const firstDayOfWeek = previousMonth.getDay();
@@ -184,17 +215,15 @@ export default function CalendarPage() {
     if (currentWeek < weeksInMonth - 1) {
       setCurrentWeek(currentWeek + 1);
     } else {
-      // Cambiar al mes siguiente
       const nextMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
       setCurrentMonth(nextMonth);
       setCurrentWeek(0);
     }
   };
 
-  // Calcular días de la semana actual
   const getWeekDays = () => {
     const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const firstDayOfWeek = firstDayOfMonth.getDay(); // 0 = Domingo, 1 = Lunes, etc.
+    const firstDayOfWeek = firstDayOfMonth.getDay();
     const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
     
     const startDate = currentWeek * 7 - firstDayOfWeek + 1;
@@ -203,11 +232,9 @@ export default function CalendarPage() {
     for (let i = 0; i < 7; i++) {
       const day = startDate + i;
       if (day < 1) {
-        // Día del mes anterior
         const prevMonthDays = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 0).getDate();
         weekDays.push({ day: prevMonthDays + day, isCurrentMonth: false });
       } else if (day > daysInMonth) {
-        // Día del mes siguiente
         weekDays.push({ day: day - daysInMonth, isCurrentMonth: false });
       } else {
         weekDays.push({ day, isCurrentMonth: true });
@@ -219,10 +246,9 @@ export default function CalendarPage() {
 
   const weekDays = getWeekDays();
   
-  // Calcular el primer día del mes para la vista mensual
   const getFirstDayOfMonth = () => {
     const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    return firstDay.getDay(); // 0 = Domingo, 1 = Lunes, etc.
+    return firstDay.getDay();
   };
 
   const firstDayOfMonth = getFirstDayOfMonth();
@@ -232,18 +258,14 @@ export default function CalendarPage() {
     if (isCurrentMonth) {
       setSelectedDay(day);
     } else {
-      // Si es un día de otro mes, cambiar al mes correspondiente
       if (day > 15) {
-        // Es del mes anterior
         const newMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, day);
         setCurrentMonth(newMonth);
         setSelectedDay(day);
-        // Calcular la semana correspondiente
         const firstDay = new Date(newMonth.getFullYear(), newMonth.getMonth(), 1).getDay();
         const weekIndex = Math.floor((day + firstDay - 1) / 7);
         setCurrentWeek(weekIndex);
       } else {
-        // Es del mes siguiente
         const newMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, day);
         setCurrentMonth(newMonth);
         setSelectedDay(day);
@@ -260,7 +282,7 @@ export default function CalendarPage() {
   const monthName = monthNames[currentMonth.getMonth()];
   const year = currentMonth.getFullYear();
 
-  const getStatusBadgeClass = (status: Appointment["status"]) => {
+  const getStatusBadgeClass = (status: AppointmentStatus) => {
     switch (status) {
       case "confirmada":
         return "bg-green-500/20 text-green-600 dark:text-green-400";
@@ -273,7 +295,7 @@ export default function CalendarPage() {
     }
   };
 
-  const getFilterButtonClass = (filterId: AppointmentType) => {
+  const getFilterButtonClass = (filterId: AppointmentFilterType) => {
     const isActive = selectedFilter === filterId;
     const baseClass = "h-8 shrink-0 px-3 rounded-lg transition-colors";
     
@@ -295,7 +317,7 @@ export default function CalendarPage() {
     }
   };
 
-  const getIconColorClass = (color: Appointment["iconColor"]) => {
+  const getIconColorClass = (color: string) => {
     switch (color) {
       case "green":
         return "text-green-500";
@@ -310,25 +332,25 @@ export default function CalendarPage() {
     }
   };
 
-  const filteredAppointments = appointments.filter(apt => {
+  const filteredAppointments = appointmentsInCurrentMonth.filter(apt => {
     // Filtrar por tipo
     const matchesFilter = selectedFilter === "all" || apt.type === selectedFilter;
     
     // Filtrar por búsqueda (cliente, descripción, precio)
+    const searchLower = searchQuery.toLowerCase();
     const matchesSearch = searchQuery === "" || 
-      apt.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      apt.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (apt.price && apt.price.toLowerCase().includes(searchQuery.toLowerCase()));
+      (apt.clientName?.toLowerCase().includes(searchLower)) ||
+      (apt.description?.toLowerCase().includes(searchLower)) ||
+      (apt.priceLabel?.toLowerCase().includes(searchLower)) ||
+      (apt.title?.toLowerCase().includes(searchLower));
     
-    // Filtrar por día seleccionado
+    // Filtrar por día seleccionado o semana
     let matchesDay = false;
     if (viewType === "monthly") {
-      // En vista mensual, mostrar citas del día seleccionado
       matchesDay = selectedDay !== null && apt.day === selectedDay;
     } else {
-      // En vista semanal, mostrar citas de los días de la semana actual
-      const weekDayNumbers = weekDays.map(wd => wd.day);
-      matchesDay = apt.day !== undefined && weekDayNumbers.includes(apt.day);
+      const weekDayNumbers = weekDays.filter(wd => wd.isCurrentMonth).map(wd => wd.day);
+      matchesDay = weekDayNumbers.includes(apt.day);
     }
     
     return matchesFilter && matchesSearch && matchesDay;
@@ -392,18 +414,15 @@ export default function CalendarPage() {
                   const lastDayObj = weekDays[6];
                   const firstDay = firstDayObj.day;
                   const lastDay = lastDayObj.day;
-                  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
                   const isFirstDayFromPrevMonth = !firstDayObj.isCurrentMonth && firstDay > 7;
                   const isLastDayFromNextMonth = !lastDayObj.isCurrentMonth && lastDay < 7;
                   
                   if (isFirstDayFromPrevMonth) {
                     const prevMonthName = monthNames[(currentMonth.getMonth() - 1 + 12) % 12];
-                    const prevYear = currentMonth.getMonth() === 0 ? currentMonth.getFullYear() - 1 : currentMonth.getFullYear();
                     return `${prevMonthName} ${firstDay} - ${monthName} ${lastDay} ${year}`;
                   } else if (isLastDayFromNextMonth) {
                     const nextMonthName = monthNames[(currentMonth.getMonth() + 1) % 12];
-                    const nextYear = currentMonth.getMonth() === 11 ? currentMonth.getFullYear() + 1 : currentMonth.getFullYear();
-                    return `${monthName} ${firstDay} - ${nextMonthName} ${lastDay} ${nextYear}`;
+                    return `${monthName} ${firstDay} - ${nextMonthName} ${lastDay} ${year}`;
                   } else {
                     return `${monthName} ${firstDay} - ${lastDay} ${year}`;
                   }
@@ -507,10 +526,10 @@ export default function CalendarPage() {
             <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
               <div className={`flex items-center ${spacing.gap.small} w-full justify-center whitespace-nowrap`}>
             {[
-              { id: "all" as AppointmentType, label: "Todos" },
-              { id: "venta" as AppointmentType, label: "Venta" },
-              { id: "prueba" as AppointmentType, label: "Prueba de Conducción" },
-              { id: "mantenimiento" as AppointmentType, label: "Mantenimiento" },
+              { id: "all" as AppointmentFilterType, label: "Todos" },
+              { id: "venta" as AppointmentFilterType, label: "Venta" },
+              { id: "prueba" as AppointmentFilterType, label: "Prueba de Conducción" },
+              { id: "mantenimiento" as AppointmentFilterType, label: "Mantenimiento" },
             ].map((filter) => (
               <Button
                 key={filter.id}
@@ -552,69 +571,89 @@ export default function CalendarPage() {
                   : "Selecciona un día"
               }
             </h2>
-            {filteredAppointments.length === 0 ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center gap-4 py-8">
+                <p className={`${typography.body.base} text-destructive`}>{error}</p>
+                <Button onClick={fetchAppointments} variant="outline">
+                  Reintentar
+                </Button>
+              </div>
+            ) : filteredAppointments.length === 0 ? (
               <p className={typography.body.small}>No hay citas para mostrar</p>
             ) : (
               <ol className={`flex flex-col ${spacing.gap.base}`}>
-                {filteredAppointments.map((appointment) => (
-                  <article
-                    key={appointment.id}
-                    onClick={() => router.push(`/calendar/details/${appointment.id}`)}
-                    className={`flex items-start ${spacing.gap.medium} rounded-xl bg-card ${spacing.card.padding} ${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted ${
-                      appointment.opacity ? `opacity-${Math.round(appointment.opacity * 100)}` : ""
-                    }`}
-                    style={appointment.opacity ? { opacity: appointment.opacity } : undefined}
-                  >
-                    <time className="flex w-16 flex-col items-center" dateTime={`2024-10-05T${appointment.time}`}>
-                      <span className={typography.body.base}>{appointment.time}</span>
-                      <span className={typography.body.small}>{appointment.period}</span>
-                    </time>
-                    <Separator orientation="vertical" className="h-auto" />
-                    <div className="flex-1">
-                      <h3 className={`${typography.h4} ${appointment.status === "cancelada" ? "line-through" : ""}`}>
-                        {appointment.client}
-                      </h3>
-                      <p className={`flex items-center ${spacing.gap.small} ${typography.body.base} text-muted-foreground`}>
-                        {appointment.icon === "car" && <Car className={`text-base ${getIconColorClass(appointment.iconColor)}`} />}
-                        {appointment.icon === "sell" && <ShoppingCart className={`text-base ${getIconColorClass(appointment.iconColor)}`} />}
-                        {appointment.icon === "maintenance" && <Wrench className={`text-base ${getIconColorClass(appointment.iconColor)}`} />}
-                        {appointment.description}
-                      </p>
-                      <div className={`mt-2 flex items-center ${appointment.price ? "justify-between" : spacing.gap.small}`}>
-                        <Badge className={getStatusBadgeClass(appointment.status)}>
-                          {appointment.status === "confirmada" ? "Confirmada" : appointment.status === "pendiente" ? "Pendiente" : "Cancelada"}
-                        </Badge>
-                        {appointment.price && (
-                          <p className={typography.body.base}>{appointment.price}</p>
-                        )}
+                {filteredAppointments.map((appointment) => {
+                  const iconType = getTypeIcon(appointment.type);
+                  const iconColor = getIconColor(appointment.type, appointment.status);
+                  const isCancelled = appointment.status === "cancelada";
+                  
+                  return (
+                    <article
+                      key={appointment.id}
+                      onClick={() => router.push(`/calendar/details/${appointment.documentId}`)}
+                      className={`flex items-start ${spacing.gap.medium} rounded-xl bg-card ${spacing.card.padding} ${commonClasses.card} cursor-pointer transition-colors hover:bg-muted/50 active:bg-muted`}
+                      style={isCancelled ? { opacity: 0.6 } : undefined}
+                    >
+                      <time className="flex w-16 flex-col items-center" dateTime={appointment.scheduledAt}>
+                        <span className={typography.body.base}>{appointment.time}</span>
+                        <span className={typography.body.small}>{appointment.period}</span>
+                      </time>
+                      <Separator orientation="vertical" className="h-auto" />
+                      <div className="flex-1">
+                        <h3 className={`${typography.h4} ${isCancelled ? "line-through" : ""}`}>
+                          {appointment.clientName || appointment.title || "Sin cliente"}
+                        </h3>
+                        <p className={`flex items-center ${spacing.gap.small} ${typography.body.base} text-muted-foreground`}>
+                          {iconType === "car" && <Car className={`text-base ${getIconColorClass(iconColor)}`} />}
+                          {iconType === "sell" && <ShoppingCart className={`text-base ${getIconColorClass(iconColor)}`} />}
+                          {iconType === "maintenance" && <Wrench className={`text-base ${getIconColorClass(iconColor)}`} />}
+                          {appointment.description || appointment.typeLabel}
+                        </p>
+                        <div className={`mt-2 flex items-center ${appointment.priceLabel ? "justify-between" : spacing.gap.small}`}>
+                          <Badge className={getStatusBadgeClass(appointment.status)}>
+                            {appointment.statusLabel}
+                          </Badge>
+                          {appointment.priceLabel && (
+                            <p className={typography.body.base}>{appointment.priceLabel}</p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-10 w-10 shrink-0 rounded-full hover:bg-muted flex items-center justify-center"
-                        onClick={(e) => { e.stopPropagation(); }}
-                      >
-                        <MoreVertical className="h-5 w-5 text-muted-foreground" />
-                        <span className="sr-only">Más opciones para {appointment.client}</span>
-                      </Button>
-                      <ChevronRightIcon className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                  </article>
-                ))}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-10 w-10 shrink-0 rounded-full hover:bg-muted flex items-center justify-center"
+                          onClick={(e) => { e.stopPropagation(); }}
+                        >
+                          <MoreVertical className="h-5 w-5 text-muted-foreground" />
+                          <span className="sr-only">Más opciones para {appointment.clientName || appointment.title}</span>
+                        </Button>
+                        <ChevronRightIcon className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    </article>
+                  );
+                })}
               </ol>
             )}
           </div>
         </section>
 
-      <Button
-        className="fixed bottom-6 right-6 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform hover:scale-105"
-        size="icon"
-        aria-label="Agregar nueva cita"
-      >
-        <Plus className="h-6 w-6" />
-      </Button>
+      <AddAppointmentButton onClick={() => setIsCreateDialogOpen(true)} />
+      
+      <CreateAppointmentDialog
+        isOpen={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        formData={createFormData}
+        setFormData={setCreateFormData}
+        isCreating={isCreating}
+        isFormValid={isFormValid}
+        onConfirm={handleCreateAppointment}
+        onCancel={handleCancelCreate}
+      />
     </AdminLayout>
   );
 }

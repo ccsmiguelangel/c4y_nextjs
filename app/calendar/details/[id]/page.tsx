@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Button } from "@/components_shadcn/ui/button";
@@ -12,7 +12,6 @@ import {
   ArrowLeft, 
   MoreVertical, 
   Edit,
-  Trash2,
   Calendar,
   Clock,
   User,
@@ -21,7 +20,9 @@ import {
   Wrench,
   DollarSign,
   Phone,
-  Mail
+  Mail,
+  Loader2,
+  MapPin,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -38,88 +39,9 @@ import {
 } from "@/components_shadcn/ui/select";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
+import type { AppointmentCard, AppointmentStatus, AppointmentType } from "@/validations/types";
 
-interface AppointmentData {
-  id: string;
-  time: string;
-  period: "AM" | "PM";
-  date: string;
-  client: string;
-  clientPhone?: string;
-  clientEmail?: string;
-  type: "venta" | "prueba" | "mantenimiento";
-  description: string;
-  status: "confirmada" | "pendiente" | "cancelada";
-  price?: string;
-  vehicle?: string;
-  notes?: string;
-}
-
-const getAppointmentData = (id: string): AppointmentData | null => {
-  const appointments: Record<string, AppointmentData> = {
-    "1": {
-      id: "1",
-      time: "09:00",
-      period: "AM",
-      date: "2024-10-05",
-      client: "Carlos Rodriguez",
-      clientPhone: "+34 612 345 678",
-      clientEmail: "carlos.rodriguez@email.com",
-      type: "prueba",
-      description: "Prueba de Conducción - SUV Eléctrico",
-      status: "confirmada",
-      vehicle: "SUV Eléctrico Modelo X",
-      notes: "Cliente interesado en vehículo eléctrico. Preferencia por color azul.",
-    },
-    "2": {
-      id: "2",
-      time: "11:30",
-      period: "AM",
-      date: "2024-10-05",
-      client: "Laura Gómez",
-      clientPhone: "+34 698 765 432",
-      clientEmail: "laura.gomez@email.com",
-      type: "venta",
-      description: "Venta - Sedán Híbrido",
-      status: "pendiente",
-      price: "Cotización: $42,500",
-      vehicle: "Sedán Híbrido Modelo Y",
-      notes: "Cliente requiere financiamiento. Revisar opciones disponibles.",
-    },
-    "3": {
-      id: "3",
-      time: "02:00",
-      period: "PM",
-      date: "2024-10-05",
-      client: "Javier Fernández",
-      clientPhone: "+34 611 222 333",
-      clientEmail: "javier.fernandez@email.com",
-      type: "mantenimiento",
-      description: "Mantenimiento - 50.000km",
-      status: "confirmada",
-      price: "Costo: $350",
-      vehicle: "Toyota RAV4 2022",
-      notes: "Mantenimiento programado. Revisar disponibilidad de repuestos.",
-    },
-    "4": {
-      id: "4",
-      time: "04:30",
-      period: "PM",
-      date: "2024-10-05",
-      client: "Miguel Torres",
-      clientPhone: "+34 644 555 666",
-      clientEmail: "miguel.torres@email.com",
-      type: "prueba",
-      description: "Prueba de Conducción - Coupé Deportivo",
-      status: "cancelada",
-      vehicle: "Coupé Deportivo Modelo Z",
-      notes: "Cliente canceló por cambio de planes. Reagendar para próxima semana.",
-    },
-  };
-  return appointments[id] || null;
-};
-
-const getStatusBadgeClass = (status: AppointmentData["status"]) => {
+const getStatusBadgeClass = (status: AppointmentStatus) => {
   switch (status) {
     case "confirmada":
       return "bg-green-100 text-green-700";
@@ -132,18 +54,7 @@ const getStatusBadgeClass = (status: AppointmentData["status"]) => {
   }
 };
 
-const getStatusLabel = (status: AppointmentData["status"]) => {
-  switch (status) {
-    case "confirmada":
-      return "Confirmada";
-    case "pendiente":
-      return "Pendiente";
-    case "cancelada":
-      return "Cancelada";
-  }
-};
-
-const getTypeIcon = (type: AppointmentData["type"]) => {
+const getTypeIcon = (type: AppointmentType) => {
   switch (type) {
     case "prueba":
       return Car;
@@ -154,43 +65,62 @@ const getTypeIcon = (type: AppointmentData["type"]) => {
   }
 };
 
-const getTypeLabel = (type: AppointmentData["type"]) => {
-  switch (type) {
-    case "prueba":
-      return "Prueba de Conducción";
-    case "venta":
-      return "Venta";
-    case "mantenimiento":
-      return "Mantenimiento";
-  }
-};
-
 export default function CalendarDetailsPage() {
   const router = useRouter();
   const params = useParams();
   const appointmentId = params.id as string;
+  
   const [isEditing, setIsEditing] = useState(false);
   const [note, setNote] = useState("");
+  const [appointment, setAppointment] = useState<AppointmentCard | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  
   const [formData, setFormData] = useState({
-    status: "confirmada" as AppointmentData["status"],
-    time: "",
-    date: "",
+    status: "pendiente" as AppointmentStatus,
+    scheduledAt: "",
     description: "",
   });
 
-  const appointmentData = getAppointmentData(appointmentId);
-
-  // Inicializar formData cuando se carga la cita
-  useEffect(() => {
-    if (appointmentData && !formData.time) {
-      setFormData({
-        status: appointmentData.status,
-        time: appointmentData.time,
-        date: appointmentData.date,
-        description: appointmentData.description,
-      });
+  const fetchAppointment = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await fetch(`/api/calendar/${appointmentId}`);
+      
+      if (response.status === 404) {
+        setAppointment(null);
+        return;
+      }
+      
+      if (!response.ok) {
+        throw new Error("Error al cargar la cita");
+      }
+      
+      const result = await response.json();
+      const data = result.data as AppointmentCard;
+      setAppointment(data);
+      
+      // Inicializar formData
+      if (data) {
+        setFormData({
+          status: data.status,
+          scheduledAt: data.scheduledAt ? new Date(data.scheduledAt).toISOString().slice(0, 16) : "",
+          description: data.description || "",
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching appointment:", err);
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setIsLoading(false);
     }
-  }, [appointmentData]);
+  }, [appointmentId]);
+
+  useEffect(() => {
+    fetchAppointment();
+  }, [fetchAppointment]);
 
   const backButton = (
     <Button
@@ -203,7 +133,147 @@ export default function CalendarDetailsPage() {
     </Button>
   );
 
-  if (!appointmentData) {
+  const handleSaveNote = async () => {
+    if (!appointment || !note.trim()) return;
+    
+    try {
+      setIsSaving(true);
+      const currentNotes = appointment.notes || "";
+      const newNotes = currentNotes 
+        ? `${currentNotes}\n\n[${new Date().toLocaleString("es-ES")}]\n${note}`
+        : `[${new Date().toLocaleString("es-ES")}]\n${note}`;
+      
+      const response = await fetch(`/api/calendar/${appointmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { notes: newNotes } }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Error al guardar la nota");
+      }
+      
+      const result = await response.json();
+      setAppointment(result.data);
+      setNote("");
+    } catch (err) {
+      console.error("Error saving note:", err);
+      alert(err instanceof Error ? err.message : "Error al guardar la nota");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    if (!appointment) return;
+    
+    try {
+      setIsSaving(true);
+      const response = await fetch(`/api/calendar/${appointmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            status: formData.status,
+            scheduledAt: formData.scheduledAt ? new Date(formData.scheduledAt).toISOString() : undefined,
+            description: formData.description || undefined,
+          },
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Error al actualizar la cita");
+      }
+      
+      const result = await response.json();
+      setAppointment(result.data);
+      setIsEditing(false);
+    } catch (err) {
+      console.error("Error updating appointment:", err);
+      alert(err instanceof Error ? err.message : "Error al actualizar la cita");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelAppointment = async () => {
+    if (!appointment || !confirm("¿Estás seguro de que deseas cancelar esta cita?")) return;
+    
+    try {
+      setIsSaving(true);
+      const response = await fetch(`/api/calendar/${appointmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { status: "cancelada" } }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Error al cancelar la cita");
+      }
+      
+      const result = await response.json();
+      setAppointment(result.data);
+    } catch (err) {
+      console.error("Error cancelling appointment:", err);
+      alert(err instanceof Error ? err.message : "Error al cancelar la cita");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteAppointment = async () => {
+    if (!appointment || !confirm("¿Estás seguro de que deseas eliminar esta cita? Esta acción no se puede deshacer.")) return;
+    
+    try {
+      setIsSaving(true);
+      const response = await fetch(`/api/calendar/${appointmentId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Error al eliminar la cita");
+      }
+      
+      router.push("/calendar");
+    } catch (err) {
+      console.error("Error deleting appointment:", err);
+      alert(err instanceof Error ? err.message : "Error al eliminar la cita");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <AdminLayout title="Cargando..." showFilterAction leftActions={backButton}>
+        <div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <AdminLayout title="Error" showFilterAction leftActions={backButton}>
+        <div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
+          <section className={`flex flex-col items-center justify-center ${spacing.gap.large} w-full max-w-md px-6`}>
+            <p className={`${typography.h3} text-center text-destructive`}>{error}</p>
+            <Button 
+              onClick={fetchAppointment}
+              className="h-14 w-full rounded-xl text-base font-semibold"
+              size="lg"
+            >
+              Reintentar
+            </Button>
+          </section>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  if (!appointment) {
     return (
       <AdminLayout title="Cita no encontrada" showFilterAction leftActions={backButton}>
         <div className="flex min-h-[calc(100vh-200px)] items-center justify-center">
@@ -222,20 +292,13 @@ export default function CalendarDetailsPage() {
     );
   }
 
-  const handleSaveNote = () => {
-    console.log("Nota guardada:", note, "para cita:", appointmentId);
-    setNote("");
-  };
-
-  const handleSaveChanges = () => {
-    console.log("Cambios guardados:", formData, "para cita:", appointmentId);
-    setIsEditing(false);
-  };
-
-  const TypeIcon = getTypeIcon(appointmentData.type);
+  const TypeIcon = getTypeIcon(appointment.type);
+  const displayName = appointment.clientName || appointment.title || "Sin cliente";
+  const contactPhone = appointment.contactPhone || appointment.clientPhone;
+  const contactEmail = appointment.contactEmail || appointment.clientEmail;
 
   return (
-    <AdminLayout title={`Cita - ${appointmentData.client}`} showFilterAction leftActions={backButton}>
+    <AdminLayout title={`Cita - ${displayName}`} showFilterAction leftActions={backButton}>
       <section className={`flex flex-col ${spacing.gap.large}`}>
         {/* Información de la Cita */}
         <Card className="shadow-sm ring-1 ring-inset ring-border/50">
@@ -260,10 +323,21 @@ export default function CalendarDetailsPage() {
                   <DropdownMenuItem className="cursor-pointer" onClick={() => setIsEditing(true)}>
                     Editar Cita
                   </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" className="cursor-pointer">
+                  <DropdownMenuItem 
+                    className="cursor-pointer text-orange-600" 
+                    onClick={handleCancelAppointment}
+                    disabled={isSaving || appointment.status === "cancelada"}
+                  >
                     Cancelar Cita
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer">Exportar Datos</DropdownMenuItem>
+                  <DropdownMenuItem 
+                    variant="destructive" 
+                    className="cursor-pointer"
+                    onClick={handleDeleteAppointment}
+                    disabled={isSaving}
+                  >
+                    Eliminar Cita
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -276,36 +350,36 @@ export default function CalendarDetailsPage() {
             {/* Cliente y Badge */}
             <div className="flex flex-col items-center text-center">
               <h2 className={`${typography.h3} text-center`}>
-                {appointmentData.client}
+                {displayName}
               </h2>
               <p className={`${typography.body.small} mt-1 text-muted-foreground`}>
-                {getTypeLabel(appointmentData.type)}
+                {appointment.typeLabel}
               </p>
               <div className="mt-2">
-                <Badge className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusBadgeClass(appointmentData.status)}`}>
-                  {getStatusLabel(appointmentData.status)}
+                <Badge className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusBadgeClass(appointment.status)}`}>
+                  {appointment.statusLabel}
                 </Badge>
               </div>
             </div>
 
             {/* Botones de acción */}
             <div className={`flex items-center justify-center ${spacing.gap.small} w-full pt-2`}>
-              {appointmentData.clientPhone && (
+              {contactPhone && (
                 <Button
                   variant="default"
                   size="icon"
                   className="h-10 w-10 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 flex items-center justify-center"
-                  onClick={() => window.location.href = `tel:${appointmentData.clientPhone}`}
+                  onClick={() => window.location.href = `tel:${contactPhone}`}
                 >
                   <Phone className="h-5 w-5 flex-shrink-0" />
                 </Button>
               )}
-              {appointmentData.clientEmail && (
+              {contactEmail && (
                 <Button
                   variant="outline"
                   size="icon"
                   className="h-10 w-10 rounded-lg bg-muted hover:bg-muted/80 flex items-center justify-center"
-                  onClick={() => window.location.href = `mailto:${appointmentData.clientEmail}`}
+                  onClick={() => window.location.href = `mailto:${contactEmail}`}
                 >
                   <Mail className="h-5 w-5 flex-shrink-0" />
                 </Button>
@@ -332,7 +406,10 @@ export default function CalendarDetailsPage() {
               <>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
                   <Label htmlFor="status">Estado</Label>
-                  <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value as AppointmentData["status"] })}>
+                  <Select 
+                    value={formData.status} 
+                    onValueChange={(value) => setFormData({ ...formData, status: value as AppointmentStatus })}
+                  >
                     <SelectTrigger id="status">
                       <SelectValue />
                     </SelectTrigger>
@@ -344,21 +421,12 @@ export default function CalendarDetailsPage() {
                   </Select>
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="time">Hora</Label>
+                  <Label htmlFor="scheduledAt">Fecha y Hora</Label>
                   <Input
-                    id="time"
-                    type="time"
-                    value={formData.time}
-                    onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                  />
-                </div>
-                <div className={`flex flex-col ${spacing.gap.small}`}>
-                  <Label htmlFor="date">Fecha</Label>
-                  <Input
-                    id="date"
-                    type="date"
-                    value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    id="scheduledAt"
+                    type="datetime-local"
+                    value={formData.scheduledAt}
+                    onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
                   />
                 </div>
                 <div className={`flex flex-col ${spacing.gap.small}`}>
@@ -375,13 +443,26 @@ export default function CalendarDetailsPage() {
                     variant="default"
                     className="flex-1"
                     onClick={handleSaveChanges}
+                    disabled={isSaving}
                   >
+                    {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Guardar Cambios
                   </Button>
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={() => setIsEditing(false)}
+                    onClick={() => {
+                      setIsEditing(false);
+                      // Restaurar valores originales
+                      if (appointment) {
+                        setFormData({
+                          status: appointment.status,
+                          scheduledAt: appointment.scheduledAt ? new Date(appointment.scheduledAt).toISOString().slice(0, 16) : "",
+                          description: appointment.description || "",
+                        });
+                      }
+                    }}
+                    disabled={isSaving}
                   >
                     Cancelar
                   </Button>
@@ -393,53 +474,78 @@ export default function CalendarDetailsPage() {
                   <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
                     <p className={`${typography.body.small} text-muted-foreground`}>Hora</p>
-                    <p className={typography.body.base}>{appointmentData.time} {appointmentData.period}</p>
+                    <p className={typography.body.base}>{appointment.time} {appointment.period}</p>
                   </div>
                 </div>
                 <div className={`flex items-center ${spacing.gap.medium}`}>
                   <Calendar className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div className="flex-1">
                     <p className={`${typography.body.small} text-muted-foreground`}>Fecha</p>
-                    <p className={typography.body.base}>{new Date(appointmentData.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className={typography.body.base}>{appointment.scheduledAtLabel}</p>
                   </div>
                 </div>
-                <div className={`flex items-center ${spacing.gap.medium}`}>
-                  <User className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1">
-                    <p className={`${typography.body.small} text-muted-foreground`}>Cliente</p>
-                    <p className={typography.body.base}>{appointmentData.client}</p>
+                {appointment.clientName && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <User className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Cliente</p>
+                      <p className={typography.body.base}>{appointment.clientName}</p>
+                    </div>
                   </div>
-                </div>
-                {appointmentData.vehicle && (
+                )}
+                {appointment.vehicleName && (
                   <div className={`flex items-center ${spacing.gap.medium}`}>
                     <Car className="h-5 w-5 text-muted-foreground shrink-0" />
                     <div className="flex-1">
                       <p className={`${typography.body.small} text-muted-foreground`}>Vehículo</p>
-                      <p className={typography.body.base}>{appointmentData.vehicle}</p>
+                      <p className={typography.body.base}>
+                        {appointment.vehicleName}
+                        {appointment.vehiclePlaca && ` (${appointment.vehiclePlaca})`}
+                      </p>
                     </div>
                   </div>
                 )}
-                <div className={`flex items-center ${spacing.gap.medium}`}>
-                  <TypeIcon className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div className="flex-1">
-                    <p className={`${typography.body.small} text-muted-foreground`}>Descripción</p>
-                    <p className={typography.body.base}>{appointmentData.description}</p>
+                {appointment.location && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <MapPin className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Ubicación</p>
+                      <p className={typography.body.base}>{appointment.location}</p>
+                    </div>
                   </div>
-                </div>
-                {appointmentData.price && (
+                )}
+                {appointment.description && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <TypeIcon className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Descripción</p>
+                      <p className={typography.body.base}>{appointment.description}</p>
+                    </div>
+                  </div>
+                )}
+                {appointment.priceLabel && (
                   <div className={`flex items-center ${spacing.gap.medium}`}>
                     <DollarSign className="h-5 w-5 text-muted-foreground shrink-0" />
                     <div className="flex-1">
                       <p className={`${typography.body.small} text-muted-foreground`}>Precio/Costo</p>
-                      <p className={`${typography.body.base} font-semibold`}>{appointmentData.price}</p>
+                      <p className={`${typography.body.base} font-semibold`}>{appointment.priceLabel}</p>
                     </div>
                   </div>
                 )}
-                {appointmentData.notes && (
+                {appointment.assignedToName && (
+                  <div className={`flex items-center ${spacing.gap.medium}`}>
+                    <User className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1">
+                      <p className={`${typography.body.small} text-muted-foreground`}>Asignado a</p>
+                      <p className={typography.body.base}>{appointment.assignedToName}</p>
+                    </div>
+                  </div>
+                )}
+                {appointment.notes && (
                   <div className={`flex items-start ${spacing.gap.medium} pt-2`}>
                     <div className="flex-1">
                       <p className={`${typography.body.small} text-muted-foreground`}>Notas</p>
-                      <p className={typography.body.base}>{appointmentData.notes}</p>
+                      <p className={`${typography.body.base} whitespace-pre-wrap`}>{appointment.notes}</p>
                     </div>
                   </div>
                 )}
@@ -465,8 +571,9 @@ export default function CalendarDetailsPage() {
               onClick={handleSaveNote}
               variant="default"
               className="btn-black"
-              disabled={!note.trim()}
+              disabled={!note.trim() || isSaving}
             >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Guardar Nota
             </Button>
           </CardContent>
@@ -475,4 +582,3 @@ export default function CalendarDetailsPage() {
     </AdminLayout>
   );
 }
-
