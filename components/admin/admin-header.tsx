@@ -115,20 +115,11 @@ export function AdminHeader({
     
     // Escuchar eventos de cambios en recordatorios
     const handleReminderChange = () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleReminderChange',message:'event received',data:{skipNextReload:skipNextReloadRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
       // Si el toggle fue disparado localmente, no recargar inmediatamente
       if (skipNextReloadRef.current) {
         skipNextReloadRef.current = false;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleReminderChange',message:'skipping reload',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-        // #endregion
         return;
       }
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleReminderChange',message:'reloading reminders',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
       loadReminders();
     };
     
@@ -235,9 +226,6 @@ export function AdminHeader({
   const handleToggleCompleted = async (reminderId: string, isCompleted: boolean, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleToggleCompleted',message:'function called',data:{reminderId,isCompleted,newState:!isCompleted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     
     try {
       const response = await fetch(`/api/notifications/${encodeURIComponent(reminderId)}`, {
@@ -252,22 +240,13 @@ export function AdminHeader({
         }),
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleToggleCompleted',message:'API response received',data:{reminderId,responseOk:response.ok,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       if (response.ok) {
         toast.success(isCompleted ? "Recordatorio marcado como pendiente" : "Recordatorio marcado como completado");
         // Actualizar el estado local
         setReminders(prev => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:setReminders',message:'updating state',data:{reminderId,prevLength:prev.length,reminderIds:prev.map(r=>({docId:r.documentId,id:r.id,stringId:String(r.id)}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-          // #endregion
           return prev.map(r => {
             const rId = r.documentId || String(r.id);
             const match = rId === reminderId;
-            // #region agent log
-            if (match) fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:setReminders',message:'found match',data:{reminderId,rId,docId:r.documentId,id:r.id,oldCompleted:r.isCompleted,newCompleted:!isCompleted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-            // #endregion
             if (match) {
               return { ...r, isCompleted: !isCompleted };
             }
@@ -276,14 +255,8 @@ export function AdminHeader({
         });
         // Marcar que el próximo evento de reload debe ser ignorado (fue disparado localmente)
         skipNextReloadRef.current = true;
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleToggleCompleted',message:'skipNextReloadRef set to true',data:{reminderId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-        // #endregion
         // Emitir evento de cambio de estado completado
         emitReminderToggleCompleted(reminderId, !isCompleted);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:handleToggleCompleted',message:'state updated successfully',data:{reminderId,newState:!isCompleted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
       } else {
         const errorText = await response.text();
         let errorData;
@@ -400,15 +373,9 @@ export function AdminHeader({
                                   ) : (
                                     <button
                                       onClick={(e) => {
-                                        // #region agent log
-                                        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:button-click',message:'circle button clicked',data:{reminderId,isCompleted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-                                        // #endregion
                                         handleToggleCompleted(reminderId, isCompleted, e);
                                       }}
                                       onPointerDown={(e) => {
-                                        // #region agent log
-                                        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:button-pointerdown',message:'circle button pointerdown',data:{reminderId,isCompleted},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-                                        // #endregion
                                         e.stopPropagation();
                                       }}
                                       className="h-4 w-4 shrink-0 rounded-full border-2 border-muted-foreground/30 hover:border-primary transition-colors flex items-center justify-center"
@@ -439,15 +406,9 @@ export function AdminHeader({
                                     size="icon"
                                     className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
                                     onClick={(e) => {
-                                      // #region agent log
-                                      fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:delete-button-click',message:'delete button clicked',data:{reminderId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-                                      // #endregion
                                       handleDeleteReminder(reminderId, e);
                                     }}
                                     onPointerDown={(e) => {
-                                      // #region agent log
-                                      fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-header.tsx:delete-button-pointerdown',message:'delete button pointerdown',data:{reminderId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-                                      // #endregion
                                       e.stopPropagation();
                                     }}
                                     aria-label="Eliminar recordatorio"

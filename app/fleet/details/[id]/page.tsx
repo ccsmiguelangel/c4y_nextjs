@@ -485,20 +485,12 @@ export default function FleetDetailsPage() {
         .filter((id): id is number => typeof id === 'number' && !isNaN(id)) || [];
       
       if (responsablesIds.length > 0 || assignedDriversIds.length > 0) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/app/fleet/details/[id]/page.tsx:487',message:'init reminder assignees',data:{responsablesCount:responsablesIds.length,assignedDriversCount:assignedDriversIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-        // #endregion
         setReminderSelectedResponsables(responsablesIds);
         setReminderSelectedAssignedDrivers(assignedDriversIds);
       }
     }
   }, [showReminderForm, availableUsers, vehicleData, editingReminderId, setReminderSelectedResponsables, setReminderSelectedAssignedDrivers]);
 
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/31a9dc9e-273d-456b-92ee-729a3c566e07',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'frontend/app/fleet/details/[id]/page.tsx:495',message:'reminder assignees changed',data:{responsablesCount:reminderSelectedResponsables.length,assignedDriversCount:reminderSelectedAssignedDrivers.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
-    // #endregion
-  }, [reminderSelectedResponsables, reminderSelectedAssignedDrivers]);
 
   // Activar modo de edición si viene el query parameter
   useEffect(() => {

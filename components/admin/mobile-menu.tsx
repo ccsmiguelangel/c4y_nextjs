@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
@@ -24,6 +24,7 @@ import {
   FileText,
   Bell,
   CreditCard,
+  Cog,
 } from "lucide-react";
 import { spacing, typography } from "@/lib/design-system";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ interface NavItem {
   href: string;
   label: string;
   icon: ComponentType<{ className?: string }>;
+  adminOnly?: boolean;
 }
 
 export interface NavSection {
@@ -93,6 +95,12 @@ export const adminNavSections: NavSection[] = [
         label: "Facturación",
         icon: CreditCard,
       },
+      {
+        href: "/settings",
+        label: "Configuración",
+        icon: Cog,
+        adminOnly: true,
+      },
     ],
   },
 ];
@@ -100,6 +108,23 @@ export const adminNavSections: NavSection[] = [
 export function MobileMenu() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  // Obtener el rol del usuario al montar el componente
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      try {
+        const response = await fetch("/api/user-profile/me", { cache: "no-store" });
+        if (response.ok) {
+          const data = await response.json();
+          setUserRole(data.data?.role || null);
+        }
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+      }
+    };
+    fetchUserRole();
+  }, []);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -114,35 +139,45 @@ export function MobileMenu() {
           <SheetTitle>Menú de Navegación</SheetTitle>
         </SheetHeader>
         <nav className={cn("mt-6 flex flex-col", spacing.gap.large)}>
-          {adminNavSections.map((section) => (
-            <div key={section.label} className={cn("flex flex-col", spacing.gap.small)}>
-              <p className={cn(typography.label, "px-4 uppercase tracking-wide text-muted-foreground/80")}>
-                {section.label}
-              </p>
-              <div className={cn("flex flex-col", spacing.gap.small)}>
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-accent hover:text-accent-foreground"
-                      )}
-                    >
-                      <Icon className="h-5 w-5" />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
+          {adminNavSections.map((section) => {
+            // Filtrar items según el rol del usuario
+            const filteredItems = section.items.filter((item) => {
+              if (item.adminOnly && userRole !== "admin") {
+                return false;
+              }
+              return true;
+            });
+
+            return (
+              <div key={section.label} className={cn("flex flex-col", spacing.gap.small)}>
+                <p className={cn(typography.label, "px-4 uppercase tracking-wide text-muted-foreground/80")}>
+                  {section.label}
+                </p>
+                <div className={cn("flex flex-col", spacing.gap.small)}>
+                  {filteredItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname === item.href;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors",
+                          isActive
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent hover:text-accent-foreground"
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </SheetContent>
     </Sheet>

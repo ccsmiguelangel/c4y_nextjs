@@ -235,7 +235,7 @@ export async function GET() {
     }
 
     console.log("✅ User-profile documentId obtenido:", profile.documentId);
-
+    
     // Retornar el documentId y el rol
     return NextResponse.json({ 
       data: { 
