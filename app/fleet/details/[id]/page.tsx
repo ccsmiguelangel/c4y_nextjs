@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast";
 import { spacing, typography } from "@/lib/design-system";
 import { AdminLayout } from "@/components/admin/admin-layout";
 import { FleetDetailsDocumentsCard } from "@/app/fleet/components/fleet-details-documents";
+import { FleetDetailsFinancingCard } from "@/app/fleet/components/fleet-details-financing";
 import { FleetDetailsNotesCard } from "@/app/fleet/components/fleet-details-notes";
 import { FleetDetailsRemindersCard } from "@/app/fleet/components/fleet-details-reminders";
 import { FleetDetailsStatusCard } from "@/app/fleet/components/fleet-details-statuses";
@@ -802,6 +803,12 @@ export default function FleetDetailsPage() {
             priceLabel={priceLabel}
           />
         )}
+
+        {/* Financiamiento */}
+        <FleetDetailsFinancingCard
+          financing={vehicleData.financing}
+          vehicleName={vehicleData.name}
+        />
 
         {/* Notas */}
         <FleetDetailsNotesCard

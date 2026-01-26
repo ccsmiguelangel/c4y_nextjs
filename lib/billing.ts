@@ -1,54 +1,157 @@
+/**
+ * Librería de funciones para Pagos (Billing Records)
+ * Pagos individuales vinculados a un Financiamiento
+ */
+
 import qs from "qs";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "./config";
 import { formatCurrency } from "./format";
-import type {
-  BillingRecordCard,
-  BillingRecordRaw,
-  BillingRecordRawAttributes,
-  BillingRecordCreatePayload,
-  BillingRecordUpdatePayload,
-  BillingDocumentCreatePayload,
-  BillingDocument,
-  BillingDocumentRaw,
-  BillingDocumentRawAttributes,
-  StrapiResponse,
-  StrapiImage,
-} from "@/validations/types";
+import {
+  calculateLateFee,
+  calculateDaysLate,
+  processPayment,
+  calculateNextDueDate,
+  updateFinancingInStrapi,
+  type PaymentStatus,
+  type FinancingCard,
+  type FinancingStatus,
+} from "./financing";
 
-// Populate config para obtener relaciones
-const populateConfig = {
-  populate: {
-    client: {
-      fields: ["id", "documentId", "fullName", "email", "phone"],
-      populate: {
-        avatar: {
-          fields: ["url", "alternativeText"],
-        },
-      },
-    },
-    vehicle: {
-      fields: ["id", "documentId", "name"],
-    },
-    documents: {
-      fields: ["id", "documentId", "name"],
-      populate: {
-        file: true,
-      },
-    },
-  },
-};
+// ============================================================================
+// TIPOS
+// ============================================================================
 
-const listQueryString = qs.stringify(
-  {
-    fields: ["invoiceNumber", "amount", "currency", "status", "dueDate", "paymentDate", "notes", "remindersSent"],
-    ...populateConfig,
-    sort: ["dueDate:desc"],
-    pagination: {
-      pageSize: 100,
-    },
-  },
-  { encodeValuesOnly: true }
-);
+export interface BillingRecordRaw {
+  id: number;
+  documentId: string;
+  receiptNumber: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  quotaNumber: number;
+  quotasCovered: number;
+  quotaAmountCovered?: number;
+  advanceCredit: number;
+  lateFeeAmount: number;
+  daysLate: number;
+  dueDate: string;
+  paymentDate?: string;
+  confirmationNumber?: string;
+  verifiedInBank: boolean;
+  verifiedBy?: {
+    id: number;
+    documentId: string;
+    displayName: string;
+  };
+  verifiedAt?: string;
+  comments?: string;
+  financing?: {
+    id: number;
+    documentId: string;
+    financingNumber: string;
+    quotaAmount: number;
+    totalQuotas: number;
+    paidQuotas: number;
+    currentBalance: number;
+    status: string;
+    vehicle?: {
+      id: number;
+      documentId: string;
+      name: string;
+      placa?: string;
+    };
+    client?: {
+      id: number;
+      documentId: string;
+      displayName: string;
+    };
+  };
+  documents?: Array<{
+    id: number;
+    documentId: string;
+    name: string;
+    file?: {
+      url: string;
+      mime: string;
+    };
+  }>;
+  createdAt: string;
+}
+
+export interface BillingRecordCard {
+  id: string;
+  documentId: string;
+  receiptNumber: string;
+  amount: number;
+  amountLabel: string;
+  currency: string;
+  status: PaymentStatus;
+  statusLabel: string;
+  quotaNumber: number;
+  quotasCovered: number;
+  quotaAmountCovered?: number;
+  advanceCredit: number;
+  lateFeeAmount: number;
+  lateFeeAmountLabel: string;
+  daysLate: number;
+  dueDate: string;
+  dueDateLabel: string;
+  paymentDate?: string;
+  paymentDateLabel?: string;
+  confirmationNumber?: string;
+  verifiedInBank: boolean;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  comments?: string;
+  // Financiamiento
+  financingId?: string;
+  financingDocumentId?: string;
+  financingNumber?: string;
+  financingQuotaAmount?: number;
+  financingTotalQuotas?: number;
+  financingPaidQuotas?: number;
+  financingCurrentBalance?: number;
+  // Vehículo (desde financing)
+  vehicleName?: string;
+  vehiclePlaca?: string;
+  // Cliente (desde financing)
+  clientName?: string;
+  // Documentos
+  documents: Array<{
+    id: string;
+    documentId: string;
+    name: string;
+    url?: string;
+    mime?: string;
+  }>;
+  createdAt: string;
+}
+
+export interface BillingRecordCreatePayload {
+  amount: number;
+  currency?: string;
+  quotaNumber: number;
+  dueDate: string;
+  paymentDate?: string;
+  confirmationNumber?: string;
+  comments?: string;
+  financing: string; // documentId del financiamiento
+}
+
+export interface BillingRecordUpdatePayload {
+  amount?: number;
+  status?: PaymentStatus;
+  paymentDate?: string;
+  confirmationNumber?: string;
+  verifiedInBank?: boolean;
+  verifiedBy?: string;
+  verifiedAt?: string;
+  comments?: string;
+}
+
+// ============================================================================
+// FUNCIONES DE FORMATEO
+// ============================================================================
 
 const formatDate = (dateString?: string): string | undefined => {
   if (!dateString) return undefined;
@@ -63,161 +166,115 @@ const formatDate = (dateString?: string): string | undefined => {
   }
 };
 
-const extractAttributes = (
-  entry: BillingRecordRaw
-): BillingRecordRawAttributes & { id?: number | string; documentId?: string } => {
-  if ("attributes" in entry && entry.attributes) {
-    return {
-      id: entry.id,
-      documentId: entry.attributes.documentId ?? entry.documentId,
-      ...entry.attributes,
-    };
-  }
+const getStatusLabel = (status: PaymentStatus): string => {
+  const labels: Record<PaymentStatus, string> = {
+    pagado: "Pagado",
+    pendiente: "Pendiente",
+    adelanto: "Adelanto",
+    retrasado: "Retrasado",
+  };
+  return labels[status] || status;
+};
+
+// ============================================================================
+// NORMALIZACIÓN
+// ============================================================================
+
+const normalizeBillingRecord = (raw: BillingRecordRaw): BillingRecordCard => {
+  const currency = raw.currency || "USD";
 
   return {
-    id: entry.id,
-    documentId: entry.documentId,
-    ...(entry as BillingRecordRawAttributes),
-  };
-};
-
-const extractDocumentAttributes = (
-  entry: BillingDocumentRaw
-): BillingDocumentRawAttributes & { id?: number | string; documentId?: string } => {
-  if ("attributes" in entry && entry.attributes) {
-    return {
-      id: entry.id,
-      documentId: entry.attributes.documentId ?? entry.documentId,
-      ...entry.attributes,
-    };
-  }
-
-  return {
-    id: entry.id,
-    documentId: entry.documentId,
-    ...(entry as BillingDocumentRawAttributes),
-  };
-};
-
-const getFileData = (file: BillingDocumentRawAttributes["file"]) => {
-  if (!file) return undefined;
-  if ("data" in file && file.data) {
-    return file.data.attributes ?? undefined;
-  }
-  return file as { url?: string; name?: string; mime?: string; size?: number };
-};
-
-const getClientData = (client: BillingRecordRawAttributes["client"]) => {
-  if (!client) return undefined;
-  if ("data" in client && client.data) {
-    const attrs = client.data.attributes;
-    return {
-      id: client.data.id,
-      documentId: client.data.documentId,
-      fullName: attrs?.fullName,
-      email: attrs?.email,
-      phone: attrs?.phone,
-    };
-  }
-  return client as {
-    id?: number;
-    documentId?: string;
-    fullName?: string;
-    email?: string;
-    phone?: string;
-  };
-};
-
-const getVehicleData = (vehicle: BillingRecordRawAttributes["vehicle"]) => {
-  if (!vehicle) return undefined;
-  if ("data" in vehicle && vehicle.data) {
-    const attrs = vehicle.data.attributes;
-    return {
-      id: vehicle.data.id,
-      documentId: vehicle.data.documentId,
-      name: attrs?.name,
-    };
-  }
-  return vehicle as {
-    id?: number;
-    documentId?: string;
-    name?: string;
-  };
-};
-
-const getDocumentsData = (documents: BillingRecordRawAttributes["documents"]): BillingDocument[] => {
-  if (!documents) return [];
-  
-  let docsArray: BillingDocumentRaw[] = [];
-  
-  if ("data" in documents && Array.isArray(documents.data)) {
-    docsArray = documents.data.map((d) => ({
-      id: d.id,
-      documentId: d.documentId,
-      ...(d.attributes || {}),
-    })) as BillingDocumentRaw[];
-  } else if (Array.isArray(documents)) {
-    docsArray = documents;
-  }
-
-  return docsArray.map((doc) => {
-    const attrs = extractDocumentAttributes(doc);
-    const fileData = getFileData(attrs.file);
-    return {
-      id: String(attrs.id ?? attrs.documentId ?? ""),
-      documentId: attrs.documentId,
-      name: attrs.name || fileData?.name || "Documento",
-      url: fileData?.url,
-      mime: fileData?.mime,
-      size: fileData?.size,
-    };
-  });
-};
-
-const normalizeBillingRecord = (entry: BillingRecordRaw): BillingRecordCard | null => {
-  const attributes = extractAttributes(entry);
-  if (!attributes.invoiceNumber) {
-    return null;
-  }
-
-  const amount = Number(attributes.amount ?? 0) || 0;
-  const currency = attributes.currency || "USD";
-  const idSource = attributes.id ?? attributes.documentId ?? attributes.invoiceNumber;
-  const documentId = attributes.documentId ?? String(idSource);
-
-  const clientData = getClientData(attributes.client);
-  const vehicleData = getVehicleData(attributes.vehicle);
-  const documentsData = getDocumentsData(attributes.documents);
-
-  return {
-    id: String(idSource),
-    documentId: String(documentId),
-    invoiceNumber: attributes.invoiceNumber,
-    amount,
-    amountLabel: formatCurrency(amount, { currency, maximumFractionDigits: 2 }),
+    id: String(raw.id),
+    documentId: raw.documentId,
+    receiptNumber: raw.receiptNumber,
+    amount: raw.amount,
+    amountLabel: formatCurrency(raw.amount, { currency }),
     currency,
-    status: attributes.status || "pendiente",
-    dueDate: attributes.dueDate,
-    dueDateLabel: formatDate(attributes.dueDate),
-    paymentDate: attributes.paymentDate,
-    paymentDateLabel: formatDate(attributes.paymentDate),
-    notes: attributes.notes,
-    remindersSent: attributes.remindersSent ?? 0,
-    clientName: clientData?.fullName,
-    clientEmail: clientData?.email,
-    clientPhone: clientData?.phone,
-    clientId: clientData?.id ? String(clientData.id) : undefined,
-    clientDocumentId: clientData?.documentId,
-    vehicleName: vehicleData?.name,
-    vehicleId: vehicleData?.id ? String(vehicleData.id) : undefined,
-    vehicleDocumentId: vehicleData?.documentId,
-    documents: documentsData,
+    status: raw.status,
+    statusLabel: getStatusLabel(raw.status),
+    quotaNumber: raw.quotaNumber,
+    quotasCovered: raw.quotasCovered || 1,
+    quotaAmountCovered: raw.quotaAmountCovered,
+    advanceCredit: raw.advanceCredit || 0,
+    lateFeeAmount: raw.lateFeeAmount || 0,
+    lateFeeAmountLabel: formatCurrency(raw.lateFeeAmount || 0, { currency }),
+    daysLate: raw.daysLate || 0,
+    dueDate: raw.dueDate,
+    dueDateLabel: formatDate(raw.dueDate) || "",
+    paymentDate: raw.paymentDate,
+    paymentDateLabel: formatDate(raw.paymentDate),
+    confirmationNumber: raw.confirmationNumber,
+    verifiedInBank: raw.verifiedInBank || false,
+    verifiedBy: raw.verifiedBy?.displayName,
+    verifiedAt: raw.verifiedAt,
+    comments: raw.comments,
+    // Financiamiento
+    financingId: raw.financing ? String(raw.financing.id) : undefined,
+    financingDocumentId: raw.financing?.documentId,
+    financingNumber: raw.financing?.financingNumber,
+    financingQuotaAmount: raw.financing?.quotaAmount,
+    financingTotalQuotas: raw.financing?.totalQuotas,
+    financingPaidQuotas: raw.financing?.paidQuotas,
+    financingCurrentBalance: raw.financing?.currentBalance,
+    // Vehículo
+    vehicleName: raw.financing?.vehicle?.name,
+    vehiclePlaca: raw.financing?.vehicle?.placa,
+    // Cliente
+    clientName: raw.financing?.client?.displayName,
+    // Documentos - Las URLs necesitan el prefijo de Strapi para ser accesibles
+    documents: (raw.documents || []).map((doc) => ({
+      id: String(doc.id),
+      documentId: doc.documentId,
+      name: doc.name,
+      url: doc.file?.url ? `${STRAPI_BASE_URL}${doc.file.url}` : undefined,
+      mime: doc.file?.mime,
+    })),
+    createdAt: raw.createdAt,
   };
 };
 
+// ============================================================================
+// API FUNCTIONS
+// ============================================================================
+
+const populateConfig = {
+  populate: {
+    financing: {
+      fields: ["id", "documentId", "financingNumber", "quotaAmount", "totalQuotas", "paidQuotas", "currentBalance", "status"],
+      populate: {
+        vehicle: {
+          fields: ["id", "documentId", "name", "placa"],
+        },
+        client: {
+          fields: ["id", "documentId", "displayName"],
+        },
+      },
+    },
+    verifiedBy: {
+      fields: ["id", "documentId", "displayName"],
+    },
+    documents: {
+      fields: ["id", "documentId", "name"],
+      populate: {
+        file: {
+          fields: ["url", "mime"],
+        },
+      },
+    },
+  },
+};
+
+/**
+ * Obtener todos los pagos
+ */
 export async function fetchBillingRecordsFromStrapi(): Promise<BillingRecordCard[]> {
-  const url = `${STRAPI_BASE_URL}/api/billing-records?${listQueryString}`;
-  const response = await fetch(url, {
+  const query = qs.stringify({
+    ...populateConfig,
+    sort: ["createdAt:desc"],
+    pagination: { pageSize: 100 },
+  }, { encodeValuesOnly: true });
+
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
     },
@@ -226,91 +283,139 @@ export async function fetchBillingRecordsFromStrapi(): Promise<BillingRecordCard
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("Strapi Billing request failed:", {
-      status: response.status,
-      statusText: response.statusText,
-      error: errorText,
-      url,
-    });
-    throw new Error(`Strapi Billing request failed with status ${response.status}: ${errorText}`);
+    throw new Error(`Error fetching billing records: ${errorText}`);
   }
 
-  const payload = (await response.json()) as StrapiResponse<BillingRecordRaw[]>;
-  const items = Array.isArray(payload?.data) ? payload.data : [];
-
-  return items
-    .map((item) => normalizeBillingRecord(item))
-    .filter((record): record is BillingRecordCard => Boolean(record));
+  const data = await response.json();
+  return (data.data || []).map(normalizeBillingRecord);
 }
 
-const isNumericId = (value: string | number) => {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed >= 0 && String(parsed) === String(value);
-};
+/**
+ * Obtener un pago por ID
+ */
+export async function fetchBillingRecordByIdFromStrapi(documentId: string): Promise<BillingRecordCard | null> {
+  const query = qs.stringify(populateConfig, { encodeValuesOnly: true });
 
-const buildBillingDetailQuery = (id: string | number) => {
-  const normalizedId = String(id);
-  const filters = isNumericId(id)
-    ? {
-        $or: [
-          { id: { $eq: Number(id) } },
-          { documentId: { $eq: normalizedId } },
-        ],
-      }
-    : {
-        documentId: { $eq: normalizedId },
-      };
-
-  return qs.stringify(
-    {
-      filters,
-      fields: ["invoiceNumber", "amount", "currency", "status", "dueDate", "paymentDate", "notes", "remindersSent"],
-      ...populateConfig,
-      pagination: { pageSize: 1 },
-    },
-    { encodeValuesOnly: true }
-  );
-};
-
-export async function fetchBillingRecordByIdFromStrapi(
-  id: string | number
-): Promise<BillingRecordCard | null> {
-  const detailQuery = buildBillingDetailQuery(id);
-  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${detailQuery}`, {
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records/${documentId}?${query}`, {
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
     },
     cache: "no-store",
   });
 
-  if (response.status === 404) {
-    return null;
-  }
-
   if (!response.ok) {
-    throw new Error(`Strapi Billing details request failed with status ${response.status}`);
+    if (response.status === 404) return null;
+    const errorText = await response.text();
+    throw new Error(`Error fetching billing record: ${errorText}`);
   }
 
-  const payload = (await response.json()) as StrapiResponse<BillingRecordRaw[]>;
-  const entry = payload?.data?.[0];
-  return entry ? normalizeBillingRecord(entry) : null;
+  const data = await response.json();
+  return data.data ? normalizeBillingRecord(data.data) : null;
 }
 
-const resolveBillingDocumentId = async (id: string | number) => {
-  if (!isNumericId(id)) {
-    return String(id);
+/**
+ * Generar número de recibo único
+ */
+async function generateReceiptNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const month = String(new Date().getMonth() + 1).padStart(2, "0");
+
+  // Buscar el último recibo del mes
+  const query = qs.stringify({
+    filters: {
+      receiptNumber: {
+        $startsWith: `REC-${year}${month}-`,
+      },
+    },
+    sort: ["createdAt:desc"],
+    pagination: { limit: 1 },
+  }, { encodeValuesOnly: true });
+
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+    },
+    cache: "no-store",
+  });
+
+  let nextNumber = 1;
+  if (response.ok) {
+    const data = await response.json();
+    if (data.data && data.data.length > 0) {
+      const lastReceipt = data.data[0].receiptNumber;
+      const parts = lastReceipt.split("-");
+      if (parts.length === 3) {
+        nextNumber = parseInt(parts[2], 10) + 1;
+      }
+    }
   }
 
-  const record = await fetchBillingRecordByIdFromStrapi(id);
-  return record?.documentId ?? null;
-};
+  return `REC-${year}${month}-${String(nextNumber).padStart(5, "0")}`;
+}
 
+/**
+ * Crear un nuevo pago
+ */
 export async function createBillingRecordInStrapi(
-  data: BillingRecordCreatePayload
+  payload: BillingRecordCreatePayload,
+  financing: FinancingCard
 ): Promise<BillingRecordCard> {
-  const populateQueryString = qs.stringify(populateConfig, { encodeValuesOnly: true });
-  const url = `${STRAPI_BASE_URL}/api/billing-records?${populateQueryString}`;
-  const response = await fetch(url, {
+  // Calcular días de atraso y multa si aplica
+  const daysLate = calculateDaysLate(payload.dueDate, payload.paymentDate);
+  const lateFeeAmount = daysLate > 0 
+    ? calculateLateFee(financing.quotaAmount, daysLate, financing.lateFeePercentage)
+    : 0;
+
+  // Calcular cuotas cubiertas y crédito usando el crédito parcial acumulado
+  const { quotasCovered, advanceCredit, isPartialPayment } = processPayment(
+    payload.amount,
+    financing.quotaAmount,
+    financing.partialPaymentCredit
+  );
+
+  // Determinar estado del pago
+  let status: PaymentStatus;
+  if (isPartialPayment) {
+    // Pago parcial: no completa ninguna cuota, es un abono
+    status = "adelanto"; // Usamos "adelanto" para indicar pago parcial/abono
+  } else if (daysLate > 0) {
+    status = "retrasado";
+  } else if (quotasCovered > 1 || advanceCredit > 0) {
+    status = "adelanto"; // Cubrió más de una cuota o tiene crédito extra
+  } else {
+    status = "pagado";
+  }
+
+  // Generar número de recibo
+  const receiptNumber = await generateReceiptNumber();
+
+  // Para pagos parciales, quotasCovered se envía como 1 (mínimo requerido por Strapi)
+  // pero solo actualizamos paidQuotas en el financiamiento cuando realmente se completan cuotas
+  const quotasCoveredForStrapi = Math.max(1, quotasCovered);
+
+  const data = {
+    receiptNumber,
+    amount: payload.amount,
+    currency: payload.currency || "USD",
+    status,
+    quotaNumber: payload.quotaNumber,
+    quotasCovered: quotasCoveredForStrapi,
+    quotaAmountCovered: isPartialPayment 
+      ? payload.amount // Para pagos parciales, el monto cubierto es el pago mismo
+      : Math.min(payload.amount, financing.quotaAmount * quotasCovered),
+    advanceCredit,
+    lateFeeAmount,
+    daysLate,
+    dueDate: payload.dueDate,
+    paymentDate: payload.paymentDate || new Date().toISOString().split("T")[0],
+    confirmationNumber: payload.confirmationNumber,
+    comments: payload.comments,
+    financing: payload.financing,
+  };
+
+  const query = qs.stringify(populateConfig, { encodeValuesOnly: true });
+
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
@@ -322,69 +427,100 @@ export async function createBillingRecordInStrapi(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Strapi Billing create failed with status ${response.status}: ${errorText}`);
+    throw new Error(`Error creating billing record: ${errorText}`);
   }
 
-  const payload = (await response.json()) as StrapiResponse<BillingRecordRaw>;
-  const record = payload?.data ? normalizeBillingRecord(payload.data) : null;
+  const result = await response.json();
+  const createdRecord = normalizeBillingRecord(result.data);
 
-  if (!record) {
-    throw new Error("No pudimos normalizar la respuesta de Strapi.");
+  // =========================================================================
+  // ACTUALIZAR EL FINANCIAMIENTO PADRE
+  // =========================================================================
+  
+  // Solo incrementar paidQuotas cuando realmente se completan cuotas (no para pagos parciales)
+  const newPaidQuotas = financing.paidQuotas + quotasCovered; // quotasCovered es 0 para parciales
+  const newTotalPaid = financing.totalPaid + payload.amount;
+  const newCurrentBalance = Math.max(0, financing.currentBalance - payload.amount);
+  const newPartialPaymentCredit = advanceCredit; // El crédito acumulado para la próxima cuota
+  const newTotalLateFees = financing.totalLateFees + lateFeeAmount;
+  
+  // Calcular próxima fecha de vencimiento
+  const newNextDueDate = calculateNextDueDate(
+    financing.nextDueDate,
+    financing.paymentFrequency,
+    quotasCovered
+  );
+  
+  // Determinar nuevo estado del financiamiento
+  let newFinancingStatus: FinancingStatus = financing.status as FinancingStatus;
+  if (newPaidQuotas >= financing.totalQuotas) {
+    newFinancingStatus = "completado";
+  } else if (daysLate > 0) {
+    newFinancingStatus = "en_mora";
+  } else if (financing.status === "en_mora" && daysLate === 0) {
+    // Si estaba en mora y ahora pagó a tiempo, vuelve a activo
+    newFinancingStatus = "activo";
+  }
+  
+  try {
+    // Actualizar el financiamiento
+    await updateFinancingInStrapi(financing.documentId, {
+      paidQuotas: newPaidQuotas,
+      totalPaid: newTotalPaid,
+      currentBalance: newCurrentBalance,
+      partialPaymentCredit: newPartialPaymentCredit,
+      totalLateFees: newTotalLateFees,
+      nextDueDate: newNextDueDate,
+      status: newFinancingStatus,
+    });
+  } catch (updateError) {
+    console.error("Error updating financing after payment:", updateError);
+    // No lanzamos el error para no bloquear la creación del pago
   }
 
-  return record;
+  return createdRecord;
 }
 
+/**
+ * Actualizar un pago
+ */
 export async function updateBillingRecordInStrapi(
-  id: string | number,
-  data: BillingRecordUpdatePayload
+  documentId: string,
+  payload: BillingRecordUpdatePayload
 ): Promise<BillingRecordCard> {
-  const documentId = await resolveBillingDocumentId(id);
+  const query = qs.stringify(populateConfig, { encodeValuesOnly: true });
 
-  if (!documentId) {
-    throw new Error("No pudimos encontrar el registro de facturación para actualizarlo.");
-  }
-
-  const populateQueryString = qs.stringify(populateConfig, { encodeValuesOnly: true });
-  const url = `${STRAPI_BASE_URL}/api/billing-records/${documentId}?${populateQueryString}`;
-  const response = await fetch(url, {
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records/${documentId}?${query}`, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data: payload }),
     cache: "no-store",
   });
 
   if (!response.ok) {
-    let errorMessage = `Error al actualizar el registro de facturación (${response.status})`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData?.error?.message || errorData?.error || errorMessage;
-    } catch {
-      // Si falla, usar el mensaje por defecto
-    }
-    throw new Error(errorMessage);
+    const errorText = await response.text();
+    throw new Error(`Error updating billing record: ${errorText}`);
   }
 
-  const payload = (await response.json()) as StrapiResponse<BillingRecordRaw>;
-  const record = payload?.data ? normalizeBillingRecord(payload.data) : null;
-
-  if (!record) {
-    throw new Error("No pudimos normalizar la respuesta de Strapi.");
-  }
-
-  return record;
+  const result = await response.json();
+  return normalizeBillingRecord(result.data);
 }
 
-export async function deleteBillingRecordInStrapi(id: string | number): Promise<void> {
-  const documentId = await resolveBillingDocumentId(id);
-
-  if (!documentId) {
-    throw new Error("No pudimos encontrar el registro de facturación para eliminarlo.");
+/**
+ * Eliminar un pago
+ */
+export async function deleteBillingRecordFromStrapi(documentId: string): Promise<void> {
+  // 1. Primero obtener el registro para saber el financiamiento asociado y el monto
+  const record = await fetchBillingRecordByIdFromStrapi(documentId);
+  
+  if (!record) {
+    throw new Error("Billing record not found: 404");
   }
 
+  // 2. Eliminar el registro
   const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records/${documentId}`, {
     method: "DELETE",
     headers: {
@@ -394,54 +530,266 @@ export async function deleteBillingRecordInStrapi(id: string | number): Promise<
   });
 
   if (!response.ok) {
-    throw new Error(`Strapi Billing delete failed with status ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Error deleting billing record: ${errorText}`);
+  }
+
+  // 3. Si tiene financiamiento asociado, actualizar el financiamiento padre
+  if (record.financingDocumentId) {
+    try {
+      // Obtener el financiamiento actual
+      const financingResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/financings/${record.financingDocumentId}?populate=*`,
+        {
+          headers: {
+            Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (financingResponse.ok) {
+        const financingData = await financingResponse.json();
+        const financing = financingData.data;
+
+        if (financing) {
+          // Calcular nuevos valores restando el pago eliminado
+          const quotasCovered = record.quotasCovered || 1;
+          const newPaidQuotas = Math.max(0, (financing.paidQuotas || 0) - quotasCovered);
+          const newTotalPaid = Math.max(0, (financing.totalPaid || 0) - (record.amount || 0));
+          const newCurrentBalance = (financing.totalAmount || 0) - newTotalPaid;
+          const newTotalLateFees = Math.max(0, (financing.totalLateFees || 0) - (record.lateFeeAmount || 0));
+
+          // Determinar nuevo estado
+          let newStatus = financing.status;
+          if (newPaidQuotas < financing.totalQuotas && financing.status === "completado") {
+            newStatus = "activo";
+          }
+
+          // Actualizar el financiamiento
+          await updateFinancingInStrapi(record.financingDocumentId, {
+            paidQuotas: newPaidQuotas,
+            totalPaid: newTotalPaid,
+            currentBalance: newCurrentBalance,
+            totalLateFees: newTotalLateFees,
+            status: newStatus,
+          });
+
+          // 4. Reorganizar los números de cuota de los pagos restantes
+          await reorganizeQuotaNumbers(record.financingDocumentId);
+        }
+      }
+    } catch (updateError) {
+      console.error("Error updating financing after payment deletion:", updateError);
+      // No lanzamos el error para no bloquear la eliminación del pago
+    }
   }
 }
 
-// ============================================
-// Billing Documents CRUD
-// ============================================
+/**
+ * Reorganizar los números de cuota después de eliminar un pago
+ */
+async function reorganizeQuotaNumbers(financingDocumentId: string): Promise<void> {
+  // Obtener todos los pagos del financiamiento ordenados por fecha de pago
+  const query = qs.stringify({
+    filters: {
+      financing: {
+        documentId: {
+          $eq: financingDocumentId,
+        },
+      },
+    },
+    sort: ["paymentDate:asc", "createdAt:asc"],
+    fields: ["documentId", "quotaNumber"],
+  }, { encodeValuesOnly: true });
 
-export async function createBillingDocumentInStrapi(
-  data: BillingDocumentCreatePayload
-): Promise<BillingDocument> {
-  const url = `${STRAPI_BASE_URL}/api/billing-documents?populate=file`;
-  const response = await fetch(url, {
-    method: "POST",
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    console.error("Error fetching billing records for reorganization");
+    return;
+  }
+
+  const data = await response.json();
+  const records = data.data || [];
+
+  // Actualizar cada pago con su nuevo número de cuota secuencial
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const newQuotaNumber = i + 1;
+
+    // Solo actualizar si el número cambió
+    if (record.quotaNumber !== newQuotaNumber) {
+      await fetch(`${STRAPI_BASE_URL}/api/billing-records/${record.documentId}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ data: { quotaNumber: newQuotaNumber } }),
+        cache: "no-store",
+      });
+    }
+  }
+}
+
+/**
+ * Marcar pago como verificado
+ */
+export async function verifyBillingRecordInStrapi(
+  documentId: string,
+  verifiedByDocumentId?: string
+): Promise<BillingRecordCard> {
+  // Solo incluir verifiedBy si es un documentId válido (no placeholder)
+  const isValidDocumentId = verifiedByDocumentId && 
+    verifiedByDocumentId !== "admin" && 
+    verifiedByDocumentId.length > 10;
+  
+  return updateBillingRecordInStrapi(documentId, {
+    verifiedInBank: true,
+    ...(isValidDocumentId && { verifiedBy: verifiedByDocumentId }),
+    verifiedAt: new Date().toISOString(),
+  });
+}
+
+// ============================================================================
+// FUNCIONES DE DOCUMENTOS DE BILLING
+// ============================================================================
+
+export interface BillingDocument {
+  id: string;
+  documentId: string;
+  name: string;
+  url?: string;
+  createdAt: string;
+}
+
+export interface BillingDocumentCreatePayload {
+  name: string;
+  file: number; // ID del archivo en Strapi
+  record: string; // documentId del billing record
+}
+
+/**
+ * Obtener documentos de un billing record
+ */
+export async function fetchBillingDocumentsByRecordId(
+  billingRecordDocumentId: string
+): Promise<BillingDocument[]> {
+  const query = qs.stringify({
+    filters: {
+      record: {
+        documentId: {
+          $eq: billingRecordDocumentId,
+        },
+      },
+    },
+    populate: ["file"],
+  }, { encodeValuesOnly: true });
+
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-documents?${query}`, {
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data }),
     cache: "no-store",
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Strapi Billing Document create failed with status ${response.status}: ${errorText}`);
+    throw new Error(`Error fetching billing documents: ${errorText}`);
   }
 
-  const payload = (await response.json()) as StrapiResponse<BillingDocumentRaw>;
-  const docData = payload?.data;
+  const data = await response.json();
+  return (data.data || []).map((doc: any) => ({
+    id: String(doc.id),
+    documentId: doc.documentId,
+    name: doc.name,
+    url: doc.file?.url ? `${STRAPI_BASE_URL}${doc.file.url}` : undefined,
+    createdAt: doc.createdAt,
+  }));
+}
+
+/**
+ * Crear un documento de billing
+ */
+export async function createBillingDocumentInStrapi(
+  payload: BillingDocumentCreatePayload
+): Promise<BillingDocument> {
+  // Crear el documento
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-documents`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      data: {
+        name: payload.name,
+        file: payload.file,
+        record: payload.record,
+      },
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Error creating billing document: ${errorText}`);
+  }
+
+  const result = await response.json();
+  const createdDoc = result.data;
   
-  if (!docData) {
-    throw new Error("No pudimos crear el documento de facturación.");
+  // Re-obtener el documento con el archivo populado para tener la URL correcta
+  const query = qs.stringify({
+    populate: ["file"],
+  }, { encodeValuesOnly: true });
+  
+  const fetchResponse = await fetch(
+    `${STRAPI_BASE_URL}/api/billing-documents/${createdDoc.documentId}?${query}`,
+    {
+      headers: {
+        Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    }
+  );
+  
+  if (fetchResponse.ok) {
+    const fetchResult = await fetchResponse.json();
+    const doc = fetchResult.data;
+    return {
+      id: String(doc.id),
+      documentId: doc.documentId,
+      name: doc.name,
+      url: doc.file?.url ? `${STRAPI_BASE_URL}${doc.file.url}` : undefined,
+      createdAt: doc.createdAt,
+    };
   }
-
-  const attrs = extractDocumentAttributes(docData);
-  const fileData = getFileData(attrs.file);
-
+  
+  // Fallback: devolver sin URL si no se pudo re-obtener
   return {
-    id: String(attrs.id ?? attrs.documentId ?? ""),
-    documentId: attrs.documentId,
-    name: attrs.name || fileData?.name || "Documento",
-    url: fileData?.url,
-    mime: fileData?.mime,
-    size: fileData?.size,
+    id: String(createdDoc.id),
+    documentId: createdDoc.documentId,
+    name: createdDoc.name,
+    url: undefined,
+    createdAt: createdDoc.createdAt,
   };
 }
 
-export async function deleteBillingDocumentInStrapi(documentId: string): Promise<void> {
+/**
+ * Eliminar un documento de billing
+ */
+export async function deleteBillingDocumentFromStrapi(
+  documentId: string
+): Promise<void> {
   const response = await fetch(`${STRAPI_BASE_URL}/api/billing-documents/${documentId}`, {
     method: "DELETE",
     headers: {
@@ -451,13 +799,11 @@ export async function deleteBillingDocumentInStrapi(documentId: string): Promise
   });
 
   if (!response.ok) {
-    throw new Error(`Strapi Billing Document delete failed with status ${response.status}`);
+    const errorText = await response.text();
+    throw new Error(`Error deleting billing document: ${errorText}`);
   }
 }
 
-export async function fetchBillingDocumentsByRecordId(
-  recordId: string | number
-): Promise<BillingDocument[]> {
-  const record = await fetchBillingRecordByIdFromStrapi(recordId);
-  return record?.documents ?? [];
-}
+// Re-exportar tipos y funciones de financing para compatibilidad
+export { calculateLateFee, calculateDaysLate, processPayment };
+export type { PaymentStatus };

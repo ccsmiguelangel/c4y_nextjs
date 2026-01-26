@@ -466,14 +466,14 @@ export default function ProfilePage() {
                 <div className="flex flex-col">
                   <Label htmlFor="identificationNumber" className={`pb-2 ${typography.body.large} flex items-center gap-2`}>
                     <FileText className="h-4 w-4" />
-                    DNI/NIE
+                    Cédula
                   </Label>
                   <Input
                     id="identificationNumber"
                     type="text"
                     value={formData.identificationNumber}
                     onChange={(e) => setFormData({ ...formData, identificationNumber: e.target.value })}
-                    placeholder="e.g. 12345678X"
+                    placeholder="e.g. 8-888-8888"
                     className={`h-14 px-[15px] text-base ${components.input.base}`}
                   />
                 </div>

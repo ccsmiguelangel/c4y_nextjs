@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteBillingDocumentInStrapi } from "@/lib/billing";
+import { deleteBillingDocumentFromStrapi } from "@/lib/billing";
 
 interface RouteContext {
   params: Promise<{ documentId: string }>;
@@ -8,7 +8,7 @@ interface RouteContext {
 export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { documentId } = await context.params;
-    await deleteBillingDocumentInStrapi(documentId);
+    await deleteBillingDocumentFromStrapi(documentId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting billing document:", error);

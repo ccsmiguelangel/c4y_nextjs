@@ -63,8 +63,14 @@ const populateImageQueryString = qs.stringify(populateImageConfig, { encodeValue
 
 const listQueryString = qs.stringify(
   {
-    fields: ["name", "vin", "price", "condition", "brand", "model", "year", "imageAlt"],
-    ...populateImageConfig,
+    fields: ["name", "vin", "price", "condition", "brand", "model", "year", "imageAlt", "placa"],
+    populate: {
+      ...populateImageConfig.populate,
+      // Incluir financiamiento para verificar si el vehículo tiene uno activo
+      financing: {
+        fields: ["id", "documentId", "status"],
+      },
+    },
     sort: ["name:asc"],
     pagination: {
       pageSize: 100,
@@ -276,6 +282,25 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     };
   });
 
+  // Normalizar financiamiento (información completa para mostrar en detalle de vehículo)
+  const financingRaw = attributes.financing as any;
+  const financingData = financingRaw?.data || financingRaw;
+  const financingAttrs = financingData?.attributes || financingData;
+  const financing = financingData ? {
+    id: financingData.id,
+    documentId: financingData.documentId || financingAttrs?.documentId,
+    financingNumber: financingAttrs?.financingNumber,
+    status: financingAttrs?.status,
+    totalAmount: financingAttrs?.totalAmount,
+    paidQuotas: financingAttrs?.paidQuotas,
+    totalQuotas: financingAttrs?.totalQuotas,
+    quotaAmount: financingAttrs?.quotaAmount,
+    currentBalance: financingAttrs?.currentBalance,
+    totalPaid: financingAttrs?.totalPaid,
+    nextDueDate: financingAttrs?.nextDueDate,
+    partialPaymentCredit: financingAttrs?.partialPaymentCredit,
+  } : undefined;
+
   return {
     id: String(idSource),
     documentId: String(documentId),
@@ -301,6 +326,7 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     interestedDrivers: interestedDrivers,
     currentDrivers: currentDrivers,
     interestedPersons: interestedPersons,
+    financing: financing,
   };
 };
 
@@ -364,6 +390,9 @@ const buildFleetDetailQuery = (id: string | number) => {
               fields: ["url", "alternativeText"],
             },
           },
+        },
+        financing: {
+          fields: ["id", "documentId", "financingNumber", "status", "totalAmount", "paidQuotas", "totalQuotas", "quotaAmount", "currentBalance", "totalPaid", "nextDueDate", "partialPaymentCredit"],
         },
       },
       pagination: { pageSize: 1 },

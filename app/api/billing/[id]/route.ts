@@ -2,14 +2,19 @@ import { NextResponse } from "next/server";
 import {
   fetchBillingRecordByIdFromStrapi,
   updateBillingRecordInStrapi,
-  deleteBillingRecordInStrapi,
+  deleteBillingRecordFromStrapi,
+  verifyBillingRecordInStrapi,
+  type BillingRecordUpdatePayload,
 } from "@/lib/billing";
-import type { BillingRecordUpdatePayload } from "@/validations/types";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * GET /api/billing/[id]
+ * Obtener un pago por ID
+ */
 export async function GET(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
@@ -17,7 +22,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     if (!record) {
       return NextResponse.json(
-        { error: "Registro de facturación no encontrado." },
+        { error: "Pago no encontrado." },
         { status: 404 }
       );
     }
@@ -26,25 +31,39 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (error) {
     console.error("Error fetching billing record:", error);
     return NextResponse.json(
-      { error: "No se pudo obtener el registro de facturación." },
+      { error: "No se pudo obtener el pago." },
       { status: 500 }
     );
   }
 }
 
+/**
+ * PUT /api/billing/[id]
+ * Actualizar un pago
+ */
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as { data?: BillingRecordUpdatePayload };
+    const body = await request.json();
+    const { data, action } = body as { 
+      data?: BillingRecordUpdatePayload;
+      action?: "verify";
+    };
 
-    if (!body?.data) {
+    // Acción especial: verificar pago
+    if (action === "verify") {
+      const { verifiedBy } = body as { verifiedBy?: string };
+      // verifiedBy es opcional - si no hay ID válido, solo se marca como verificado
+      const record = await verifyBillingRecordInStrapi(id, verifiedBy);
+      return NextResponse.json({ data: record });
+    }
+
+    if (!data) {
       return NextResponse.json(
         { error: "Los datos de actualización son requeridos." },
         { status: 400 }
       );
     }
-
-    const { data } = body;
 
     // Validar monto si está presente
     if (data.amount !== undefined && data.amount !== null) {
@@ -58,19 +77,9 @@ export async function PUT(request: Request, context: RouteContext) {
 
     // Validar status si está presente
     if (data.status !== undefined) {
-      if (!["pagado", "pendiente", "retrasado"].includes(data.status)) {
+      if (!["pagado", "pendiente", "adelanto", "retrasado"].includes(data.status)) {
         return NextResponse.json(
-          { error: "El estado debe ser 'pagado', 'pendiente' o 'retrasado'." },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Validar remindersSent si está presente
-    if (data.remindersSent !== undefined && data.remindersSent !== null) {
-      if (typeof data.remindersSent !== "number" || data.remindersSent < 0) {
-        return NextResponse.json(
-          { error: "El número de recordatorios enviados debe ser un número válido mayor o igual a 0." },
+          { error: "El estado debe ser 'pagado', 'pendiente', 'adelanto' o 'retrasado'." },
           { status: 400 }
         );
       }
@@ -80,24 +89,42 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ data: record });
   } catch (error) {
     console.error("Error updating billing record:", error);
-    const errorMessage = error instanceof Error ? error.message : "No se pudo actualizar el registro de facturación.";
+    
+    if (error instanceof Error && error.message.includes("404")) {
+      return NextResponse.json(
+        { error: "Pago no encontrado." },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json(
-      { error: errorMessage },
+      { error: "No se pudo actualizar el pago." },
       { status: 500 }
     );
   }
 }
 
+/**
+ * DELETE /api/billing/[id]
+ * Eliminar un pago
+ */
 export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
-    await deleteBillingRecordInStrapi(id);
+    await deleteBillingRecordFromStrapi(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting billing record:", error);
-    const errorMessage = error instanceof Error ? error.message : "No se pudo eliminar el registro de facturación.";
+    
+    if (error instanceof Error && error.message.includes("404")) {
+      return NextResponse.json(
+        { error: "Pago no encontrado." },
+        { status: 404 }
+      );
+    }
+
     return NextResponse.json(
-      { error: errorMessage },
+      { error: "No se pudo eliminar el pago." },
       { status: 500 }
     );
   }

@@ -1,641 +1,361 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+/**
+ * Tests de CRUD para el API de Billing (Pagos)
+ */
 
-// Mock de fetch global
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock del módulo config para evitar errores de variables de entorno
+// Mock de config
 vi.mock("@/lib/config", () => ({
   STRAPI_BASE_URL: "http://localhost:1337",
   STRAPI_API_TOKEN: "test-token",
 }));
 
-// Importar después de los mocks
+// Mock de fetch global
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+// Importar funciones después del mock
 import {
   fetchBillingRecordsFromStrapi,
   fetchBillingRecordByIdFromStrapi,
-  createBillingRecordInStrapi,
   updateBillingRecordInStrapi,
-  deleteBillingRecordInStrapi,
-  createBillingDocumentInStrapi,
-  deleteBillingDocumentInStrapi,
+  deleteBillingRecordFromStrapi,
+  verifyBillingRecordInStrapi,
+  calculateLateFee,
+  calculateDaysLate,
+  processPayment,
 } from "@/lib/billing";
 
-describe("Billing CRUD - Strapi Integration", () => {
+describe("Billing API CRUD", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
-  describe("fetchBillingRecordsFromStrapi (READ - Lista)", () => {
-    it("debe obtener la lista de registros de facturación correctamente", async () => {
-      const mockRecords = {
+  describe("fetchBillingRecordsFromStrapi", () => {
+    it("debe obtener lista de pagos correctamente", async () => {
+      const mockData = {
         data: [
           {
             id: 1,
-            documentId: "bill-1",
-            invoiceNumber: "2024-001",
-            amount: 350.5,
-            currency: "USD",
-            status: "pendiente",
-            dueDate: "2024-06-15",
-            notes: "Pago pendiente",
-            remindersSent: 0,
-            client: {
-              id: 1,
-              documentId: "client-1",
-              fullName: "Ana López",
-              email: "ana@example.com",
-            },
-            vehicle: {
-              id: 1,
-              documentId: "vehicle-1",
-              name: "Toyota Camry 2023",
-            },
-            documents: [],
-          },
-          {
-            id: 2,
-            documentId: "bill-2",
-            invoiceNumber: "2024-002",
-            amount: 500.0,
+            documentId: "pay-001",
+            receiptNumber: "REC-202601-00001",
+            amount: 225,
             currency: "USD",
             status: "pagado",
-            dueDate: "2024-06-01",
-            paymentDate: "2024-06-02",
-            remindersSent: 1,
-            client: {
-              id: 2,
-              documentId: "client-2",
-              fullName: "Jorge Martinez",
-              email: "jorge@example.com",
+            quotaNumber: 1,
+            quotasCovered: 1,
+            advanceCredit: 0,
+            lateFeeAmount: 0,
+            daysLate: 0,
+            dueDate: "2026-02-01",
+            paymentDate: "2026-02-01",
+            confirmationNumber: "1820866090",
+            verifiedInBank: true,
+            financing: {
+              id: 1,
+              documentId: "fin-001",
+              financingNumber: "FIN-2026-00001",
+              quotaAmount: 225,
+              totalQuotas: 234,
+              paidQuotas: 1,
+              vehicle: {
+                id: 1,
+                documentId: "veh-001",
+                name: "Toyota Corolla",
+                placa: "ABC-123",
+              },
+              client: {
+                id: 1,
+                documentId: "usr-001",
+                displayName: "Juan Pérez",
+              },
             },
+            documents: [],
+            createdAt: "2026-02-01T10:00:00Z",
           },
         ],
       };
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockRecords,
+        json: () => Promise.resolve(mockData),
       });
 
       const result = await fetchBillingRecordsFromStrapi();
 
-      expect(result).toHaveLength(2);
-      expect(result[0].invoiceNumber).toBe("2024-001");
-      expect(result[0].amount).toBe(350.5);
-      expect(result[0].status).toBe("pendiente");
-      expect(result[0].clientName).toBe("Ana López");
-      expect(result[0].vehicleName).toBe("Toyota Camry 2023");
-      expect(result[1].invoiceNumber).toBe("2024-002");
-      expect(result[1].status).toBe("pagado");
+      expect(result).toHaveLength(1);
+      expect(result[0].receiptNumber).toBe("REC-202601-00001");
+      expect(result[0].amount).toBe(225);
+      expect(result[0].status).toBe("pagado");
+      expect(result[0].vehicleName).toBe("Toyota Corolla");
+      expect(result[0].clientName).toBe("Juan Pérez");
+      expect(result[0].financingNumber).toBe("FIN-2026-00001");
     });
 
-    it("debe formatear correctamente las fechas", async () => {
-      const mockRecords = {
-        data: [
-          {
-            id: 1,
-            documentId: "bill-1",
-            invoiceNumber: "2024-001",
-            amount: 100,
-            status: "pendiente",
-            dueDate: "2024-06-15",
-            paymentDate: "2024-06-20",
-          },
-        ],
-      };
-
+    it("debe manejar lista vacía", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockRecords,
+        json: () => Promise.resolve({ data: [] }),
       });
 
       const result = await fetchBillingRecordsFromStrapi();
-
-      // Verificar que las fechas se formatean correctamente (dd/mm/yyyy)
-      // Nota: La fecha puede variar ligeramente por zona horaria
-      expect(result[0].dueDateLabel).toMatch(/^\d{2}\/06\/2024$/);
-      expect(result[0].paymentDateLabel).toMatch(/^\d{2}\/06\/2024$/);
-    });
-
-    it("debe retornar array vacío cuando no hay registros", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      });
-
-      const result = await fetchBillingRecordsFromStrapi();
-
       expect(result).toHaveLength(0);
-    });
-
-    it("debe lanzar error cuando la petición falla", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        text: async () => "Internal Server Error",
-      });
-
-      await expect(fetchBillingRecordsFromStrapi()).rejects.toThrow(
-        "Strapi Billing request failed with status 500"
-      );
     });
   });
 
-  describe("fetchBillingRecordByIdFromStrapi (READ - Individual)", () => {
-    it("debe obtener un registro por ID correctamente", async () => {
-      const mockRecord = {
-        data: [
-          {
-            id: 1,
-            documentId: "bill-1",
-            invoiceNumber: "2024-001",
-            amount: 350.5,
-            currency: "USD",
-            status: "pendiente",
-            dueDate: "2024-06-15",
-            client: {
-              id: 1,
-              documentId: "client-1",
-              fullName: "Ana López",
-            },
-          },
-        ],
+  describe("fetchBillingRecordByIdFromStrapi", () => {
+    it("debe obtener un pago por ID", async () => {
+      const mockData = {
+        data: {
+          id: 1,
+          documentId: "pay-001",
+          receiptNumber: "REC-202601-00001",
+          amount: 225,
+          currency: "USD",
+          status: "pagado",
+          quotaNumber: 1,
+          quotasCovered: 1,
+          dueDate: "2026-02-01",
+          paymentDate: "2026-02-01",
+          verifiedInBank: false,
+          createdAt: "2026-02-01T10:00:00Z",
+        },
       };
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockRecord,
+        json: () => Promise.resolve(mockData),
       });
 
-      const result = await fetchBillingRecordByIdFromStrapi("bill-1");
+      const result = await fetchBillingRecordByIdFromStrapi("pay-001");
 
       expect(result).not.toBeNull();
-      expect(result?.invoiceNumber).toBe("2024-001");
-      expect(result?.documentId).toBe("bill-1");
-      expect(result?.clientName).toBe("Ana López");
+      expect(result?.documentId).toBe("pay-001");
+      expect(result?.verifiedInBank).toBe(false);
     });
 
-    it("debe retornar null cuando el registro no existe", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      });
-
-      const result = await fetchBillingRecordByIdFromStrapi("non-existent");
-
-      expect(result).toBeNull();
-    });
-
-    it("debe retornar null cuando recibe 404", async () => {
+    it("debe retornar null cuando no existe", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
       });
 
-      const result = await fetchBillingRecordByIdFromStrapi("non-existent");
-
+      const result = await fetchBillingRecordByIdFromStrapi("no-existe");
       expect(result).toBeNull();
     });
   });
 
-  describe("createBillingRecordInStrapi (CREATE)", () => {
-    it("debe crear un registro correctamente", async () => {
-      const newRecord = {
-        invoiceNumber: "2024-003",
-        amount: 275.0,
-        status: "pendiente" as const,
-        dueDate: "2024-07-01",
-      };
-
+  describe("updateBillingRecordInStrapi", () => {
+    it("debe actualizar un pago correctamente", async () => {
       const mockResponse = {
-        data: {
-          id: 3,
-          documentId: "new-bill-id",
-          ...newRecord,
-          currency: "USD",
-          remindersSent: 0,
-        },
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      });
-
-      const result = await createBillingRecordInStrapi(newRecord);
-
-      expect(result.invoiceNumber).toBe("2024-003");
-      expect(result.amount).toBe(275.0);
-      expect(result.documentId).toBe("new-bill-id");
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/billing-records"),
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            "Content-Type": "application/json",
-          }),
-        })
-      );
-    });
-
-    it("debe asignar valores por defecto correctamente", async () => {
-      const newRecord = {
-        invoiceNumber: "2024-004",
-        amount: 100,
-      };
-
-      const mockResponse = {
-        data: {
-          id: 4,
-          documentId: "new-bill-4",
-          ...newRecord,
-          status: "pendiente",
-          currency: "USD",
-          remindersSent: 0,
-        },
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      });
-
-      const result = await createBillingRecordInStrapi(newRecord);
-
-      expect(result.status).toBe("pendiente");
-      expect(result.currency).toBe("USD");
-      expect(result.remindersSent).toBe(0);
-    });
-
-    it("debe lanzar error cuando la creación falla", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        text: async () => "Bad Request",
-      });
-
-      await expect(
-        createBillingRecordInStrapi({
-          invoiceNumber: "TEST",
-          amount: 100,
-        })
-      ).rejects.toThrow("Strapi Billing create failed");
-    });
-  });
-
-  describe("updateBillingRecordInStrapi (UPDATE)", () => {
-    it("debe actualizar un registro correctamente usando documentId", async () => {
-      const updatedData = {
         data: {
           id: 1,
-          documentId: "bill-1",
-          invoiceNumber: "2024-001",
-          amount: 400.0,
+          documentId: "pay-001",
+          receiptNumber: "REC-202601-00001",
+          amount: 225,
           status: "pagado",
-          currency: "USD",
-          remindersSent: 2,
+          confirmationNumber: "NUEVO-123",
+          verifiedInBank: false,
+          createdAt: "2026-02-01T10:00:00Z",
         },
       };
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => updatedData,
+        json: () => Promise.resolve(mockResponse),
       });
 
-      const result = await updateBillingRecordInStrapi("bill-1", {
-        amount: 400.0,
-        status: "pagado",
+      const result = await updateBillingRecordInStrapi("pay-001", {
+        confirmationNumber: "NUEVO-123",
       });
 
-      expect(result.amount).toBe(400.0);
-      expect(result.status).toBe("pagado");
-    });
-
-    it("debe actualizar un registro usando ID numérico", async () => {
-      // Para IDs numéricos, primero se busca el documentId
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            {
-              id: 1,
-              documentId: "bill-doc-1",
-              invoiceNumber: "2024-001",
-              amount: 350,
-              status: "pendiente",
-            },
-          ],
-        }),
-      });
-
-      // Luego se hace la actualización
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: {
-            id: 1,
-            documentId: "bill-doc-1",
-            invoiceNumber: "2024-001",
-            amount: 350,
-            status: "pagado",
-            currency: "USD",
-            remindersSent: 0,
-          },
-        }),
-      });
-
-      const result = await updateBillingRecordInStrapi(1, {
-        status: "pagado",
-      });
-
-      expect(result.status).toBe("pagado");
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-    });
-
-    it("debe lanzar error cuando el registro no existe (ID numérico)", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      });
-
-      await expect(
-        updateBillingRecordInStrapi(999, { status: "pagado" })
-      ).rejects.toThrow("No pudimos encontrar el registro de facturación");
+      expect(result.confirmationNumber).toBe("NUEVO-123");
     });
   });
 
-  describe("deleteBillingRecordInStrapi (DELETE)", () => {
-    it("debe eliminar un registro correctamente usando documentId", async () => {
+  describe("deleteBillingRecordFromStrapi", () => {
+    it("debe eliminar un pago correctamente", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ data: null }),
+        json: () => Promise.resolve({}),
       });
 
       await expect(
-        deleteBillingRecordInStrapi("bill-to-delete")
+        deleteBillingRecordFromStrapi("pay-001")
       ).resolves.not.toThrow();
-
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/billing-records/bill-to-delete"),
-        expect.objectContaining({
-          method: "DELETE",
-        })
-      );
-    });
-
-    it("debe eliminar un registro usando ID numérico", async () => {
-      // Para IDs numéricos, primero se resuelve el documentId
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [
-            {
-              id: 1,
-              documentId: "bill-doc-1",
-              invoiceNumber: "2024-001",
-              amount: 100,
-              status: "pendiente",
-            },
-          ],
-        }),
-      });
-
-      // Luego se hace el DELETE
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: null }),
-      });
-
-      await expect(deleteBillingRecordInStrapi(1)).resolves.not.toThrow();
-
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-    });
-
-    it("debe lanzar error cuando el registro no existe (ID numérico)", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [] }),
-      });
-
-      await expect(deleteBillingRecordInStrapi(999)).rejects.toThrow(
-        "No pudimos encontrar el registro de facturación"
-      );
-    });
-
-    it("debe lanzar error cuando la eliminación falla", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-      });
-
-      await expect(deleteBillingRecordInStrapi("bill-1")).rejects.toThrow(
-        "Strapi Billing delete failed"
-      );
     });
   });
 
-  describe("Billing Documents CRUD", () => {
-    it("debe crear un documento de facturación correctamente", async () => {
+  describe("verifyBillingRecordInStrapi", () => {
+    it("debe verificar un pago correctamente", async () => {
       const mockResponse = {
         data: {
           id: 1,
-          documentId: "doc-1",
-          name: "comprobante.pdf",
-          file: {
-            url: "/uploads/comprobante.pdf",
-            mime: "application/pdf",
-            size: 1024,
+          documentId: "pay-001",
+          receiptNumber: "REC-202601-00001",
+          verifiedInBank: true,
+          verifiedAt: "2026-02-05T15:30:00Z",
+          verifiedBy: {
+            displayName: "Admin",
           },
+          createdAt: "2026-02-01T10:00:00Z",
         },
       };
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockResponse,
+        json: () => Promise.resolve(mockResponse),
       });
 
-      const result = await createBillingDocumentInStrapi({
-        name: "comprobante.pdf",
-        file: 1,
-        record: "bill-1",
-      });
+      const result = await verifyBillingRecordInStrapi("pay-001", "admin-001");
 
-      expect(result.name).toBe("comprobante.pdf");
-      expect(result.documentId).toBe("doc-1");
+      expect(result.verifiedInBank).toBe(true);
+    });
+  });
+});
+
+describe("Cálculo de Días de Atraso", () => {
+  describe("calculateDaysLate", () => {
+    it("debe retornar 0 si pago es en fecha", () => {
+      const result = calculateDaysLate("2026-02-01", "2026-02-01");
+      expect(result).toBe(0);
     });
 
-    it("debe eliminar un documento de facturación correctamente", async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: null }),
-      });
+    it("debe retornar 0 si pago es antes de vencimiento", () => {
+      const result = calculateDaysLate("2026-02-05", "2026-02-01");
+      expect(result).toBe(0);
+    });
 
-      await expect(
-        deleteBillingDocumentInStrapi("doc-to-delete")
-      ).resolves.not.toThrow();
+    it("debe calcular 1 día de atraso", () => {
+      const result = calculateDaysLate("2026-02-01", "2026-02-02");
+      expect(result).toBe(1);
+    });
 
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/billing-documents/doc-to-delete"),
-        expect.objectContaining({
-          method: "DELETE",
-        })
-      );
+    it("debe calcular 5 días de atraso", () => {
+      const result = calculateDaysLate("2026-02-01", "2026-02-06");
+      expect(result).toBe(5);
+    });
+
+    it("debe calcular atraso sin fecha de pago (usa fecha actual)", () => {
+      // Este test puede variar según la fecha actual
+      const today = new Date();
+      const pastDate = new Date(today);
+      pastDate.setDate(pastDate.getDate() - 3);
+      const dueDateStr = pastDate.toISOString().split("T")[0];
+
+      const result = calculateDaysLate(dueDateStr);
+      expect(result).toBeGreaterThanOrEqual(3);
+    });
+  });
+});
+
+describe("Procesamiento de Pagos con Estados", () => {
+  describe("Determinación de estado según pago", () => {
+    it("pago a tiempo debe ser 'pagado'", () => {
+      const daysLate = calculateDaysLate("2026-02-01", "2026-02-01");
+      const lateFee = calculateLateFee(225, daysLate);
+      
+      expect(daysLate).toBe(0);
+      expect(lateFee).toBe(0);
+      // El estado sería "pagado"
+    });
+
+    it("pago con atraso debe calcular multa", () => {
+      const daysLate = calculateDaysLate("2026-02-01", "2026-02-03");
+      const lateFee = calculateLateFee(225, daysLate, 10);
+      
+      expect(daysLate).toBe(2);
+      expect(lateFee).toBe(45); // 225 * 0.10 * 2
+      // El estado sería "retrasado"
+    });
+
+    it("pago adelantado debe cubrir múltiples cuotas", () => {
+      const { quotasCovered, advanceCredit } = processPayment(900, 225, 0);
+      
+      expect(quotasCovered).toBe(4);
+      expect(advanceCredit).toBe(0);
+      // El estado sería "adelanto"
+    });
+
+    it("pago parcial debe generar crédito", () => {
+      const { quotasCovered, advanceCredit } = processPayment(100, 225, 0);
+      
+      expect(quotasCovered).toBe(0);
+      expect(advanceCredit).toBe(100);
+      // El estado sería "adelanto" (abono parcial)
+    });
+  });
+});
+
+describe("Escenarios de Negocio", () => {
+  describe("Escenario: Depósito inicial", () => {
+    it("depósito de $300 con cuota de $225 cubre 1 cuota y genera crédito", () => {
+      const { quotasCovered, advanceCredit } = processPayment(300, 225, 0);
+      
+      expect(quotasCovered).toBe(1);
+      expect(advanceCredit).toBe(75);
     });
   });
 
-  describe("Normalización de datos", () => {
-    it("debe normalizar correctamente registros con estructura attributes", async () => {
-      const mockRecords = {
-        data: [
-          {
-            id: 1,
-            attributes: {
-              documentId: "bill-attrs",
-              invoiceNumber: "2024-ATTR",
-              amount: 500,
-              status: "pendiente",
-              currency: "EUR",
-              client: {
-                data: {
-                  id: 1,
-                  documentId: "client-1",
-                  attributes: {
-                    fullName: "Cliente Attrs",
-                    email: "attrs@test.com",
-                  },
-                },
-              },
-            },
-          },
-        ],
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockRecords,
-      });
-
-      const result = await fetchBillingRecordsFromStrapi();
-
-      expect(result).toHaveLength(1);
-      expect(result[0].invoiceNumber).toBe("2024-ATTR");
-      expect(result[0].currency).toBe("EUR");
-      expect(result[0].clientName).toBe("Cliente Attrs");
+  describe("Escenario: Pago con mora acumulada", () => {
+    it("cliente con 5 días de atraso en cuota de $225", () => {
+      const daysLate = 5;
+      const pendingAmount = 225;
+      const lateFee = calculateLateFee(pendingAmount, daysLate, 10);
+      
+      // Multa: $225 * 10% * 5 = $112.50
+      expect(lateFee).toBe(112.5);
+      
+      // El cliente debe pagar: $225 + $112.50 = $337.50
+      const totalToPay = pendingAmount + lateFee;
+      expect(totalToPay).toBe(337.5);
     });
+  });
 
-    it("debe manejar registros sin campos opcionales", async () => {
-      const mockRecords = {
-        data: [
-          {
-            id: 1,
-            documentId: "minimal-bill",
-            invoiceNumber: "2024-MIN",
-            amount: 100,
-            status: "pendiente",
-            // Sin client, vehicle, dueDate, paymentDate, notes, documents
-          },
-        ],
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockRecords,
-      });
-
-      const result = await fetchBillingRecordsFromStrapi();
-
-      expect(result).toHaveLength(1);
-      expect(result[0].clientName).toBeUndefined();
-      expect(result[0].vehicleName).toBeUndefined();
-      expect(result[0].dueDate).toBeUndefined();
-      expect(result[0].notes).toBeUndefined();
-      expect(result[0].documents).toEqual([]);
-      expect(result[0].currency).toBe("USD"); // Valor por defecto
+  describe("Escenario: Pago parcial con mora", () => {
+    it("cliente pagó $25 de $225, queda $200 con 2 días de atraso", () => {
+      const paidAmount = 25;
+      const quotaAmount = 225;
+      const pendingAmount = quotaAmount - paidAmount;
+      const daysLate = 2;
+      
+      const lateFee = calculateLateFee(pendingAmount, daysLate, 10);
+      
+      // Multa: $200 * 10% * 2 = $40
+      expect(lateFee).toBe(40);
+      
+      // El cliente debe pagar: $200 + $40 = $240
+      const totalToPay = pendingAmount + lateFee;
+      expect(totalToPay).toBe(240);
     });
+  });
 
-    it("debe filtrar registros sin número de factura", async () => {
-      const mockRecords = {
-        data: [
-          {
-            id: 1,
-            documentId: "valid-bill",
-            invoiceNumber: "2024-VALID",
-            amount: 100,
-            status: "pendiente",
-          },
-          {
-            id: 2,
-            documentId: "invalid-bill",
-            invoiceNumber: "", // Número de factura vacío
-            amount: 200,
-            status: "pendiente",
-          },
-        ],
-      };
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockRecords,
-      });
-
-      const result = await fetchBillingRecordsFromStrapi();
-
-      expect(result).toHaveLength(1);
-      expect(result[0].invoiceNumber).toBe("2024-VALID");
+  describe("Escenario: Pago de 4 cuotas adelantadas", () => {
+    it("cliente paga $900 con cuotas de $225", () => {
+      const { quotasCovered, advanceCredit, totalApplied } = processPayment(900, 225, 0);
+      
+      expect(quotasCovered).toBe(4);
+      expect(advanceCredit).toBe(0);
+      expect(totalApplied).toBe(900);
     });
+  });
 
-    it("debe normalizar documentos correctamente", async () => {
-      const mockRecords = {
-        data: [
-          {
-            id: 1,
-            documentId: "bill-with-docs",
-            invoiceNumber: "2024-DOCS",
-            amount: 100,
-            status: "pendiente",
-            documents: [
-              {
-                id: 1,
-                documentId: "doc-1",
-                name: "factura.pdf",
-                file: {
-                  url: "/uploads/factura.pdf",
-                  mime: "application/pdf",
-                  size: 2048,
-                },
-              },
-              {
-                id: 2,
-                documentId: "doc-2",
-                name: "comprobante.jpg",
-                file: {
-                  url: "/uploads/comprobante.jpg",
-                  mime: "image/jpeg",
-                  size: 1024,
-                },
-              },
-            ],
-          },
-        ],
-      };
+  describe("Escenario: Acumulación de créditos", () => {
+    it("pagos parciales que se acumulan", () => {
+      // Primer pago: $100
+      const pago1 = processPayment(100, 225, 0);
+      expect(pago1.quotasCovered).toBe(0);
+      expect(pago1.advanceCredit).toBe(100);
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockRecords,
-      });
+      // Segundo pago: $100 con crédito de $100
+      const pago2 = processPayment(100, 225, pago1.advanceCredit);
+      expect(pago2.quotasCovered).toBe(0);
+      expect(pago2.advanceCredit).toBe(200);
 
-      const result = await fetchBillingRecordsFromStrapi();
-
-      expect(result[0].documents).toHaveLength(2);
-      expect(result[0].documents[0].name).toBe("factura.pdf");
-      expect(result[0].documents[0].url).toBe("/uploads/factura.pdf");
-      expect(result[0].documents[1].name).toBe("comprobante.jpg");
+      // Tercer pago: $50 con crédito de $200 = $250, cubre 1 cuota
+      const pago3 = processPayment(50, 225, pago2.advanceCredit);
+      expect(pago3.quotasCovered).toBe(1);
+      expect(pago3.advanceCredit).toBe(25); // 250 - 225 = 25
     });
   });
 });

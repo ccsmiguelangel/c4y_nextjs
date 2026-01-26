@@ -28,16 +28,8 @@ export async function POST(request: Request) {
 
     const { data } = body;
 
-    // Validar campo requerido: type
-    if (!data.type) {
-      return NextResponse.json(
-        { error: "El tipo de contrato es requerido." },
-        { status: 400 }
-      );
-    }
-
-    // Validar tipo de contrato
-    if (!["conduccion", "arrendamiento", "servicio"].includes(data.type)) {
+    // Validar tipo de contrato legacy si está presente
+    if (data.type && !["conduccion", "arrendamiento", "servicio"].includes(data.type)) {
       return NextResponse.json(
         { error: "El tipo de contrato debe ser 'conduccion', 'arrendamiento' o 'servicio'." },
         { status: 400 }
@@ -52,10 +44,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validar paymentAgreement si está presente
-    if (data.paymentAgreement && !["semanal", "quincenal"].includes(data.paymentAgreement)) {
+    // Validar paymentAgreement si está presente (ahora incluye mensual)
+    if (data.paymentAgreement && !["semanal", "quincenal", "mensual"].includes(data.paymentAgreement)) {
       return NextResponse.json(
-        { error: "El acuerdo de pago debe ser 'semanal' o 'quincenal'." },
+        { error: "El acuerdo de pago debe ser 'semanal', 'quincenal' o 'mensual'." },
         { status: 400 }
       );
     }

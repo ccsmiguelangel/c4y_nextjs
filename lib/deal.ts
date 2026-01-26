@@ -22,16 +22,20 @@ import type {
 } from "@/validations/types";
 
 // Populate config para obtener relaciones
+// Nota: address, engineNumber, passengerCapacity se añadirán después de reiniciar Strapi
 const populateConfig = {
   populate: {
     client: {
       fields: ["id", "documentId", "fullName", "email", "phone"],
     },
     vehicle: {
-      fields: ["id", "documentId", "name", "placa"],
+      fields: ["id", "documentId", "name", "placa", "brand", "year", "color", "vin"],
     },
     seller: {
       fields: ["id", "documentId", "displayName", "email"],
+    },
+    contractType: {
+      fields: ["id", "documentId", "name", "description"],
     },
     clauses: {
       fields: ["id", "documentId", "title", "description"],
@@ -44,7 +48,7 @@ const populateConfig = {
 
 const listQueryString = qs.stringify(
   {
-    fields: ["title", "type", "status", "generatedAt", "signedAt", "price", "paymentAgreement", "summary"],
+    fields: ["title", "status", "generatedAt", "signedAt", "price", "paymentAgreement", "initialDeposit", "quotaAmount", "totalQuotas", "summary"],
     ...populateConfig,
     sort: ["generatedAt:desc"],
     pagination: {
@@ -89,6 +93,7 @@ const getPaymentAgreementLabel = (agreement: DealPaymentAgreement): string => {
   const labels: Record<DealPaymentAgreement, string> = {
     semanal: "Semanal",
     quincenal: "Quincenal",
+    mensual: "Mensual",
   };
   return labels[agreement] || agreement;
 };
@@ -261,12 +266,28 @@ const getDiscountsData = (discounts: DealRawAttributes["discounts"]): DealDiscou
   });
 };
 
+const getContractTypeData = (contractType: DealRawAttributes["contractType"]) => {
+  if (!contractType) return undefined;
+  if ("data" in contractType && contractType.data) {
+    const attrs = contractType.data.attributes;
+    return {
+      id: contractType.data.id,
+      documentId: contractType.data.documentId,
+      name: attrs?.name,
+      description: attrs?.description,
+    };
+  }
+  return contractType as {
+    id?: number;
+    documentId?: string;
+    name?: string;
+    description?: string;
+  };
+};
+
 const normalizeDeal = (entry: DealRaw): DealCard | null => {
   const attributes = extractAttributes(entry);
-  if (!attributes.type) {
-    return null;
-  }
-
+  
   const price = attributes.price ? Number(attributes.price) || 0 : undefined;
   const idSource = attributes.id ?? attributes.documentId ?? "";
   const documentId = attributes.documentId ?? String(idSource);
@@ -274,6 +295,7 @@ const normalizeDeal = (entry: DealRaw): DealCard | null => {
   const clientData = getClientData(attributes.client);
   const vehicleData = getVehicleData(attributes.vehicle);
   const sellerData = getSellerData(attributes.seller);
+  const contractTypeData = getContractTypeData(attributes.contractType);
   const clausesData = getClausesData(attributes.clauses);
   const discountsData = getDiscountsData(attributes.discounts);
 
@@ -284,7 +306,11 @@ const normalizeDeal = (entry: DealRaw): DealCard | null => {
     documentId: String(documentId),
     title: attributes.title,
     type: attributes.type,
-    typeLabel: getDealTypeLabel(attributes.type),
+    typeLabel: attributes.type ? getDealTypeLabel(attributes.type) : undefined,
+    contractTypeId: contractTypeData?.id ? String(contractTypeData.id) : undefined,
+    contractTypeDocumentId: contractTypeData?.documentId,
+    contractTypeName: contractTypeData?.name,
+    contractTypeDescription: contractTypeData?.description,
     status: attributes.status || "pendiente",
     statusLabel: getDealStatusLabel(attributes.status || "pendiente"),
     generatedAt: attributes.generatedAt,
@@ -295,6 +321,9 @@ const normalizeDeal = (entry: DealRaw): DealCard | null => {
     priceLabel: price !== undefined ? formatCurrency(price) : undefined,
     paymentAgreement,
     paymentAgreementLabel: getPaymentAgreementLabel(paymentAgreement),
+    initialDeposit: attributes.initialDeposit ? Number(attributes.initialDeposit) || 0 : undefined,
+    quotaAmount: attributes.quotaAmount ? Number(attributes.quotaAmount) || 0 : undefined,
+    totalQuotas: attributes.totalQuotas,
     summary: attributes.summary,
     clientName: clientData?.fullName,
     clientEmail: clientData?.email,
@@ -363,7 +392,7 @@ const buildDealDetailQuery = (id: string | number) => {
   return qs.stringify(
     {
       filters,
-      fields: ["title", "type", "status", "generatedAt", "signedAt", "price", "paymentAgreement", "summary"],
+      fields: ["title", "status", "generatedAt", "signedAt", "price", "paymentAgreement", "initialDeposit", "quotaAmount", "totalQuotas", "summary"],
       ...populateConfig,
       pagination: { pageSize: 1 },
     },
@@ -407,6 +436,10 @@ const resolveDealDocumentId = async (id: string | number) => {
 export async function createDealInStrapi(
   data: DealCreatePayload
 ): Promise<DealCard> {
+  // Filtrar campos que ya no existen en el schema de Strapi
+  // El campo 'type' fue reemplazado por 'contractType' (relación)
+  const { type, ...cleanData } = data;
+  
   const populateQueryString = qs.stringify(populateConfig, { encodeValuesOnly: true });
   const url = `${STRAPI_BASE_URL}/api/deals?${populateQueryString}`;
   const response = await fetch(url, {
@@ -415,7 +448,7 @@ export async function createDealInStrapi(
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data: cleanData }),
     cache: "no-store",
   });
 
@@ -444,6 +477,9 @@ export async function updateDealInStrapi(
     throw new Error("No pudimos encontrar el contrato para actualizarlo.");
   }
 
+  // Filtrar campos que ya no existen en el schema de Strapi
+  const { type, ...cleanData } = data;
+
   const populateQueryString = qs.stringify(populateConfig, { encodeValuesOnly: true });
   const url = `${STRAPI_BASE_URL}/api/deals/${documentId}?${populateQueryString}`;
   const response = await fetch(url, {
@@ -452,7 +488,7 @@ export async function updateDealInStrapi(
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data: cleanData }),
     cache: "no-store",
   });
 

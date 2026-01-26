@@ -298,6 +298,21 @@ export interface FleetVehicleCard {
       alternativeText?: string;
     };
   }>;
+  // Financiamiento asociado al vehículo
+  financing?: {
+    id: number;
+    documentId?: string;
+    financingNumber?: string;
+    status?: string;
+    totalAmount?: number;
+    paidQuotas?: number;
+    totalQuotas?: number;
+    quotaAmount?: number;
+    currentBalance?: number;
+    totalPaid?: number;
+    nextDueDate?: string;
+    partialPaymentCredit?: number;
+  };
 }
 
 export interface FleetVehicleUpdatePayload {
@@ -588,7 +603,7 @@ export interface InventoryItemUpdatePayload {
 // Billing Types (Facturación y pagos)
 // ============================================
 
-export type BillingStatus = "pagado" | "pendiente" | "retrasado";
+export type BillingStatus = "pagado" | "pendiente" | "adelanto" | "retrasado";
 
 export interface BillingDocumentFile {
   id?: number;
@@ -701,9 +716,24 @@ export interface BillingRecordCard {
   clientId?: string;
   clientDocumentId?: string;
   vehicleName?: string;
+  vehiclePlaca?: string;
   vehicleId?: string;
   vehicleDocumentId?: string;
   documents: BillingDocument[];
+  createdAt?: string;
+  // Nuevos campos Módulo 3
+  receiptId?: string;
+  confirmationNumber?: string;
+  weeklyQuotaAmount?: number;
+  lateFeePercentage?: number;
+  lateFeeAmount?: number;
+  advancePayment?: number;
+  remainingBalance?: number;
+  daysLate?: number;
+  totalQuotas?: number;
+  currentQuotaNumber?: number;
+  verifiedInBank?: boolean;
+  comments?: string;
 }
 
 export interface BillingRecordCreatePayload {
@@ -716,6 +746,15 @@ export interface BillingRecordCreatePayload {
   notes?: string;
   client?: number | string;
   vehicle?: number | string;
+  // Nuevos campos Módulo 3
+  receiptId?: string;
+  confirmationNumber?: string;
+  weeklyQuotaAmount?: number;
+  totalQuotas?: number;
+  currentQuotaNumber?: number;
+  advancePayment?: number;
+  verifiedInBank?: boolean;
+  comments?: string;
 }
 
 export interface BillingRecordUpdatePayload {
@@ -743,7 +782,7 @@ export interface BillingDocumentCreatePayload {
 
 export type DealType = "conduccion" | "arrendamiento" | "servicio";
 export type DealStatus = "pendiente" | "firmado" | "archivado";
-export type DealPaymentAgreement = "semanal" | "quincenal";
+export type DealPaymentAgreement = "semanal" | "quincenal" | "mensual";
 
 export interface DealClauseRawAttributes {
   title: string;
@@ -776,12 +815,30 @@ export type DealDiscountRaw =
 
 export interface DealRawAttributes {
   title?: string;
-  type: DealType;
+  type?: DealType;
+  contractType?: {
+    id?: number;
+    documentId?: string;
+    name?: string;
+    description?: string;
+  } | {
+    data?: {
+      id?: number;
+      documentId?: string;
+      attributes?: {
+        name?: string;
+        description?: string;
+      };
+    } | null;
+  };
   status: DealStatus;
   generatedAt?: string;
   signedAt?: string;
   price?: number | string;
   paymentAgreement?: DealPaymentAgreement;
+  initialDeposit?: number | string;
+  quotaAmount?: number | string;
+  totalQuotas?: number;
   summary?: string;
   documentId?: string;
   client?: {
@@ -875,8 +932,12 @@ export interface DealCard {
   id: string;
   documentId: string;
   title?: string;
-  type: DealType;
-  typeLabel: string;
+  type?: DealType;
+  typeLabel?: string;
+  contractTypeId?: string;
+  contractTypeDocumentId?: string;
+  contractTypeName?: string;
+  contractTypeDescription?: string;
   status: DealStatus;
   statusLabel: string;
   generatedAt?: string;
@@ -887,6 +948,9 @@ export interface DealCard {
   priceLabel?: string;
   paymentAgreement: DealPaymentAgreement;
   paymentAgreementLabel: string;
+  initialDeposit?: number;
+  quotaAmount?: number;
+  totalQuotas?: number;
   summary?: string;
   clientName?: string;
   clientEmail?: string;
@@ -907,12 +971,16 @@ export interface DealCard {
 
 export interface DealCreatePayload {
   title?: string;
-  type: DealType;
+  type?: DealType;
+  contractType?: number | string;
   status?: DealStatus;
   generatedAt?: string;
   signedAt?: string;
   price?: number;
   paymentAgreement?: DealPaymentAgreement;
+  initialDeposit?: number;
+  quotaAmount?: number;
+  totalQuotas?: number;
   summary?: string;
   client?: number | string;
   vehicle?: number | string;
@@ -922,11 +990,15 @@ export interface DealCreatePayload {
 export interface DealUpdatePayload {
   title?: string;
   type?: DealType;
+  contractType?: number | string | null;
   status?: DealStatus;
   generatedAt?: string;
   signedAt?: string;
   price?: number;
   paymentAgreement?: DealPaymentAgreement;
+  initialDeposit?: number;
+  quotaAmount?: number;
+  totalQuotas?: number;
   summary?: string;
   client?: number | string | null;
   vehicle?: number | string | null;

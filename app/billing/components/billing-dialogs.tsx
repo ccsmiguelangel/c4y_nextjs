@@ -9,15 +9,28 @@ import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Separator } from "@/components_shadcn/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components_shadcn/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components_shadcn/ui/popover";
+import { Switch } from "@/components_shadcn/ui/switch";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { es as dayPickerEs } from "react-day-picker/locale";
-import { Calendar } from "lucide-react";
+import { Calendar, Receipt, Hash, DollarSign, Calculator, CheckCircle, User, Search, Loader2 } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components_shadcn/ui/command";
+import { Avatar, AvatarFallback } from "@/components_shadcn/ui/avatar";
 import { spacing, typography } from "@/lib/design-system";
 import { cn } from "@/lib/utils";
 import type { Dispatch, SetStateAction } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { BillingStatus } from "@/validations/types";
+
+// Tipo para cliente simplificado
+interface ClientOption {
+  id: string;
+  documentId: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+}
 
 export interface CreateBillingFormData {
   invoiceNumber: string;
@@ -27,6 +40,19 @@ export interface CreateBillingFormData {
   dueDate: string;
   paymentDate: string;
   notes: string;
+  // Cliente
+  clientId: string;
+  clientDocumentId: string;
+  clientName: string;
+  // Nuevos campos Módulo 3
+  receiptId: string;
+  confirmationNumber: string;
+  weeklyQuotaAmount: string;
+  totalQuotas: string;
+  currentQuotaNumber: string;
+  advancePayment: string;
+  verifiedInBank: boolean;
+  comments: string;
 }
 
 interface CreateBillingDialogProps {
@@ -48,6 +74,7 @@ const currencies = [
 
 const statusOptions: { value: BillingStatus; label: string; color: string }[] = [
   { value: "pendiente", label: "Pendiente", color: "text-yellow-600" },
+  { value: "adelanto", label: "Adelanto", color: "text-blue-600" },
   { value: "pagado", label: "Pagado", color: "text-green-600" },
   { value: "retrasado", label: "Retrasado", color: "text-red-600" },
 ];
@@ -62,6 +89,61 @@ export function CreateBillingDialog({
   onConfirm,
   onCancel,
 }: CreateBillingDialogProps) {
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [isLoadingClients, setIsLoadingClients] = useState(false);
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+
+  // Cargar usuarios del sistema cuando se abre el modal
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const loadUsers = async () => {
+      try {
+        setIsLoadingClients(true);
+        const response = await fetch("/api/user-profiles");
+        if (response.ok) {
+          const data = await response.json();
+          // Mapear usuarios del sistema al formato de ClientOption
+          const mappedUsers: ClientOption[] = (data.data || []).map((user: { id: string; documentId: string; displayName?: string; email?: string; phone?: string }) => ({
+            id: user.id,
+            documentId: user.documentId,
+            fullName: user.displayName || "Sin nombre",
+            email: user.email,
+            phone: user.phone,
+          }));
+          setClients(mappedUsers);
+        } else {
+          console.error("Error response:", response.status, response.statusText);
+        }
+      } catch (error) {
+        console.error("Error loading users:", error);
+      } finally {
+        setIsLoadingClients(false);
+      }
+    };
+    
+    loadUsers();
+  }, [isOpen]);
+
+  const handleSelectClient = (client: ClientOption) => {
+    setFormData((prev) => ({
+      ...prev,
+      clientId: client.id,
+      clientDocumentId: client.documentId,
+      clientName: client.fullName,
+    }));
+    setClientSearchOpen(false);
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl h-[90vh] p-0 !flex !flex-col overflow-hidden">
@@ -76,6 +158,78 @@ export function CreateBillingDialog({
           <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
             <div className="px-6">
               <div className={`flex flex-col ${spacing.gap.medium} py-6`}>
+                {/* Selección de Cliente */}
+                <div className={`flex flex-col ${spacing.gap.base}`}>
+                  <h3 className={`${typography.h4} flex items-center gap-2`}>
+                    <User className="h-4 w-4" />
+                    Cliente
+                  </h3>
+                  
+                  <Popover open={clientSearchOpen} onOpenChange={setClientSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className={cn(
+                          "w-full justify-between h-14 rounded-lg",
+                          !formData.clientName && "text-muted-foreground"
+                        )}
+                      >
+                        {formData.clientName ? (
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                                {getInitials(formData.clientName)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{formData.clientName}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <Search className="h-4 w-4" />
+                            <span>Buscar cliente...</span>
+                          </div>
+                        )}
+                        {isLoadingClients && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nombre, email o teléfono..." />
+                        <CommandList>
+                          <CommandEmpty>No se encontraron usuarios.</CommandEmpty>
+                          <CommandGroup heading="Usuarios del Sistema">
+                            {clients.map((client) => (
+                              <CommandItem
+                                key={client.documentId}
+                                value={`${client.fullName} ${client.email || ""} ${client.phone || ""}`}
+                                onSelect={() => handleSelectClient(client)}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3 w-full">
+                                  <Avatar className="h-8 w-8">
+                                    <AvatarFallback className="bg-muted text-xs">
+                                      {getInitials(client.fullName)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="flex flex-col">
+                                    <span className={typography.body.large}>{client.fullName}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {client.email || client.phone || "Sin contacto"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <Separator />
+
                 {/* Información de la Factura */}
                 <div className={`flex flex-col ${spacing.gap.base}`}>
                   <h3 className={typography.h4}>Información de la Factura</h3>
@@ -151,6 +305,151 @@ export function CreateBillingDialog({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Información de Cuotas */}
+                <div className={`flex flex-col ${spacing.gap.base}`}>
+                  <h3 className={`${typography.h4} flex items-center gap-2`}>
+                    <Calculator className="h-4 w-4" />
+                    Información de Cuotas
+                  </h3>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="weeklyQuotaAmount" className={typography.label}>
+                        Letra Semanal
+                      </Label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="weeklyQuotaAmount"
+                          type="number"
+                          value={formData.weeklyQuotaAmount}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, weeklyQuotaAmount: e.target.value }))}
+                          placeholder="225.00"
+                          className="rounded-lg pl-9"
+                          min={0}
+                          step="0.01"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="currentQuotaNumber" className={typography.label}>
+                        Cuota #
+                      </Label>
+                      <div className="relative">
+                        <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="currentQuotaNumber"
+                          type="number"
+                          value={formData.currentQuotaNumber}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, currentQuotaNumber: e.target.value }))}
+                          placeholder="1"
+                          className="rounded-lg pl-9"
+                          min={1}
+                          step="1"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="totalQuotas" className={typography.label}>
+                        Total Cuotas
+                      </Label>
+                      <Input
+                        id="totalQuotas"
+                        type="number"
+                        value={formData.totalQuotas}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, totalQuotas: e.target.value }))}
+                        placeholder="220"
+                        className="rounded-lg"
+                        min={1}
+                        step="1"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="advancePayment" className={typography.label}>
+                      Adelanto / Abono
+                    </Label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="advancePayment"
+                        type="number"
+                        value={formData.advancePayment}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, advancePayment: e.target.value }))}
+                        placeholder="0.00"
+                        className="rounded-lg pl-9"
+                        min={0}
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Verificación Bancaria */}
+                <div className={`flex flex-col ${spacing.gap.base}`}>
+                  <h3 className={`${typography.h4} flex items-center gap-2`}>
+                    <Receipt className="h-4 w-4" />
+                    Verificación Bancaria
+                  </h3>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="receiptId" className={typography.label}>
+                        ID de Recibo
+                      </Label>
+                      <Input
+                        id="receiptId"
+                        value={formData.receiptId}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, receiptId: e.target.value }))}
+                        placeholder="Ej: REC-2025-001"
+                        className="rounded-lg"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="confirmationNumber" className={typography.label}>
+                        # Confirmación
+                      </Label>
+                      <Input
+                        id="confirmationNumber"
+                        value={formData.confirmationNumber}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, confirmationNumber: e.target.value }))}
+                        placeholder="Ej: 123456789"
+                        className="rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border p-4">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle className={cn(
+                        "h-5 w-5",
+                        formData.verifiedInBank ? "text-green-600" : "text-muted-foreground"
+                      )} />
+                      <div>
+                        <Label htmlFor="verifiedInBank" className={typography.body.large}>
+                          Verificado en Banco
+                        </Label>
+                        <p className={typography.body.small}>
+                          Marcar si el pago fue verificado en el sistema bancario
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="verifiedInBank"
+                      checked={formData.verifiedInBank}
+                      onCheckedChange={(checked) => setFormData((prev) => ({ ...prev, verifiedInBank: checked }))}
+                    />
                   </div>
                 </div>
 
@@ -269,19 +568,32 @@ export function CreateBillingDialog({
 
                 <Separator />
 
-                {/* Notas */}
+                {/* Notas y Comentarios */}
                 <div className={`flex flex-col ${spacing.gap.base}`}>
-                  <h3 className={typography.h4}>Notas Adicionales</h3>
+                  <h3 className={typography.h4}>Notas y Comentarios</h3>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="notes" className={typography.label}>
-                      Notas
+                      Notas Internas
                     </Label>
                     <Textarea
                       id="notes"
                       value={formData.notes}
                       onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Añade cualquier nota o comentario adicional sobre este pago..."
-                      rows={4}
+                      placeholder="Notas internas sobre este pago..."
+                      rows={3}
+                      className="rounded-lg resize-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="comments" className={typography.label}>
+                      Comentarios para el Cliente
+                    </Label>
+                    <Textarea
+                      id="comments"
+                      value={formData.comments}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, comments: e.target.value }))}
+                      placeholder="Comentarios visibles para el cliente..."
+                      rows={2}
                       className="rounded-lg resize-none"
                     />
                   </div>
@@ -327,6 +639,19 @@ export const initialBillingFormData: CreateBillingFormData = {
   dueDate: "",
   paymentDate: "",
   notes: "",
+  // Cliente
+  clientId: "",
+  clientDocumentId: "",
+  clientName: "",
+  // Nuevos campos Módulo 3
+  receiptId: "",
+  confirmationNumber: "",
+  weeklyQuotaAmount: "",
+  totalQuotas: "220",
+  currentQuotaNumber: "",
+  advancePayment: "",
+  verifiedInBank: false,
+  comments: "",
 };
 
 export function validateBillingForm(formData: CreateBillingFormData): boolean {

@@ -174,12 +174,16 @@ export default function DealPage() {
     loadDeals();
   }, [loadDeals]);
 
-  const filteredDeals = deals.filter((deal) =>
-    (deal.clientName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
-    deal.typeLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (deal.vehicleName?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
-    (deal.vehiclePlaca?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
-  );
+  const filteredDeals = deals.filter((deal) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (deal.clientName?.toLowerCase().includes(query) ?? false) ||
+      (deal.typeLabel?.toLowerCase().includes(query) ?? false) ||
+      (deal.contractTypeName?.toLowerCase().includes(query) ?? false) ||
+      (deal.vehicleName?.toLowerCase().includes(query) ?? false) ||
+      (deal.vehiclePlaca?.toLowerCase().includes(query) ?? false)
+    );
+  });
 
   // Validar formulario de crear contrato
   const isFormValid = useMemo(() => {
@@ -203,15 +207,9 @@ export default function DealPage() {
   };
 
   const handleCreateDeal = async () => {
-    if (!formData.type) {
-      toast.error("El tipo de contrato es requerido");
-      return;
-    }
-
     setIsCreating(true);
     try {
       const payload: Record<string, unknown> = {
-        type: formData.type,
         status: "pendiente",
         paymentAgreement: formData.paymentAgreement,
         generatedAt: new Date().toISOString().split("T")[0],
@@ -303,7 +301,6 @@ export default function DealPage() {
 
       // Crear un contrato con el archivo subido
       const payload = {
-        type: "servicio" as const,
         status: "firmado" as const,
         title: selectedFile.name.replace(/\.[^/.]+$/, ""),
         signedAt: new Date().toISOString().split("T")[0],
@@ -420,7 +417,7 @@ export default function DealPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <p className={`${typography.body.large} font-bold`}>
-                      {deal.typeLabel}
+                      {deal.contractTypeName || deal.typeLabel || "Contrato"}
                     </p>
                     <p className={`${typography.body.small} mt-1 text-muted-foreground`}>
                       {deal.clientName ? `Cliente: ${deal.clientName}` : "Sin cliente asignado"}
