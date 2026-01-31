@@ -63,6 +63,7 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
               "relative z-[100] w-full max-w-[calc(100%-2rem)] rounded-lg shadow-2xl sm:max-w-lg",
+              "pt-10 pb-10 px-[30px]",
               // Efecto liquid glass
               "backdrop-blur-sm border",
           className
