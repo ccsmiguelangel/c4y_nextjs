@@ -672,7 +672,7 @@ export interface BillingDocument {
 export interface BillingDocumentCreatePayload {
   name: string;
   file: number; // ID del archivo en Strapi
-  record: string; // documentId del billing record
+  record: string | number; // documentId del billing record
 }
 
 /**

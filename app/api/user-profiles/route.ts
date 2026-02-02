@@ -46,12 +46,53 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
     if (!body?.data) {
       return NextResponse.json(
         { error: "Payload inválido. Envía los campos dentro de data." },
         { status: 400 }
       );
     }
+
+    const { email, password, ...profileData } = body.data;
+
+    // Si hay email y password, crear el usuario en users-permissions primero
+    if (email && password) {
+      const authResponse = await fetch(`${STRAPI_BASE_URL}/api/auth/local/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: email,
+          email,
+          password,
+        }),
+      });
+
+      if (!authResponse.ok) {
+        const authError = await authResponse.json().catch(() => ({}));
+        throw new Error(`Error creando usuario de autenticación: ${authError.error?.message || authResponse.statusText}`);
+      }
+
+      const authData = await authResponse.json();
+
+      // Confirmar el usuario automáticamente
+      await fetch(`${STRAPI_BASE_URL}/api/users/${authData.user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        body: JSON.stringify({ confirmed: true }),
+      });
+    }
+
+    // Crear el user-profile (sin el password original - ya está hasheado en Strapi)
+    const profilePayload = {
+      ...profileData,
+      email,
+      // No incluir password aquí - Strapi lo hasheará automáticamente
+      password: password ? 'placeholder' : undefined, // Placeholder para que el campo no quede vacío
+    };
 
     const response = await fetch(
       `${STRAPI_BASE_URL}/api/user-profiles`,
@@ -61,7 +102,7 @@ export async function POST(request: Request) {
           Authorization: `Bearer ${STRAPI_API_TOKEN}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ data: body.data }),
+        body: JSON.stringify({ data: profilePayload }),
         cache: "no-store",
       }
     );

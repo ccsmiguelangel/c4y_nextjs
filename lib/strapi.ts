@@ -97,9 +97,8 @@ export async function loginUserService(userData: { identifier: string; password:
   const url = `${STRAPI_BASE_URL}/api/auth/local`
 
   try {
-    // Crear un AbortController para timeout
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 segundos
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
 
     const response = await fetch(url, {
       method: 'POST',
