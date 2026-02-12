@@ -35,9 +35,6 @@ export async function POST(request: Request) {
     let generatedCount = 0;
 
     for (const financing of financings) {
-      // Verificar cuántas cuotas ya tiene este financiamiento (pagos + facturas)
-      const paymentsCount = financing.paidQuotas || 0;
-      
       // Verificar si ya existe una factura para este financiamiento en esta fecha
       const existingResponse = await fetch(
         `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&filters[dueDate][$eq]=${dueDate}`,
@@ -52,8 +49,20 @@ export async function POST(request: Request) {
         continue; // Ya existe un pago/factura para este período
       }
 
-      // Calcular número de cuota siguiente
-      const nextQuotaNumber = paymentsCount + 1;
+      // Obtener el máximo quotaNumber existente para este financiamiento
+      const maxQuotaResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&sort=quotaNumber:desc&pagination[limit]=1`,
+        {
+          headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+          cache: "no-store",
+        }
+      );
+      
+      const maxQuotaData = await maxQuotaResponse.json();
+      const maxQuotaNumber = maxQuotaData.data?.[0]?.quotaNumber || 0;
+      
+      // Calcular número de cuota siguiente basado en el máximo existente
+      const nextQuotaNumber = maxQuotaNumber + 1;
       
       // Verificar que no exceda el total de cuotas
       if (nextQuotaNumber > (financing.totalQuotas || 999)) {

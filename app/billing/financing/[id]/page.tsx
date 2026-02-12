@@ -520,19 +520,45 @@ export default function FinancingDetailPage() {
 
       {/* Payments Timeline */}
       <PaymentTimeline
-        payments={(payments || []).map((p): PaymentRecord => ({
-          id: p.id,
-          invoiceNumber: p.receiptNumber || "",
-          amount: p.amount,
-          status: p.status as "pagado" | "pendiente" | "adelanto" | "retrasado",
-          dueDate: p.dueDate || new Date().toISOString(),
-          paymentDate: p.paymentDate,
-          quotaNumber: p.quotaNumber,
-          lateFeeAmount: p.lateFeeAmount,
-          daysLate: p.daysLate,
-          currency: p.currency,
-          clientName: p.clientName,
-        }))}
+        payments={(payments || []).map((p): PaymentRecord => {
+          // Calcular fecha de simulación basada en la semana actual (viernes de la semana simulada)
+          const baseDate = new Date();
+          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7 + 4);
+          const simulationDate = baseDate.toISOString().split("T")[0];
+          
+          // Si es una cuota pendiente y está vencida según la fecha de simulación, calcular días y multa
+          let displayStatus = p.status as "pagado" | "pendiente" | "adelanto" | "retrasado";
+          let displayDaysLate = p.daysLate || 0;
+          let displayLateFeeAmount = p.lateFeeAmount || 0;
+          
+          if (p.status === "pendiente" && p.dueDate && p.dueDate < simulationDate) {
+            // Calcular días de atraso
+            const due = new Date(p.dueDate + 'T00:00:00');
+            const sim = new Date(simulationDate + 'T00:00:00');
+            const rawDaysOverdue = Math.ceil((sim.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+            displayDaysLate = Math.max(1, rawDaysOverdue);
+            
+            // Calcular multa: 10% × monto × días
+            displayLateFeeAmount = parseFloat((p.amount * 0.10 * displayDaysLate).toFixed(2));
+            
+            // Mostrar visualmente como retrasado
+            displayStatus = "retrasado";
+          }
+          
+          return {
+            id: p.id,
+            invoiceNumber: p.receiptNumber || "",
+            amount: p.amount,
+            status: displayStatus,
+            dueDate: p.dueDate || new Date().toISOString(),
+            paymentDate: p.paymentDate,
+            quotaNumber: p.quotaNumber,
+            lateFeeAmount: displayLateFeeAmount,
+            daysLate: displayDaysLate,
+            currency: p.currency,
+            clientName: p.clientName,
+          };
+        })}
         title="Historial de Pagos"
         isTestModeEnabled={isTestModeEnabled}
         userRole={currentUserRole}

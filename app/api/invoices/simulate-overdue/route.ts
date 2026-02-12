@@ -21,26 +21,38 @@ export async function POST(request: Request) {
     const penaltyConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-penalty-percentage");
     const penaltyPercentage = penaltyConfig?.value ? parseFloat(penaltyConfig.value) : 10;
 
-    // Buscar CUOTAS PENDIENTES O RETRASADAS (billing-records) con vencimiento anterior o igual a la fecha de simulación
-    const queryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$in]=pendiente,retrasado&filters[dueDate][$lte]=${simulationDate}&populate=*`;
-
-    const invoicesResponse = await fetch(queryUrl, {
+    // Buscar CUOTAS PENDIENTES (billing-records) con vencimiento anterior o igual a la fecha de simulación
+    const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+    
+    const pendingResponse = await fetch(pendingQueryUrl, {
       headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
       cache: "no-store",
     });
 
-    if (!invoicesResponse.ok) {
+    if (!pendingResponse.ok) {
       throw new Error("Error obteniendo cuotas pendientes");
     }
 
-    const invoicesData = await invoicesResponse.json();
+    const pendingData = await pendingResponse.json();
+    
+    // Buscar CUOTAS YA RETRASADAS para recalcular multas
+    const overdueQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+    
+    const overdueResponse = await fetch(overdueQueryUrl, {
+      headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+      cache: "no-store",
+    });
+
+    const overdueData = overdueResponse.ok ? await overdueResponse.json() : { data: [] };
+
+    // Combinar resultados
+    const pendingInvoices = pendingData.data || [];
+    const existingOverdue = overdueData.data || [];
     
     // Manejar tanto el formato Strapi 4 como Strapi 5
-    let invoices: any[] = [];
-    if (Array.isArray(invoicesData.data)) {
-      invoices = invoicesData.data;
-    } else if (invoicesData.data && typeof invoicesData.data === 'object') {
-      invoices = [invoicesData.data];
+    let invoices: any[] = [...pendingInvoices, ...existingOverdue];
+    if (!Array.isArray(invoices)) {
+      invoices = [];
     }
 
     const updatedInvoices = [];
@@ -148,21 +160,34 @@ export async function GET(request: Request) {
     const penaltyConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-penalty-percentage");
     const penaltyPercentage = penaltyConfig?.value ? parseFloat(penaltyConfig.value) : 10;
 
-    // Buscar cuotas pendientes o retrasadas que estarían vencidas
-    const invoicesResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$in]=pendiente,retrasado&filters[dueDate][$lt]=${simulationDate}&populate=*`,
+    // Buscar cuotas pendientes que estarían vencidas
+    const pendingResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lt]=${simulationDate}&populate=*`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
       }
     );
 
-    if (!invoicesResponse.ok) {
+    if (!pendingResponse.ok) {
       throw new Error("Error obteniendo cuotas");
     }
 
-    const invoicesData = await invoicesResponse.json();
-    const invoices = invoicesData.data || [];
+    const pendingData = await pendingResponse.json();
+    
+    // Buscar cuotas ya retrasadas
+    const overdueResponse = await fetch(
+      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lt]=${simulationDate}&populate=*`,
+      {
+        headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+        cache: "no-store",
+      }
+    );
+    
+    const overdueData = overdueResponse.ok ? await overdueResponse.json() : { data: [] };
+
+    // Combinar resultados
+    const invoices = [...(pendingData.data || []), ...(overdueData.data || [])];
 
     const overdueInvoices = [];
     let totalPenaltyAmount = 0;
