@@ -617,11 +617,47 @@ export default function BillingDetailsPage() {
           <CardContent className={spacing.card.content}>
             <div className={`flex flex-col ${spacing.gap.base}`}>
               <div className="flex items-center justify-between">
-                <span className={typography.label}>Monto</span>
+                <span className={typography.label}>
+                  {record.status === 'retrasado' ? 'Monto Base' : 'Monto'}
+                </span>
                 <span className={`${typography.body.large} font-bold ${getAmountColor(record.status)}`}>
                   {record.amountLabel}
                 </span>
               </div>
+              {record.status === 'retrasado' && record.lateFeeAmount > 0 && (
+                <>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Penalidad por día (10%)
+                    </span>
+                    <span className="text-red-600">
+                      ${(record.amount * 0.1).toFixed(2)}/día
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Días de retraso
+                    </span>
+                    <span className="text-red-600">
+                      × {record.daysLate} día{record.daysLate !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-dashed border-red-200">
+                    <span className={typography.label}>Total Multa</span>
+                    <span className={`${typography.body.large} font-bold text-red-600`}>
+                      +${record.lateFeeAmount.toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              )}
+              {record.status === 'retrasado' && record.lateFeeAmount > 0 && (
+                <div className="flex items-center justify-between border-t border-dashed pt-2 mt-1">
+                  <span className={`${typography.label} font-semibold`}>Total a Pagar</span>
+                  <span className={`${typography.metric.base} font-bold text-red-600`}>
+                    ${(record.amount + record.lateFeeAmount).toFixed(2)}
+                  </span>
+                </div>
+              )}
               {record.dueDate && (
                 <div className="flex items-center justify-between">
                   <span className={typography.label}>Fecha de Vencimiento</span>
@@ -728,30 +764,44 @@ export default function BillingDetailsPage() {
                 {/* Monto Abonado / Cuotas Cubiertas */}
                 <div className={cn(
                   "rounded-lg p-4 text-center",
-                  (record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
-                    ? "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
-                    : "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"
+                  record.status === 'pagado' 
+                    ? ((record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
+                        ? "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
+                        : "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800")
+                    : record.status === 'retrasado'
+                      ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
+                      : "bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800"
                 )}>
                   <p className="text-xs text-muted-foreground mb-1">
                     {record.quotasCovered && record.quotasCovered > 1 ? "Cuotas Cubiertas" : "Monto Abonado"}
                   </p>
                   <p className={cn(
                     typography.metric.base,
-                    (record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
-                      ? "text-blue-600" 
-                      : "text-green-600"
+                    record.status === 'pagado'
+                      ? ((record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
+                          ? "text-blue-600" 
+                          : "text-green-600")
+                      : record.status === 'retrasado'
+                        ? "text-red-600"
+                        : "text-yellow-600"
                   )}>
                     {record.quotasCovered && record.quotasCovered > 1 
                       ? `${record.quotasCovered} cuotas`
-                      : `$${(record.amount || 0).toFixed(2)}`
+                      : record.status === 'pagado' || record.status === 'adelanto'
+                        ? `$${(record.amount || 0).toFixed(2)}`
+                        : '$0.00'
                     }
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {record.quotasCovered && record.quotasCovered > 1 
                       ? "adelantadas"
-                      : record.advanceCredit && record.advanceCredit > 0
-                        ? `+$${record.advanceCredit.toFixed(2)} crédito`
-                        : "en este pago"
+                      : record.status === 'pagado'
+                        ? "pagado"
+                        : record.status === 'retrasado'
+                          ? "sin pagar"
+                          : record.advanceCredit && record.advanceCredit > 0
+                            ? `+$${record.advanceCredit.toFixed(2)} crédito`
+                            : "pendiente"
                     }
                   </p>
                 </div>

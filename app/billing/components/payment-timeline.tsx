@@ -12,7 +12,9 @@ import {
   FileText,
   ChevronRight,
   Filter,
-  X
+  X,
+  Play,
+  Loader2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Badge } from "@/components_shadcn/ui/badge";
@@ -60,6 +62,13 @@ interface PaymentTimelineProps {
   title?: string;
   onPaymentClick?: (payment: PaymentRecord) => void;
   className?: string;
+  // Props para simulación
+  isTestModeEnabled?: boolean;
+  userRole?: string;
+  onSimulateTuesday?: () => Promise<void>;
+  onSimulateFriday?: () => Promise<void>;
+  financingId?: string;
+  currentWeek?: number; // Semana de simulación actual
 }
 
 const periodOptions: { value: PeriodFilter; label: string }[] = [
@@ -122,12 +131,25 @@ export function PaymentTimeline({
   title = "Timeline de Pagos",
   onPaymentClick,
   className,
+  isTestModeEnabled = false,
+  userRole = "",
+  onSimulateTuesday,
+  onSimulateFriday,
+  financingId,
+  currentWeek = 1,
 }: PaymentTimelineProps) {
   // Estado de filtros
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  
+  // Estado de simulación
+  const [isSimulatingTuesday, setIsSimulatingTuesday] = useState(false);
+  const [isSimulatingFriday, setIsSimulatingFriday] = useState(false);
+  
+  // Verificar si debe mostrar controles de simulación
+  const showSimulationControls = isTestModeEnabled && userRole === "admin" && financingId;
 
   const formatCurrency = (value: number, currency = "USD"): string => {
     return new Intl.NumberFormat("es-PA", {
@@ -218,14 +240,77 @@ export function PaymentTimeline({
   };
 
   const hasActiveFilters = periodFilter !== "all";
+  
+  // Handlers para simulación
+  const handleSimulateTuesday = async () => {
+    if (!onSimulateTuesday) return;
+    setIsSimulatingTuesday(true);
+    try {
+      await onSimulateTuesday();
+    } finally {
+      setIsSimulatingTuesday(false);
+    }
+  };
+  
+  const handleSimulateFriday = async () => {
+    if (!onSimulateFriday) return;
+    setIsSimulatingFriday(true);
+    try {
+      await onSimulateFriday();
+    } finally {
+      setIsSimulatingFriday(false);
+    }
+  };
 
   return (
     <Card className={cn(components.card, className)}>
-      <CardHeader className={cn(spacing.card.header, "flex flex-row items-center justify-between")}>
+      <CardHeader className={cn(spacing.card.header, "flex flex-row items-center justify-between flex-wrap gap-2")}>
         <CardTitle className={cn(typography.h4, "flex items-center gap-2")}>
           <Calendar className="h-5 w-5" />
           {title}
         </CardTitle>
+        
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Botones de Simulación (solo en modo pruebas) */}
+          {showSimulationControls && (
+            <div className="flex items-center gap-2 mr-2 p-2 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
+              <div className="flex flex-col items-center px-2 border-r border-purple-200 dark:border-purple-700">
+                <span className="text-[10px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-semibold">Semana</span>
+                <span className="text-sm font-bold text-purple-700 dark:text-purple-300">{currentWeek}</span>
+              </div>
+              <span className="text-xs text-purple-700 dark:text-purple-400 font-medium">Simular:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 text-xs"
+                onClick={handleSimulateTuesday}
+                disabled={isSimulatingTuesday}
+                title="Genera nuevas cuotas pendientes como si fuera martes"
+              >
+                {isSimulatingTuesday ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Play className="h-3 w-3" />
+                )}
+                Martes
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700 text-xs"
+                onClick={handleSimulateFriday}
+                disabled={isSimulatingFriday}
+                title="Pasa las cuotas pendientes vencidas a estado retrasado con penalidad"
+              >
+                {isSimulatingFriday ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <AlertCircle className="h-3 w-3" />
+                )}
+                Viernes
+              </Button>
+            </div>
+          )}
         
         {showFilters && (
           <div className="flex items-center gap-2">
@@ -298,6 +383,7 @@ export function PaymentTimeline({
             )}
           </div>
         )}
+        </div>
       </CardHeader>
       <CardContent className={cn("flex flex-col", spacing.gap.medium, spacing.card.content)}>
         {/* Período activo */}

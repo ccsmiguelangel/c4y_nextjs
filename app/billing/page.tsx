@@ -53,6 +53,8 @@ import { CreateFinancingDialog } from "./components/create-financing-dialog";
 import { CreatePaymentDialog } from "./components/create-payment-dialog";
 import { QuotaCalculator } from "./components/quota-calculator";
 import { PaymentTimeline, type PaymentRecord } from "./components/payment-timeline";
+import { BillingSimulationButtons } from "./components/billing-simulation-buttons";
+import { SimulateOverdueModal } from "./components/simulate-overdue-modal";
 
 // Types
 import type { FinancingCard as FinancingCardType } from "@/lib/financing";
@@ -82,6 +84,28 @@ export default function BillingPage() {
   // Dialog states
   const [isCreateFinancingOpen, setIsCreateFinancingOpen] = useState(false);
   const [isCreatePaymentOpen, setIsCreatePaymentOpen] = useState(false);
+  
+  // Simulation states
+  const [isTestModeEnabled, setIsTestModeEnabled] = useState(false);
+  const [overdueModalOpen, setOverdueModalOpen] = useState(false);
+  const [overdueData, setOverdueData] = useState<{
+    overdueCount: number;
+    totalPenaltyAmount: number;
+    simulationDate: string;
+    penaltyPercentage: number;
+    invoices: Array<{
+      id: number;
+      documentId: string;
+      invoiceNumber: string;
+      clientName: string;
+      vehicleInfo: string;
+      amount: number;
+      penaltyAmount: number;
+      totalWithPenalty: number;
+      daysOverdue: number;
+    }>;
+  } | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState("");
   
   // Delete state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -124,7 +148,37 @@ export default function BillingPage() {
   useEffect(() => {
     fetchFinancings();
     fetchPayments();
+    fetchTestModeConfig();
+    fetchCurrentUser();
   }, [fetchFinancings, fetchPayments]);
+  
+  // Fetch test mode configuration
+  const fetchTestModeConfig = async () => {
+    try {
+      const response = await fetch("/api/configuration");
+      if (response.ok) {
+        const data = await response.json();
+        const configs = data.data || [];
+        const testModeConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-test-mode-enabled");
+        setIsTestModeEnabled(testModeConfig?.value === "true");
+      }
+    } catch (err) {
+      console.error("Error loading test mode config:", err);
+    }
+  };
+  
+  // Fetch current user role
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await fetch("/api/user-profile/me");
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserRole(data.data?.role || "");
+      }
+    } catch (err) {
+      console.error("Error loading current user:", err);
+    }
+  };
 
   // Handle delete
   const handleDeleteClick = (e: React.MouseEvent, type: "financing" | "payment", item: FinancingCardType | BillingRecordCard) => {
@@ -254,7 +308,7 @@ export default function BillingPage() {
   return (
     <AdminLayout title="Gestión de Financiamiento" showFilterAction>
       {/* Action Buttons */}
-      <div className="flex gap-3 px-0">
+      <div className="flex gap-3 px-0 flex-wrap">
         <Button
           className="flex-1 rounded-lg bg-primary h-12 text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 flex items-center justify-center gap-2"
           onClick={() => setIsCreateFinancingOpen(true)}
@@ -271,6 +325,20 @@ export default function BillingPage() {
           Registrar Pago
         </Button>
       </div>
+      
+      {/* Simulation Buttons (only in test mode) */}
+      <BillingSimulationButtons
+        isTestModeEnabled={isTestModeEnabled}
+        userRole={currentUserRole}
+        onSimulateComplete={() => {
+          fetchFinancings();
+          toast.success("Simulación completada");
+        }}
+        onSimulateFridayData={(data) => {
+          setOverdueData(data);
+          setOverdueModalOpen(true);
+        }}
+      />
 
       {/* Dialogs */}
       <CreateFinancingDialog
@@ -629,6 +697,13 @@ export default function BillingPage() {
           />
         </TabsContent>
       </Tabs>
+
+      {/* Simulate Overdue Modal */}
+      <SimulateOverdueModal
+        isOpen={overdueModalOpen}
+        onClose={() => setOverdueModalOpen(false)}
+        overdueData={overdueData}
+      />
 
       {/* Delete Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

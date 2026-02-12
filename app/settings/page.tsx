@@ -10,10 +10,10 @@ import { Textarea } from "@/components_shadcn/ui/textarea";
 import { Label } from "@/components_shadcn/ui/label";
 import { Skeleton } from "@/components_shadcn/ui/skeleton";
 import { Badge } from "@/components_shadcn/ui/badge";
-import { Switch } from "@/components_shadcn/ui/switch";
 import { spacing, typography } from "@/lib/design-system";
 import { toast } from "@/lib/toast";
 import { Building2, MessageSquare, Calendar, CreditCard, Save, Eye, EyeOff, Loader2 } from "lucide-react";
+import { BillingSettingsSection } from "./components/billing-settings-section";
 
 interface Configuration {
   id: number;
@@ -374,31 +374,7 @@ export default function SettingsPage() {
 
         {/* Tab: Facturación */}
         <TabsContent value="billing">
-          <Card>
-            <CardHeader>
-              <CardTitle className={typography.h3}>Configuración de Facturación</CardTitle>
-              <CardDescription>
-                Parámetros por defecto para contratos y pagos
-              </CardDescription>
-            </CardHeader>
-            <CardContent className={`flex flex-col ${spacing.gap.medium}`}>
-              <ConfigurationSection
-                category="billing"
-                configs={getConfigsByCategory("billing")}
-                showSecrets={showSecrets}
-                editedConfigs={editedConfigs}
-                onToggleSecret={toggleShowSecret}
-                onConfigChange={handleConfigChange}
-                onSaveConfig={saveConfiguration}
-                onCreateConfig={createConfiguration}
-                defaultConfigs={[
-                  { key: "DEFAULT_QUOTA_COUNT", description: "Número de cuotas por defecto (220)", isSecret: false },
-                  { key: "LATE_FEE_PERCENTAGE", description: "Porcentaje de multa por día de retraso (10)", isSecret: false },
-                  { key: "MAINTENANCE_INTERVAL_KM", description: "Intervalo de mantenimiento en kilómetros (5000)", isSecret: false },
-                ]}
-              />
-            </CardContent>
-          </Card>
+          <BillingSettingsSection />
         </TabsContent>
       </Tabs>
     </AdminLayout>

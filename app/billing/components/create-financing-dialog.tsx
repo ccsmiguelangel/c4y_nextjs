@@ -13,6 +13,9 @@ import {
   Loader2,
   FileText,
   UserPlus,
+  Bell,
+  AlertTriangle,
+  Percent,
 } from "lucide-react";
 import { Button } from "@/components_shadcn/ui/button";
 import {
@@ -731,6 +734,66 @@ export function CreateFinancingDialog({
                       rows={3}
                       className="rounded-lg resize-none"
                     />
+                  </div>
+
+                  {/* Información de Facturación Automática */}
+                  <div className="rounded-xl border bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 p-5 space-y-4">
+                    <h3 className="text-base font-semibold flex items-center gap-2">
+                      <div className="p-2 rounded-lg bg-blue-500/10">
+                        <Bell className="h-4 w-4 text-blue-500" />
+                      </div>
+                      Ciclo de Facturación Automática
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {/* Día de facturación */}
+                      <div className="flex items-start gap-3 p-3 bg-white/50 dark:bg-white/5 rounded-lg">
+                        <div className="p-2 rounded-full bg-blue-100 dark:bg-blue-900/30">
+                          <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Facturación</p>
+                          <p className="text-xs text-muted-foreground">
+                            Todos los martes
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Fecha límite */}
+                      <div className="flex items-start gap-3 p-3 bg-white/50 dark:bg-white/5 rounded-lg">
+                        <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Límite de Pago</p>
+                          <p className="text-xs text-muted-foreground">
+                            Jueves de cada semana
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Penalidad */}
+                      <div className="flex items-start gap-3 p-3 bg-white/50 dark:bg-white/5 rounded-lg">
+                        <div className="p-2 rounded-full bg-red-100 dark:bg-red-900/30">
+                          <Percent className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Penalidad por Mora</p>
+                          <p className="text-xs text-muted-foreground">
+                            10% sobre la cuota
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-white/70 dark:bg-white/5 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <p className="text-sm text-blue-800 dark:text-blue-300">
+                        <strong>Nota:</strong> Las facturas se generan automáticamente cada martes. 
+                        El cliente tiene hasta el jueves para realizar el pago. Si el pago no se 
+                        recibe antes del viernes, se aplicará una penalidad del 10% sobre el monto 
+                        de la cuota y la factura pasará a estado vencido.
+                      </p>
+                    </div>
                   </div>
 
                 {/* Calculadora */}

@@ -121,6 +121,11 @@ export default function FinancingDetailPage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Simulación
+  const [isTestModeEnabled, setIsTestModeEnabled] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState("");
+  const [currentWeek, setCurrentWeek] = useState(1); // Semana de simulación actual
 
   // Fetch financing data
   const fetchFinancing = useCallback(async () => {
@@ -150,10 +155,41 @@ export default function FinancingDetailPage() {
     }
   }, [id]);
 
+  // Fetch test mode config
+  const fetchTestModeConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/api/configuration");
+      if (response.ok) {
+        const data = await response.json();
+        const configs = data.data || [];
+        const testModeConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-test-mode-enabled");
+        setIsTestModeEnabled(testModeConfig?.value === "true");
+      }
+    } catch (err) {
+      console.error("Error loading test mode config:", err);
+    }
+  }, []);
+  
+  // Fetch current user role
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/user-profile/me");
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUserRole(data.data?.role || "");
+      }
+    } catch (err) {
+      console.error("Error loading current user:", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (id) {
       fetchFinancing();
+      fetchTestModeConfig();
+      fetchCurrentUser();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, fetchFinancing]);
 
   // Delete financing
@@ -497,6 +533,56 @@ export default function FinancingDetailPage() {
           clientName: p.clientName,
         }))}
         title="Historial de Pagos"
+        isTestModeEnabled={isTestModeEnabled}
+        userRole={currentUserRole}
+        financingId={id}
+        currentWeek={currentWeek}
+        onSimulateTuesday={async () => {
+          // Calcular fecha de simulación basada en la semana actual
+          // Martes de la semana simulada: hoy + (semana - 1) × 7 días
+          const baseDate = new Date();
+          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7);
+          const simulationDate = baseDate.toISOString().split("T")[0];
+          
+          const res = await fetch("/api/invoices/simulate-generation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ simulationDate }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            toast.success(`Semana ${currentWeek}: Se generaron ${data.generatedCount} cuotas pendientes`);
+            fetchFinancing();
+          } else {
+            toast.error(data.error || "Error al generar cuotas");
+          }
+        }}
+        onSimulateFriday={async () => {
+          // Calcular fecha de simulación basada en la semana actual
+          // Viernes de la semana simulada: hoy + (semana - 1) × 7 días + 4 días
+          const baseDate = new Date();
+          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7 + 4);
+          const simulationDate = baseDate.toISOString().split("T")[0];
+          
+          const res = await fetch("/api/invoices/simulate-overdue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ simulationDate }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            if (data.overdueCount === 0) {
+              toast("No hay cuotas pendientes por vencer");
+            } else {
+              toast.warning(`Semana ${currentWeek}: ${data.overdueCount} cuotas marcadas como retrasadas. Penalidad total: $${data.totalPenaltyAmount?.toFixed(2) || 0}`);
+            }
+            // Avanzar a la siguiente semana después de simular viernes
+            setCurrentWeek(prev => prev + 1);
+            fetchFinancing();
+          } else {
+            toast.error(data.error || "Error al actualizar cuotas");
+          }
+        }}
         maxHeight="400px"
         showSummary={true}
         showFilters={true}
