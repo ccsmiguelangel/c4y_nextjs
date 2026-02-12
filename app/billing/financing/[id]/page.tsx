@@ -529,6 +529,7 @@ export default function FinancingDetailPage() {
           paymentDate: p.paymentDate,
           quotaNumber: p.quotaNumber,
           lateFeeAmount: p.lateFeeAmount,
+          daysLate: p.daysLate,
           currency: p.currency,
           clientName: p.clientName,
         }))}

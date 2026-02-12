@@ -47,6 +47,7 @@ export interface PaymentRecord {
   paymentDate?: string;
   quotaNumber?: number;
   lateFeeAmount?: number;
+  daysLate?: number;
   currency?: string;
   // Info de cliente para filtrado
   clientId?: string;
@@ -546,9 +547,14 @@ export function PaymentTimeline({
                                   {formatCurrency(payment.amount, payment.currency)}
                                 </p>
                                 {payment.lateFeeAmount && payment.lateFeeAmount > 0 && (
-                                  <p className="text-xs text-destructive">
-                                    + {formatCurrency(payment.lateFeeAmount, payment.currency)} multa
-                                  </p>
+                                  <div className="text-xs text-destructive">
+                                    <p>+ {formatCurrency(payment.lateFeeAmount, payment.currency)} multa</p>
+                                    {payment.daysLate && payment.daysLate > 0 && (
+                                      <p className="text-red-600 dark:text-red-400">
+                                        {payment.daysLate} día{payment.daysLate > 1 ? 's' : ''} de atraso
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                               {onPaymentClick && (

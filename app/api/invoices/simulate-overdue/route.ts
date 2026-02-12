@@ -21,8 +21,8 @@ export async function POST(request: Request) {
     const penaltyConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-penalty-percentage");
     const penaltyPercentage = penaltyConfig?.value ? parseFloat(penaltyConfig.value) : 10;
 
-    // Buscar CUOTAS PENDIENTES (billing-records) con vencimiento anterior o igual a la fecha de simulación
-    const queryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+    // Buscar CUOTAS PENDIENTES O RETRASADAS (billing-records) con vencimiento anterior o igual a la fecha de simulación
+    const queryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$in]=pendiente,retrasado&filters[dueDate][$lte]=${simulationDate}&populate=*`;
 
     const invoicesResponse = await fetch(queryUrl, {
       headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
@@ -148,9 +148,9 @@ export async function GET(request: Request) {
     const penaltyConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-penalty-percentage");
     const penaltyPercentage = penaltyConfig?.value ? parseFloat(penaltyConfig.value) : 10;
 
-    // Buscar cuotas pendientes que estarían vencidas
+    // Buscar cuotas pendientes o retrasadas que estarían vencidas
     const invoicesResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lt]=${simulationDate}&populate=*`,
+      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$in]=pendiente,retrasado&filters[dueDate][$lt]=${simulationDate}&populate=*`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
