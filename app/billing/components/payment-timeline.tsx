@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 export type PeriodFilter = "all" | "week" | "biweekly" | "month" | "semester" | "year" | "custom";
 
-export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado";
+export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
 
 export interface PaymentRecord {
   id: string | number;
@@ -51,12 +51,15 @@ export interface PaymentRecord {
   lateFeeAmount?: number;
   daysLate?: number;
   currency?: string;
-  // Info de adelanto
+  // Info de adelanto/abonado
   quotasCovered?: number;
   quotaAmountCovered?: number;
   advanceCredit?: number;
   advanceForQuota?: number; // Cuota a la que se aplica el adelanto
   remainingAmount?: number; // Faltante por pagar
+  // Info de abonado
+  partialQuotaStart?: number; // Primera cuota abonada
+  partialQuotaEnd?: number; // Última cuota abonada
   // Info de cliente para filtrado
   clientId?: string;
   clientDocumentId?: string;
@@ -133,6 +136,14 @@ const statusConfig: Record<PaymentStatus, {
     borderColor: "border-red-200 dark:border-red-800",
     dotColor: "bg-red-500",
   },
+  abonado: {
+    label: "Abonado",
+    icon: DollarSign,
+    bgColor: "bg-purple-50 dark:bg-purple-950/30",
+    textColor: "text-purple-700 dark:text-purple-400",
+    borderColor: "border-purple-200 dark:border-purple-800",
+    dotColor: "bg-purple-500",
+  },
 };
 
 export function PaymentTimeline({
@@ -166,6 +177,7 @@ export function PaymentTimeline({
       total: payments.length,
       pagados: payments.filter(p => p.status === "pagado").length,
       pendientes: payments.filter(p => p.status === "pendiente").length,
+      abonados: payments.filter(p => p.status === "abonado").length,
       adelantos: payments.filter(p => p.status === "adelanto").length,
       retrasados: payments.filter(p => p.status === "retrasado").length,
     });
@@ -246,6 +258,7 @@ export function PaymentTimeline({
     const pending = payments.filter((p) => p.status === "pendiente");
     const advance = payments.filter((p) => p.status === "adelanto");
     const overdue = payments.filter((p) => p.status === "retrasado");
+    const partial = payments.filter((p) => p.status === "abonado");
 
     return {
       total: payments.length,
@@ -253,11 +266,13 @@ export function PaymentTimeline({
       pending: pending.length,
       advance: advance.length,
       overdue: overdue.length,
+      partial: partial.length,
       paidAmount: paid.reduce((sum, p) => sum + p.amount, 0),
       pendingAmount: pending.reduce((sum, p) => sum + p.amount, 0),
       advanceAmount: advance.reduce((sum, p) => sum + p.amount, 0),
       overdueAmount: overdue.reduce((sum, p) => sum + p.amount + (p.lateFeeAmount || 0), 0),
-      totalCollected: paid.reduce((sum, p) => sum + p.amount, 0) + advance.reduce((sum, p) => sum + p.amount, 0),
+      partialAmount: partial.reduce((sum, p) => sum + p.amount, 0),
+      totalCollected: paid.reduce((sum, p) => sum + p.amount, 0) + advance.reduce((sum, p) => sum + p.amount, 0) + partial.reduce((sum, p) => sum + p.amount, 0),
     };
   }, [payments]);
 
@@ -492,7 +507,7 @@ export function PaymentTimeline({
               </div>
             )}
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <button
                 onClick={() => setStatusFilter(statusFilter === "pagado" ? "all" : "pagado")}
                 className={cn(
@@ -520,6 +535,20 @@ export function PaymentTimeline({
                   {summary.pending}
                 </p>
                 <p className={cn("text-xs", statusConfig.pendiente.textColor)}>Pendientes</p>
+              </button>
+              <button
+                onClick={() => setStatusFilter(statusFilter === "abonado" ? "all" : "abonado")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  statusConfig.abonado.bgColor,
+                  "border-2",
+                  statusFilter === "abonado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.abonado.borderColor
+                )}
+              >
+                <p className={cn("text-2xl font-bold", statusConfig.abonado.textColor)}>
+                  {summary.partial}
+                </p>
+                <p className={cn("text-xs", statusConfig.abonado.textColor)}>Abonados</p>
               </button>
               <button
                 onClick={() => setStatusFilter(statusFilter === "adelanto" ? "all" : "adelanto")}
@@ -615,11 +644,16 @@ export function PaymentTimeline({
                                 <span className={typography.body.large}>
                                   {payment.invoiceNumber}
                                 </span>
-                                {payment.quotaNumber && (
+                                {/* Mostrar rango de cuotas en un solo tag */}
+                                {payment.quotasCovered && payment.quotasCovered > 1 && payment.quotaNumber ? (
+                                  <Badge variant="outline" className="text-xs">
+                                    Cuotas #{payment.quotaNumber}–#{payment.quotaNumber + payment.quotasCovered - 1}
+                                  </Badge>
+                                ) : payment.quotaNumber ? (
                                   <Badge variant="outline" className="text-xs">
                                     Cuota #{payment.quotaNumber}
                                   </Badge>
-                                )}
+                                ) : null}
                                 <Badge className={cn(
                                   "text-xs",
                                   config.bgColor,
@@ -664,14 +698,32 @@ export function PaymentTimeline({
                                 {/* Info de adelanto */}
                                 {payment.status === "adelanto" && (
                                   <div className="text-xs text-blue-600 dark:text-blue-400">
-                                    {payment.advanceForQuota && (
+                                    {payment.quotasCovered && payment.quotasCovered > 1 ? (
+                                      <p>Adelanto para Cuotas #{payment.quotaNumber}–#{payment.quotaNumber! + payment.quotasCovered - 1}</p>
+                                    ) : payment.advanceForQuota ? (
                                       <p>Adelanto para Cuota #{payment.advanceForQuota}</p>
-                                    )}
+                                    ) : null}
                                     {payment.remainingAmount && payment.remainingAmount > 0 && (
                                       <p>Falta por pagar: {formatCurrency(payment.remainingAmount, payment.currency)}</p>
                                     )}
                                     {payment.advanceCredit && payment.advanceCredit > 0 && (
                                       <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
+                                    )}
+                                  </div>
+                                )}
+                                
+                                {/* Info de abonado */}
+                                {payment.status === "abonado" && (
+                                  <div className="text-xs text-purple-600 dark:text-purple-400">
+                                    {payment.partialQuotaStart && payment.partialQuotaEnd && payment.partialQuotaStart !== payment.partialQuotaEnd ? (
+                                      <p>Abono a Cuotas #{payment.partialQuotaStart}–#{payment.partialQuotaEnd}</p>
+                                    ) : payment.partialQuotaStart ? (
+                                      <p>Abono a Cuota #{payment.partialQuotaStart}</p>
+                                    ) : payment.quotaNumber ? (
+                                      <p>Abono a Cuota #{payment.quotaNumber}</p>
+                                    ) : null}
+                                    {payment.remainingAmount && payment.remainingAmount > 0 && (
+                                      <p>Resto por pagar: {formatCurrency(payment.remainingAmount, payment.currency)}</p>
                                     )}
                                   </div>
                                 )}
@@ -716,12 +768,17 @@ export function PaymentTimeline({
         {showSummary && payments.length > 0 && (
           <>
             <Separator />
-            <div className="flex justify-between items-center text-sm">
+            <div className="flex justify-between items-center text-sm flex-wrap gap-2">
               <span className={typography.label}>Total de {summary.total} pagos:</span>
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap">
                 <span className="text-green-600 dark:text-green-400">
                   {formatCurrency(summary.paidAmount)} pagados
                 </span>
+                {summary.partialAmount > 0 && (
+                  <span className="text-purple-600 dark:text-purple-400">
+                    {formatCurrency(summary.partialAmount)} abonados
+                  </span>
+                )}
                 <span className="text-yellow-600 dark:text-yellow-400">
                   {formatCurrency(summary.pendingAmount)} pendientes
                 </span>

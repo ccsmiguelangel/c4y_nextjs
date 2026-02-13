@@ -172,6 +172,7 @@ const getStatusLabel = (status: PaymentStatus): string => {
     pendiente: "Pendiente",
     adelanto: "Adelanto",
     retrasado: "Retrasado",
+    abonado: "Abonado",
   };
   return labels[status] || status;
 };
@@ -508,15 +509,21 @@ export async function createBillingRecordInStrapi(
     financing.partialPaymentCredit
   );
 
-  // Determinar estado del pago
+  // Determinar estado del pago según reglas de negocio:
+  // - Adelanto: cuota de la semana actual pagada + pago para futuro
+  // - Abonado: pago aplicado a cuotas generadas con saldo pendiente (pago parcial)
+  // - Retrasado: pago con días de atraso
+  // - Pagado: pago completo de cuota(s) sin atraso
   let status: PaymentStatus;
+  
   if (isPartialPayment) {
-    // Pago parcial: no completa ninguna cuota, es un abono
-    status = "adelanto"; // Usamos "adelanto" para indicar pago parcial/abono
+    // Pago parcial: se aplica a cuota(s) existente(s) con saldo pendiente
+    status = "abonado";
   } else if (daysLate > 0) {
     status = "retrasado";
   } else if (quotasCovered > 1 || advanceCredit > 0) {
-    status = "adelanto"; // Cubrió más de una cuota o tiene crédito extra
+    // Cubrió más de una cuota o tiene crédito extra = es adelanto
+    status = "adelanto";
   } else {
     status = "pagado";
   }

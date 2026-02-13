@@ -13,7 +13,7 @@ import { formatCurrency } from "./format";
 
 export type FinancingStatus = "activo" | "inactivo" | "en_mora" | "completado";
 export type PaymentFrequency = "semanal" | "quincenal" | "mensual";
-export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado";
+export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
 
 export interface FinancingRaw {
   id: number;
