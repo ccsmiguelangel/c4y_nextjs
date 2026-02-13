@@ -115,6 +115,7 @@ export default function FinancingDetailPage() {
   const [financing, setFinancing] = useState<FinancingCard | null>(null);
   const [payments, setPayments] = useState<BillingRecordCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   // Dialogs
@@ -129,14 +130,21 @@ export default function FinancingDetailPage() {
 
   // Fetch billing records directamente (más confiable que populate)
   const fetchBillingRecords = useCallback(async () => {
+    setIsLoadingPayments(true);
     try {
       const response = await fetch(`/api/billing?financing=${id}`);
       if (response.ok) {
         const data = await response.json();
         setPayments(data.data || []);
+      } else {
+        console.error("Error response from billing API:", await response.text());
+        setPayments([]);
       }
     } catch (err) {
       console.error("Error fetching billing records:", err);
+      setPayments([]);
+    } finally {
+      setIsLoadingPayments(false);
     }
   }, [id]);
 
@@ -565,6 +573,7 @@ export default function FinancingDetailPage() {
           };
         })}
         title="Historial de Pagos"
+        isLoading={isLoadingPayments}
         isTestModeEnabled={isTestModeEnabled}
         userRole={currentUserRole}
         financingId={id}

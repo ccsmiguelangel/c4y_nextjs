@@ -71,6 +71,7 @@ interface PaymentTimelineProps {
   title?: string;
   onPaymentClick?: (payment: PaymentRecord) => void;
   className?: string;
+  isLoading?: boolean; // Estado de carga
   // Props para simulación
   isTestModeEnabled?: boolean;
   userRole?: string;
@@ -142,6 +143,7 @@ export function PaymentTimeline({
   title = "Timeline de Pagos",
   onPaymentClick,
   className,
+  isLoading = false,
   isTestModeEnabled = false,
   userRole = "",
   onSimulateTuesday,
@@ -246,7 +248,7 @@ export function PaymentTimeline({
       overdueAmount: overdue.reduce((sum, p) => sum + p.amount + (p.lateFeeAmount || 0), 0),
       totalCollected: paid.reduce((sum, p) => sum + p.amount, 0) + advance.reduce((sum, p) => sum + p.amount, 0),
     };
-  }, [filteredPayments]);
+  }, [payments]);
 
   // Ordenar pagos por fecha de vencimiento (más reciente primero)
   const sortedPayments = useMemo(() => {
@@ -530,7 +532,12 @@ export function PaymentTimeline({
           style={{ height: maxHeight }}
         >
           <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit] scroll-smooth">
-            {sortedPayments.length === 0 ? (
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin mb-2" />
+                <p className={typography.body.base}>Cargando pagos...</p>
+              </div>
+            ) : sortedPayments.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                 <FileText className="h-12 w-12 mb-2 opacity-50" />
                 <p className={typography.body.base}>No hay pagos registrados</p>

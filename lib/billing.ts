@@ -302,6 +302,7 @@ export async function fetchBillingRecordsByFinancingFromStrapi(financingDocument
         },
       },
     },
+    ...populateConfig,
     sort: ["dueDate:asc"],
     pagination: { pageSize: 100 },
   }, { encodeValuesOnly: true });
