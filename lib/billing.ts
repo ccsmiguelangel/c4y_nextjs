@@ -292,10 +292,10 @@ export async function fetchBillingRecordsFromStrapi(): Promise<BillingRecordCard
 
 /**
  * Obtener pagos por financiamiento
+ * STRATEGIA HÍBRIDA: Intenta obtener via populate, si falla o está vacío, usa fallback
  */
 export async function fetchBillingRecordsByFinancingFromStrapi(financingDocumentId: string): Promise<BillingRecordCard[]> {
-  // SOLUCIÓN ALTERNATIVA: Obtener el financing con sus billing records populados
-  // Esto evita problemas con filtros de relación en Strapi 5
+  // Intentar método 1: Populate desde financing
   const financingQuery = qs.stringify({
     populate: {
       billingRecords: {
@@ -305,7 +305,7 @@ export async function fetchBillingRecordsByFinancingFromStrapi(financingDocument
     },
   }, { encodeValuesOnly: true });
 
-  console.log(`[Billing] Fetching financing with records: ${financingDocumentId}`);
+  console.log(`[Billing] Method 1: Fetching financing with records: ${financingDocumentId}`);
   
   const financingResponse = await fetch(
     `${STRAPI_BASE_URL}/api/financings/${financingDocumentId}?${financingQuery}`,
@@ -317,28 +317,38 @@ export async function fetchBillingRecordsByFinancingFromStrapi(financingDocument
     }
   );
 
-  if (!financingResponse.ok) {
-    const errorText = await financingResponse.text();
-    console.error(`[Billing] Error fetching financing:`, errorText);
-    // Fallback al método anterior
-    return fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumentId);
+  if (financingResponse.ok) {
+    const financingData = await financingResponse.json();
+    const billingRecords = financingData.data?.billingRecords || [];
+    
+    console.log(`[Billing] Method 1 result:`, {
+      count: billingRecords.length,
+      ids: billingRecords.map((r: BillingRecordRaw) => r.documentId),
+    });
+    
+    // Si encontramos registros, usarlos
+    if (billingRecords.length > 0) {
+      return billingRecords.map((record: BillingRecordRaw) => normalizeBillingRecord(record));
+    }
+    
+    console.log(`[Billing] Method 1 returned empty, trying fallback...`);
+  } else {
+    console.error(`[Billing] Method 1 failed:`, await financingResponse.text());
   }
-
-  const financingData = await financingResponse.json();
-  const billingRecords = financingData.data?.billingRecords || [];
   
-  console.log(`[Billing] Found ${billingRecords.length} records via financing populate`);
-  
-  return billingRecords.map((record: BillingRecordRaw) => normalizeBillingRecord(record));
+  // Fallback al método 2: Filtro directo
+  return fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumentId);
 }
 
 /**
  * Fallback: Obtener pagos por financiamiento usando filtro directo
+ * Prueba múltiples formatos de filtro para Strapi 5
  */
 async function fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumentId: string): Promise<BillingRecordCard[]> {
-  console.log(`[Billing] Using fallback method for: ${financingDocumentId}`);
+  console.log(`[Billing] Method 2 (Fallback): Fetching for financing ${financingDocumentId}`);
   
-  const query = qs.stringify({
+  // Formato 1: Filtro por documentId anidado (formato Strapi 5)
+  const query1 = qs.stringify({
     filters: {
       financing: {
         documentId: {
@@ -351,24 +361,68 @@ async function fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumen
     pagination: { pageSize: 100 },
   }, { encodeValuesOnly: true });
 
-  console.log(`[Billing] Query:`, query);
-
-  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
-    headers: {
-      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
-    },
+  console.log(`[Billing] Trying format 1 (documentId filter)`);
+  
+  const response1 = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query1}`, {
+    headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
     cache: "no-store",
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Billing] Error response:`, errorText);
-    throw new Error(`Error fetching billing records: ${errorText}`);
+  if (response1.ok) {
+    const data1 = await response1.json();
+    console.log(`[Billing] Format 1 result:`, { count: data1.data?.length || 0 });
+    
+    if (data1.data?.length > 0) {
+      return data1.data.map(normalizeBillingRecord);
+    }
   }
 
-  const data = await response.json();
-  console.log(`[Billing] Fallback found ${data.data?.length || 0} records`);
-  return (data.data || []).map(normalizeBillingRecord);
+  // Formato 2: Filtro por ID directo (usando el id numérico si existe)
+  console.log(`[Billing] Trying format 2 (id filter)`);
+  
+  // Primero obtener el financing para conseguir su ID numérico
+  const financingResp = await fetch(
+    `${STRAPI_BASE_URL}/api/financings/${financingDocumentId}?fields[0]=id`,
+    { headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` }, cache: "no-store" }
+  );
+  
+  if (financingResp.ok) {
+    const financingData = await financingResp.json();
+    const numericId = financingData.data?.id;
+    
+    if (numericId) {
+      const query2 = qs.stringify({
+        filters: {
+          financing: {
+            id: {
+              $eq: numericId,
+            },
+          },
+        },
+        ...populateConfig,
+        sort: ["dueDate:asc"],
+        pagination: { pageSize: 100 },
+      }, { encodeValuesOnly: true });
+
+      const response2 = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query2}`, {
+        headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+        cache: "no-store",
+      });
+
+      if (response2.ok) {
+        const data2 = await response2.json();
+        console.log(`[Billing] Format 2 result:`, { count: data2.data?.length || 0 });
+        
+        if (data2.data?.length > 0) {
+          return data2.data.map(normalizeBillingRecord);
+        }
+      }
+    }
+  }
+
+  // Si todo falla, devolver array vacío
+  console.error(`[Billing] All methods failed for financing ${financingDocumentId}`);
+  return [];
 }
 
 /**
