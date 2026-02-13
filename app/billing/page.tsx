@@ -694,6 +694,24 @@ export default function BillingPage() {
                 router.push(`/billing/details/${record.documentId}`);
               }
             }}
+            onDeletePayment={async (payment) => {
+              if (!confirm(`¿Eliminar el pago ${payment.invoiceNumber}?`)) return;
+              
+              try {
+                const response = await fetch(`/api/billing/${payment.id}`, {
+                  method: "DELETE",
+                });
+                
+                if (!response.ok) {
+                  throw new Error("Error al eliminar el pago");
+                }
+                
+                toast.success("Pago eliminado correctamente");
+                fetchPayments(); // Refrescar lista
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Error al eliminar");
+              }
+            }}
           />
         </TabsContent>
       </Tabs>
