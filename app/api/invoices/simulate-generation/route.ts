@@ -49,23 +49,58 @@ export async function POST(request: Request) {
         continue; // Ya existe un pago/factura para este período
       }
 
-      // Obtener el máximo quotaNumber existente para este financiamiento
-      const maxQuotaResponse = await fetch(
-        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&sort=quotaNumber:desc&pagination[limit]=1`,
+      // Obtener TODOS los billing-records para calcular cuotas cubiertas
+      const allRecordsResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&pagination[limit]=100`,
         {
           headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
           cache: "no-store",
         }
       );
       
-      const maxQuotaData = await maxQuotaResponse.json();
-      const maxQuotaNumber = maxQuotaData.data?.[0]?.quotaNumber || 0;
+      const allRecordsData = await allRecordsResponse.json();
+      const allRecords = allRecordsData.data || [];
       
-      // Calcular número de cuota siguiente basado en el máximo existente
-      const nextQuotaNumber = maxQuotaNumber + 1;
+      // Calcular cuántas cuotas están cubiertas por pagos/abonos/adelantos
+      let maxCoveredQuota = 0;
+      const coveredQuotas = new Set<number>();
+      
+      for (const record of allRecords) {
+        if (record.status === "pagado" && record.quotaNumber) {
+          // Cuota pagada individual
+          coveredQuotas.add(record.quotaNumber);
+          maxCoveredQuota = Math.max(maxCoveredQuota, record.quotaNumber);
+        } else if ((record.status === "abonado" || record.status === "adelanto") && record.quotaNumber) {
+          // Abono/adelanto cubre múltiples cuotas
+          const quotasCovered = record.quotasCovered || 1;
+          for (let i = 0; i < quotasCovered; i++) {
+            coveredQuotas.add(record.quotaNumber + i);
+          }
+          maxCoveredQuota = Math.max(maxCoveredQuota, record.quotaNumber + quotasCovered - 1);
+        }
+      }
+      
+      // Encontrar la primera cuota NO cubierta
+      let nextQuotaNumber = 1;
+      while (coveredQuotas.has(nextQuotaNumber) && nextQuotaNumber <= (financing.totalQuotas || 999)) {
+        nextQuotaNumber++;
+      }
       
       // Verificar que no exceda el total de cuotas
       if (nextQuotaNumber > (financing.totalQuotas || 999)) {
+        continue; // Todas las cuotas están cubiertas
+      }
+      
+      // Verificar que no se salte cuotas (si hay huecos, seguir la secuencia)
+      const maxExistingQuota = allRecords.reduce((max: number, r: { quotaNumber?: number }) => 
+        Math.max(max, r.quotaNumber || 0), 0);
+      
+      // La cuota a generar debe ser la siguiente a la última existente O la primera no cubierta,
+      // lo que sea MAYOR (para no generar cuotas "atrasadas" que ya deberían existir)
+      const effectiveNextQuota = Math.max(nextQuotaNumber, maxExistingQuota + 1);
+      
+      // Si la cuota efectiva ya está cubierta, saltar este financiamiento
+      if (coveredQuotas.has(effectiveNextQuota)) {
         continue;
       }
 
@@ -73,12 +108,12 @@ export async function POST(request: Request) {
       const invoicePayload = {
         data: {
           financing: financing.id,
-          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financing.id}-${nextQuotaNumber}`,
+          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financing.id}-${effectiveNextQuota}`,
           amount: financing.quotaAmount,
           currency: "USD",
           status: "pendiente",
           dueDate: dueDate,
-          quotaNumber: nextQuotaNumber,
+          quotaNumber: effectiveNextQuota,
           lateFeeAmount: 0,
           isSimulated: true,
         },
@@ -104,7 +139,7 @@ export async function POST(request: Request) {
           receiptNumber: invoiceData.data.receiptNumber,
           financingId: financing.id,
           amount: financing.quotaAmount,
-          quotaNumber: nextQuotaNumber,
+          quotaNumber: effectiveNextQuota,
         };
         generatedInvoices.push(newInvoice);
         generatedCount++;
@@ -113,7 +148,7 @@ export async function POST(request: Request) {
         // PASO 2: Revisar adelantos que ahora aplican a esta cuota generada
         // y convertirlos a abonados
         // ================================================================
-        await convertAdvanceToPartial(financing.id, nextQuotaNumber, financing.quotaAmount);
+        await convertAdvanceToPartial(financing.id, effectiveNextQuota, financing.quotaAmount);
       }
     }
     
