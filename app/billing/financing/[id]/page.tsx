@@ -63,6 +63,8 @@ import type { BillingRecordCard } from "@/lib/billing";
 
 type FinancingStatus = "activo" | "inactivo" | "en_mora" | "completado";
 
+type ExtendedPaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
+
 const statusConfig: Record<FinancingStatus, {
   label: string;
   icon: typeof CheckCircle2;
@@ -251,6 +253,61 @@ export default function FinancingDetailPage() {
     } catch {
       return dateString;
     }
+  };
+
+  // Calcular el próximo vencimiento real considerando abonos y crédito
+  const calculateRealNextDueDate = (): string => {
+    if (!financing || payments.length === 0) {
+      return financing?.nextDueDate ? formatDate(financing.nextDueDate) : "-";
+    }
+
+    // Encontrar la última cuota cubierta (pagada o abonada)
+    const paidOrAbonadoPayments = payments.filter(
+      p => p.status === "pagado" || p.status === "abonado" || p.status === "adelanto"
+    );
+
+    if (paidOrAbonadoPayments.length === 0) {
+      // No hay pagos, usar el nextDueDate del financing
+      return formatDate(financing.nextDueDate);
+    }
+
+    // Encontrar el máximo quotaNumber cubierto
+    const maxQuotaCovered = Math.max(
+      ...paidOrAbonadoPayments.map(p => (p.quotaNumber || 0) + (p.quotasCovered || 1) - 1)
+    );
+
+    // Encontrar el pago con la mayor fecha (último pago realizado)
+    const lastPayment = paidOrAbonadoPayments.sort((a, b) => {
+      const dateA = new Date(a.paymentDate || a.dueDate || 0).getTime();
+      const dateB = new Date(b.paymentDate || b.dueDate || 0).getTime();
+      return dateB - dateA;
+    })[0];
+
+    const baseDate = new Date(lastPayment.dueDate || lastPayment.paymentDate || financing.nextDueDate || new Date());
+    const frequency = financing.paymentFrequency || "semanal";
+    const nextQuotaNumber = maxQuotaCovered + 1;
+
+    // Calcular la fecha de la siguiente cuota
+    let resultDate = new Date(baseDate);
+
+    switch (frequency) {
+      case "semanal":
+        // Sumar semanas desde la fecha base hasta la siguiente cuota
+        resultDate.setDate(resultDate.getDate() + ((nextQuotaNumber - (lastPayment.quotaNumber || 1)) * 7));
+        break;
+      case "quincenal":
+        // Sumar quincenas desde la fecha base
+        resultDate.setDate(resultDate.getDate() + ((nextQuotaNumber - (lastPayment.quotaNumber || 1)) * 15));
+        break;
+      case "mensual":
+        // Sumar meses desde la fecha base
+        resultDate.setMonth(resultDate.getMonth() + (nextQuotaNumber - (lastPayment.quotaNumber || 1)));
+        break;
+      default:
+        resultDate.setDate(resultDate.getDate() + ((nextQuotaNumber - (lastPayment.quotaNumber || 1)) * 7));
+    }
+
+    return format(resultDate, "d 'de' MMMM, yyyy", { locale: es });
   };
 
   // Loading state
@@ -468,7 +525,12 @@ export default function FinancingDetailPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
               <div>
                 <p className="text-xs text-muted-foreground">Próximo Vencimiento</p>
-                <p className="text-sm">{formatDate(financing.nextDueDate)}</p>
+                <p className="text-sm font-medium text-primary">{calculateRealNextDueDate()}</p>
+                {financing.partialPaymentCredit > 0 && (
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400">
+                    (considerando crédito y abonos)
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -562,7 +624,7 @@ export default function FinancingDetailPage() {
             id: p.documentId, // Usar documentId para operaciones CRUD
             invoiceNumber: p.receiptNumber || "",
             amount: p.amount,
-            status: p.status as "pagado" | "pendiente" | "adelanto" | "retrasado",
+            status: p.status as ExtendedPaymentStatus,
             dueDate: p.dueDate || new Date().toISOString(),
             paymentDate: p.paymentDate,
             quotaNumber: p.quotaNumber,
@@ -570,14 +632,21 @@ export default function FinancingDetailPage() {
             daysLate: p.daysLate,
             currency: p.currency,
             clientName: p.clientName,
+            createdAt: p.createdAt,
             // Datos de adelanto
             quotasCovered: p.quotasCovered,
             quotaAmountCovered: p.quotaAmountCovered,
             advanceCredit: p.advanceCredit,
+            remainingQuotaBalance: p.remainingQuotaBalance,
             advanceForQuota,
             remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
+            // Monto total de la cuota (para calcular saldo en pendientes)
+            quotaTotalAmount: financing?.quotaAmount || p.amount,
           };
         })}
+        partialPaymentCredit={financing?.partialPaymentCredit || 0}
+        quotaAmount={financing?.quotaAmount || 0}
+        paymentFrequency={financing?.paymentFrequency || "semanal"}
         title="Historial de Pagos"
         isLoading={isLoadingPayments}
         isTestModeEnabled={isTestModeEnabled}

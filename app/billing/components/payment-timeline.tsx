@@ -12,6 +12,8 @@ import {
   FileText,
   ChevronRight,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   Filter,
   X,
   Play,
@@ -33,6 +35,14 @@ import {
   SelectValue 
 } from "@/components_shadcn/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components_shadcn/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components_shadcn/ui/dialog";
 import { typography, spacing, components } from "@/lib/design-system";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +71,10 @@ export interface PaymentRecord {
   // Info de abonado
   partialQuotaStart?: number; // Primera cuota abonada
   partialQuotaEnd?: number; // Última cuota abonada
+  // Info de saldo para cuotas pendientes (calculado)
+  quotaTotalAmount?: number; // Monto total de la cuota
+  paidAmount?: number; // Monto ya pagado/abonado a esta cuota
+  balanceDue?: number; // Saldo pendiente = quotaTotalAmount - paidAmount
   // Info de cliente para filtrado
   clientId?: string;
   clientDocumentId?: string;
@@ -85,6 +99,10 @@ interface PaymentTimelineProps {
   currentWeek?: number; // Semana de simulación actual
   onWeekChange?: (week: number) => void; // Callback para cambiar de semana
   onDeletePayment?: (payment: PaymentRecord) => void; // Callback para eliminar pago
+  // Props para cálculo de saldos
+  partialPaymentCredit?: number; // Crédito acumulado del financiamiento
+  quotaAmount?: number; // Monto de cada cuota
+  paymentFrequency?: "semanal" | "quincenal" | "mensual"; // Frecuencia de pago
 }
 
 const periodOptions: { value: PeriodFilter; label: string }[] = [
@@ -164,6 +182,9 @@ export function PaymentTimeline({
   currentWeek = 1,
   onWeekChange,
   onDeletePayment,
+  partialPaymentCredit = 0,
+  quotaAmount,
+  paymentFrequency = "semanal",
 }: PaymentTimelineProps) {
   // Estado de filtros
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
@@ -171,6 +192,13 @@ export function PaymentTimeline({
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all");
+  
+  // Estado para expandir/colapsar detalle de abonos
+  const [expandedAbonos, setExpandedAbonos] = useState<Set<string | number>>(new Set());
+  
+  // Estado para modal de detalle de abono
+  const [selectedAbono, setSelectedAbono] = useState<PaymentRecord | null>(null);
+  const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   
   // DEBUG: Log de pagos recibidos
   useEffect(() => {
@@ -190,6 +218,34 @@ export function PaymentTimeline({
   
   // Verificar si debe mostrar controles de simulación
   const showSimulationControls = isTestModeEnabled && userRole === "admin" && financingId;
+  
+  // Función para toggle expandir/colapsar detalle de abono
+  const toggleAbonoDetail = (paymentId: string | number) => {
+    setExpandedAbonos(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(paymentId)) {
+        newSet.delete(paymentId);
+      } else {
+        newSet.add(paymentId);
+      }
+      return newSet;
+    });
+  };
+  
+  // Función para abrir modal de detalle de abono
+  const openAbonoDetail = (payment: PaymentRecord, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedAbono(payment);
+    setIsAbonoModalOpen(true);
+  };
+  
+  // Función para cerrar modal de detalle de abono
+  const closeAbonoDetail = () => {
+    setIsAbonoModalOpen(false);
+    setSelectedAbono(null);
+  };
 
   const formatCurrency = (value: number, currency = "USD"): string => {
     return new Intl.NumberFormat("es-PA", {
@@ -204,6 +260,41 @@ export function PaymentTimeline({
       return format(new Date(dateString), "d MMM yyyy", { locale: es });
     } catch {
       return dateString;
+    }
+  };
+
+  // Calcular fecha hasta la que cubre el abono (próximo vencimiento)
+  const calculateNextDueDate = (
+    startDate: string,
+    quotasCovered: number,
+    frequency: "semanal" | "quincenal" | "mensual"
+  ): string => {
+    try {
+      const baseDate = new Date(startDate);
+      const nextQuota = quotasCovered + 1; // La siguiente cuota no cubierta
+      
+      let daysToAdd = 0;
+      switch (frequency) {
+        case "semanal":
+          daysToAdd = (nextQuota - 1) * 7; // Cada cuota = 7 días
+          break;
+        case "quincenal":
+          daysToAdd = (nextQuota - 1) * 15; // Cada cuota = 15 días
+          break;
+        case "mensual":
+          // Para mensual, usamos addMonths
+          const result = new Date(baseDate);
+          result.setMonth(result.getMonth() + (nextQuota - 1));
+          return format(result, "d MMM yyyy", { locale: es });
+        default:
+          daysToAdd = (nextQuota - 1) * 7;
+      }
+      
+      const resultDate = new Date(baseDate);
+      resultDate.setDate(resultDate.getDate() + daysToAdd);
+      return format(resultDate, "d MMM yyyy", { locale: es });
+    } catch {
+      return "-";
     }
   };
 
@@ -277,15 +368,210 @@ export function PaymentTimeline({
     };
   }, [payments]);
 
+  // DEBUG: Log de props recibidos
+  useEffect(() => {
+    console.log("[PaymentTimeline] Props recibidos:", {
+      partialPaymentCredit,
+      quotaAmount,
+      totalPayments: payments.length,
+      allPayments: payments.map(p => ({ 
+        id: p.id,
+        status: p.status, 
+        quotaNumber: p.quotaNumber, 
+        amount: p.amount,
+        quotaAmountCovered: p.quotaAmountCovered,
+        advanceCredit: p.advanceCredit,
+        remainingQuotaBalance: p.remainingQuotaBalance,
+      })),
+    });
+  }, [partialPaymentCredit, quotaAmount, payments]);
+
+  // Calcular saldos pendientes para cuotas (considerando abonos aplicados y crédito acumulado)
+  const paymentsWithBalance = useMemo(() => {
+    console.log("[paymentsWithBalance] Iniciando cálculo con:", { partialPaymentCredit, quotaAmount });
+    
+    // DEBUG: Mostrar todos los pagos para diagnóstico
+    console.log("[paymentsWithBalance] Todos los pagos:", payments.map(p => ({
+      id: p.id,
+      status: p.status,
+      quotaNumber: p.quotaNumber,
+      amount: p.amount,
+      quotaAmountCovered: p.quotaAmountCovered,
+      advanceCredit: p.advanceCredit,
+      remainingQuotaBalance: p.remainingQuotaBalance,
+    })));
+    
+    // El monto base de cada cuota
+    const baseQuotaAmount = quotaAmount || 0;
+    
+    // Mapa para trackear cuánto se ha pagado de cada cuota
+    const quotaPayments: Record<number, { totalPaid: number; creditApplied: number }> = {};
+    
+    // RECALCULAR crédito desde los pagos (ignorar partialPaymentCredit del backend si es inconsistente)
+    let availableCredit = 0;
+    
+    // PRIMERO: Calcular crédito disponible desde abonos/adelantos
+    // El crédito es: monto total del abono - (número de cuotas cubiertas × monto por cuota)
+    payments.forEach((payment) => {
+      if (payment.status === "abonado" && payment.quotaNumber && baseQuotaAmount > 0) {
+        // CORRECCIÓN: Crédito = abono - (n cuotas × monto cuota)
+        const totalAbono = payment.amount;
+        const quotasCoveredCount = payment.quotasCovered || 1;
+        const totalQuotasAmount = quotasCoveredCount * baseQuotaAmount;
+        const excess = totalAbono - totalQuotasAmount;
+        console.log(`[paymentsWithBalance] Analizando abono: cuota ${payment.quotaNumber}, totalAbono=${totalAbono}, cuotas=${quotasCoveredCount}, totalCuotas=${totalQuotasAmount}, exceso=${excess}`);
+        if (excess > 0) {
+          console.log(`[paymentsWithBalance] Abono genera crédito: ${excess}`);
+          availableCredit += excess;
+        } else {
+          console.log(`[paymentsWithBalance] Abono NO genera crédito: exceso=${excess}`);
+        }
+      }
+    });
+    
+    // Si el cálculo da 0 pero hay partialPaymentCredit del backend, usar el del backend como fallback
+    if (availableCredit === 0 && partialPaymentCredit > 0) {
+      console.log(`[paymentsWithBalance] Usando partialPaymentCredit del backend: ${partialPaymentCredit}`);
+      availableCredit = partialPaymentCredit;
+    }
+    
+    console.log(`[paymentsWithBalance] Crédito recalculado desde pagos: ${availableCredit}`);
+    
+    // SEGUNDO: Procesar todos los pagos para calcular cuánto se pagó de cada cuota
+    payments.forEach((payment) => {
+      if (!payment.quotaNumber) return;
+      
+      const qNum = payment.quotaNumber;
+      
+      if (!quotaPayments[qNum]) {
+        quotaPayments[qNum] = { totalPaid: 0, creditApplied: 0 };
+      }
+      
+      if (payment.status === "pagado") {
+        // Cuota pagada completamente
+        quotaPayments[qNum].totalPaid = baseQuotaAmount;
+      } else if (payment.status === "abonado") {
+        // Abono parcial
+        const amountApplied = payment.quotaAmountCovered || payment.amount;
+        quotaPayments[qNum].totalPaid += Math.min(amountApplied, baseQuotaAmount);
+      } else if (payment.status === "adelanto") {
+        // Adelanto - puede cubrir múltiples cuotas
+        const quotasCovered = payment.quotasCovered || 1;
+        const amountPerQuota = quotasCovered > 1 
+          ? (payment.quotaAmountCovered || payment.amount) / quotasCovered
+          : (payment.quotaAmountCovered || payment.amount);
+        
+        for (let i = 0; i < quotasCovered; i++) {
+          const targetQuota = qNum + i;
+          if (!quotaPayments[targetQuota]) {
+            quotaPayments[targetQuota] = { totalPaid: 0, creditApplied: 0 };
+          }
+          quotaPayments[targetQuota].totalPaid += Math.min(amountPerQuota, baseQuotaAmount);
+        }
+      }
+    });
+    
+    console.log("[paymentsWithBalance] Pagos por cuota:", quotaPayments);
+    
+    // TERCERO: Aplicar crédito disponible a cuotas pendientes en orden
+    const pendingQuotas = [...filteredPayments]
+      .filter(p => p.status === "pendiente" && p.quotaNumber)
+      .sort((a, b) => (a.quotaNumber || 0) - (b.quotaNumber || 0))
+      .map(p => p.quotaNumber!);
+    
+    console.log("[paymentsWithBalance] Cuotas pendientes ordenadas:", pendingQuotas);
+    
+    const creditAppliedToQuota: Record<number, number> = {};
+    let remainingCredit = availableCredit;
+    
+    pendingQuotas.forEach((qNum) => {
+      const alreadyPaid = quotaPayments[qNum]?.totalPaid || 0;
+      const remaining = Math.max(0, baseQuotaAmount - alreadyPaid);
+      
+      // Aplicar crédito disponible a esta cuota
+      const creditToApply = Math.min(remainingCredit, remaining);
+      creditAppliedToQuota[qNum] = creditToApply;
+      remainingCredit -= creditToApply;
+      
+      console.log(`[paymentsWithBalance] Cuota ${qNum}: total=${baseQuotaAmount}, pagado=${alreadyPaid}, crédito aplicado=${creditToApply}, falta=${remaining - creditToApply}`);
+    });
+    
+    // CUARTO: Mapear cada pago con su información de saldo
+    const result = filteredPayments.map((payment) => {
+      const qNum = payment.quotaNumber;
+      const qTotal = baseQuotaAmount || payment.quotaTotalAmount || payment.amount;
+      
+      // Para cuotas pendientes: calcular saldo faltante considerando crédito
+      if (payment.status === "pendiente" && qNum) {
+        const totalPaid = quotaPayments[qNum]?.totalPaid || 0;
+        const creditApplied = creditAppliedToQuota[qNum] || 0;
+        const effectivePaid = totalPaid + creditApplied;
+        const balanceDue = Math.max(0, qTotal - effectivePaid);
+        
+        console.log(`[paymentsWithBalance] Pendiente cuota ${qNum}: total=${qTotal}, pagado=${totalPaid}, crédito=${creditApplied}, falta=${balanceDue}`);
+        
+        return {
+          ...payment,
+          quotaTotalAmount: qTotal,
+          paidAmount: effectivePaid,
+          balanceDue: balanceDue,
+        };
+      }
+      
+      // Para abonos: mostrar información del saldo restante para la siguiente cuota
+      if (payment.status === "abonado" && qNum) {
+        // El abono genera crédito para la siguiente cuota
+        const amountApplied = payment.quotaAmountCovered || payment.amount;
+        const excessCredit = Math.max(0, amountApplied - baseQuotaAmount);
+        
+        // Buscar la siguiente cuota pendiente para mostrar cuánto falta de ella
+        const nextPendingQuota = pendingQuotas.find(q => q > qNum);
+        let nextQuotaBalance = 0;
+        
+        if (nextPendingQuota && excessCredit > 0) {
+          const nextQuotaTotal = baseQuotaAmount;
+          nextQuotaBalance = Math.max(0, nextQuotaTotal - excessCredit);
+          console.log(`[paymentsWithBalance] Abono cuota ${qNum}: monto=${amountApplied}, excedente=${excessCredit}, siguiente cuota ${nextPendingQuota} falta=${nextQuotaBalance}`);
+        } else if (nextPendingQuota) {
+          // Si hay siguiente cuota pero el abono no generó excedente, usar el crédito disponible general
+          const creditForNext = creditAppliedToQuota[nextPendingQuota] || 0;
+          nextQuotaBalance = Math.max(0, baseQuotaAmount - creditForNext);
+          console.log(`[paymentsWithBalance] Abono cuota ${qNum}: sin excedente, siguiente cuota ${nextPendingQuota} falta=${nextQuotaBalance} (crédito aplicado=${creditForNext})`);
+        } else {
+          // Si no hay siguiente cuota pendiente, mostrar saldo de la cuota actual
+          nextQuotaBalance = Math.max(0, baseQuotaAmount - amountApplied);
+        }
+        
+        return {
+          ...payment,
+          quotaTotalAmount: qTotal,
+          paidAmount: amountApplied,
+          balanceDue: nextQuotaBalance,
+        };
+      }
+      
+      return payment;
+    });
+    
+    console.log("[paymentsWithBalance] Resultado final:", result.map(r => ({ 
+      id: r.id, 
+      status: r.status, 
+      quotaNumber: r.quotaNumber, 
+      balanceDue: r.balanceDue 
+    })));
+    
+    return result;
+  }, [payments, filteredPayments, partialPaymentCredit, quotaAmount]);
+
   // Ordenar pagos por fecha de creación (descendente - más reciente primero)
   const sortedPayments = useMemo(() => {
-    return [...filteredPayments].sort((a, b) => {
+    return [...paymentsWithBalance].sort((a, b) => {
       // Usar createdAt si está disponible, de lo contrario usar dueDate como fallback
       const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : new Date(a.dueDate).getTime();
       const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : new Date(b.dueDate).getTime();
       return dateB - dateA; // Orden descendente (más reciente primero)
     });
-  }, [filteredPayments]);
+  }, [paymentsWithBalance]);
 
   const clearFilters = () => {
     setPeriodFilter("all");
@@ -649,7 +935,7 @@ export function PaymentTimeline({
                                   {payment.invoiceNumber}
                                 </span>
                                 {/* Mostrar rango de cuotas en un solo tag */}
-                                {payment.quotasCovered && payment.quotasCovered > 1 && payment.quotaNumber ? (
+                                {payment.quotasCovered !== undefined && payment.quotasCovered > 1 && payment.quotaNumber ? (
                                   <Badge variant="outline" className="text-xs">
                                     Cuotas #{payment.quotaNumber}–#{payment.quotaNumber + payment.quotasCovered - 1}
                                   </Badge>
@@ -669,10 +955,12 @@ export function PaymentTimeline({
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  Vence: {formatDate(payment.dueDate)}
-                                </span>
+                                {payment.status !== "abonado" && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    Vence: {formatDate(payment.dueDate)}
+                                  </span>
+                                )}
                                 {payment.paymentDate && (
                                   <span className="flex items-center gap-1">
                                     <CheckCircle2 className="h-3 w-3 text-green-500" />
@@ -687,11 +975,14 @@ export function PaymentTimeline({
                                 <p className={cn(typography.body.large, "flex items-center gap-1")}>
                                   <DollarSign className="h-4 w-4" />
                                   {formatCurrency(payment.amount, payment.currency)}
+                                  {payment.status === "abonado" && (
+                                    <span className="text-xs text-muted-foreground ml-1">(abono)</span>
+                                  )}
                                 </p>
-                                {payment.lateFeeAmount && payment.lateFeeAmount > 0 && (
+                                {payment.lateFeeAmount !== undefined && payment.lateFeeAmount > 0 && (
                                   <div className="text-xs text-destructive">
                                     <p>+ {formatCurrency(payment.lateFeeAmount, payment.currency)} multa</p>
-                                    {payment.daysLate && payment.daysLate > 0 && (
+                                    {payment.daysLate !== undefined && payment.daysLate > 0 && (
                                       <p className="text-red-600 dark:text-red-400">
                                         {payment.daysLate} día{payment.daysLate > 1 ? 's' : ''} de atraso
                                       </p>
@@ -702,39 +993,94 @@ export function PaymentTimeline({
                                 {/* Info de adelanto */}
                                 {payment.status === "adelanto" && (
                                   <div className="text-xs text-blue-600 dark:text-blue-400">
-                                    {payment.quotasCovered && payment.quotasCovered > 1 ? (
+                                    {payment.quotasCovered !== undefined && payment.quotasCovered > 1 ? (
                                       <p>Adelanto para Cuotas #{payment.quotaNumber}–#{payment.quotaNumber! + payment.quotasCovered - 1}</p>
                                     ) : payment.quotaNumber ? (
                                       <p>Adelanto para Cuota #{payment.quotaNumber}</p>
                                     ) : null}
                                     {/* Falta por pagar: saldo de la cuota a la que se aplica el adelanto */}
-                                    {payment.remainingQuotaBalance !== undefined && payment.remainingQuotaBalance > 0 && (
+                                    {payment.remainingQuotaBalance > 0 && (
                                       <p>Falta por pagar: {formatCurrency(payment.remainingQuotaBalance, payment.currency)}</p>
                                     )}
                                     {/* Crédito disponible: para cuotas futuras (no aplicado aún) */}
-                                    {payment.advanceCredit !== undefined && payment.advanceCredit > 0 && (
+                                    {payment.advanceCredit > 0 && (
                                       <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
                                     )}
                                   </div>
                                 )}
                                 
-                                {/* Info de abonado */}
+                                {/* Info de abonado - Compacto con botón a modal */}
                                 {payment.status === "abonado" && (
                                   <div className="text-xs text-purple-600 dark:text-purple-400">
-                                    {payment.partialQuotaStart && payment.partialQuotaEnd && payment.partialQuotaStart !== payment.partialQuotaEnd ? (
-                                      <p>Abono a Cuotas #{payment.partialQuotaStart}–#{payment.partialQuotaEnd}</p>
-                                    ) : payment.partialQuotaStart ? (
-                                      <p>Abono a Cuota #{payment.partialQuotaStart}</p>
-                                    ) : payment.quotaNumber ? (
-                                      <p>Abono a Cuota #{payment.quotaNumber}</p>
-                                    ) : null}
-                                    {/* Resto por pagar: saldo pendiente de la cuota después del abono */}
-                                    {payment.remainingQuotaBalance !== undefined && payment.remainingQuotaBalance > 0 && (
-                                      <p>Resto por pagar: {formatCurrency(payment.remainingQuotaBalance, payment.currency)}</p>
-                                    )}
-                                    {/* Crédito disponible: si el abono genera crédito para futuras cuotas */}
-                                    {payment.advanceCredit !== undefined && payment.advanceCredit > 0 && (
-                                      <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
+                                    {(() => {
+                                      // CORRECCIÓN: Crédito = abono - (número de cuotas × monto por cuota)
+                                      const quotasCoveredCount = payment.quotasCovered || 1;
+                                      const totalQuotasAmount = quotasCoveredCount * quotaAmount;
+                                      const creditFromAbono = quotaAmount > 0 
+                                        ? Math.max(0, payment.amount - totalQuotasAmount) 
+                                        : 0;
+                                      // Calcular fecha del próximo abono
+                                      const nextDueDate = payment.dueDate 
+                                        ? calculateNextDueDate(payment.dueDate, quotasCoveredCount, paymentFrequency)
+                                        : null;
+                                      
+                                      return (
+                                        <div className="space-y-1">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <span className="font-medium">
+                                                {payment.quotasCovered !== undefined && payment.quotasCovered > 1 
+                                                  ? `${payment.quotasCovered} cuotas (#${payment.quotaNumber}–#${payment.quotaNumber! + payment.quotasCovered - 1})`
+                                                  : `Cuota #${payment.quotaNumber}`
+                                                }
+                                              </span>
+                                              {creditFromAbono > 0 && (
+                                                <>
+                                                  <span className="opacity-50">·</span>
+                                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                                    Crédito: {formatCurrency(creditFromAbono, payment.currency)}
+                                                  </span>
+                                                </>
+                                              )}
+                                            </div>
+                                            <button
+                                              onClick={(e) => openAbonoDetail(payment, e)}
+                                              className="text-xs underline hover:text-purple-800 dark:hover:text-purple-300 transition-colors"
+                                            >
+                                              Ver detalle
+                                            </button>
+                                          </div>
+                                          {/* Fecha del próximo abono */}
+                                          {nextDueDate && (
+                                            <p className="text-green-600 dark:text-green-400 font-medium">
+                                              Próximo abono antes de: {nextDueDate}
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                                
+                                {/* Info de cuota pendiente - mostrar saldo faltante */}
+                                {payment.status === "pendiente" && (
+                                  <div className="text-xs text-yellow-600 dark:text-yellow-400">
+                                    {payment.balanceDue !== undefined && (
+                                      <>
+                                        {payment.paidAmount !== undefined && payment.paidAmount > 0 ? (
+                                          <p>
+                                            <span className="line-through opacity-70">
+                                              {formatCurrency(payment.quotaTotalAmount || payment.amount, payment.currency)}
+                                            </span>
+                                            {" → "}
+                                            <span className="font-semibold">
+                                              Falta: {formatCurrency(payment.balanceDue, payment.currency)}
+                                            </span>
+                                          </p>
+                                        ) : (
+                                          <p>Falta por pagar: {formatCurrency(payment.balanceDue, payment.currency)}</p>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 )}
@@ -803,6 +1149,103 @@ export function PaymentTimeline({
           </>
         )}
       </CardContent>
+      
+      {/* Modal de detalle de abono */}
+      <Dialog open={isAbonoModalOpen} onOpenChange={setIsAbonoModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-purple-600" />
+              Detalle del Abono
+            </DialogTitle>
+            <DialogDescription>
+              {selectedAbono?.invoiceNumber}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedAbono && (
+            <div className="space-y-4 py-4">
+              {/* Resumen del abono */}
+              <div className="bg-purple-50 dark:bg-purple-950/30 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Abono total:</span>
+                  <span className="text-lg font-semibold">
+                    {formatCurrency(selectedAbono.amount, selectedAbono.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Fecha:</span>
+                  <span className="text-sm">{formatDate(selectedAbono.paymentDate || selectedAbono.dueDate)}</span>
+                </div>
+              </div>
+              
+              {/* Desglose por cuotas */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Desglose por cuotas:</h4>
+                
+                {(() => {
+                  const quotasCovered = selectedAbono.quotasCovered || 1;
+                  const startQuota = selectedAbono.quotaNumber || 1;
+                  // CORRECCIÓN: Crédito = abono - (número de cuotas × monto por cuota)
+                  const totalQuotasAmount = quotaAmount * quotasCovered;
+                  const creditFromAbono = quotaAmount > 0 
+                    ? Math.max(0, selectedAbono.amount - totalQuotasAmount) 
+                    : 0;
+                  // Falta por pagar de la siguiente cuota
+                  const nextQuotaBalance = quotaAmount > 0 
+                    ? Math.max(0, quotaAmount - creditFromAbono) 
+                    : 0;
+                  
+                  return (
+                    <div className="space-y-2">
+                      {/* Resumen de cuotas cubiertas */}
+                      <div className="flex justify-between items-center py-2 border-b border-border/50">
+                        <span className="text-sm">
+                          {quotasCovered} cuotas cubiertas 
+                          <span className="text-muted-foreground">
+                            (#{startQuota}–#{startQuota + quotasCovered - 1})
+                          </span>
+                        </span>
+                        <span className="text-sm font-medium">
+                          {formatCurrency(totalQuotasAmount, selectedAbono.currency)}
+                        </span>
+                      </div>
+                      
+                      {/* Crédito generado */}
+                      {creditFromAbono > 0 && (
+                        <div className="flex justify-between items-center py-2 bg-blue-50 dark:bg-blue-950/30 px-3 rounded">
+                          <span className="text-sm text-blue-700 dark:text-blue-400">Crédito generado (sobrante):</span>
+                          <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                            {formatCurrency(creditFromAbono, selectedAbono.currency)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Falta por pagar siguiente cuota */}
+                      {nextQuotaBalance > 0 && (
+                        <div className="flex justify-between items-center py-2 bg-yellow-50 dark:bg-yellow-950/30 px-3 rounded mt-2">
+                          <span className="text-sm text-yellow-700 dark:text-yellow-400">
+                            Falta cuota #{startQuota + quotasCovered}:
+                          </span>
+                          <span className="text-sm font-semibold text-yellow-700 dark:text-yellow-400">
+                            {formatCurrency(nextQuotaBalance, selectedAbono.currency)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button onClick={closeAbonoDetail} variant="outline">
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

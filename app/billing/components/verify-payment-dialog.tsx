@@ -133,6 +133,11 @@ export function VerifyPaymentDialog({
       bgColor: "bg-red-50 dark:bg-red-950/30",
       textColor: "text-red-700 dark:text-red-400",
     },
+    abonado: {
+      label: "Abonado",
+      bgColor: "bg-purple-50 dark:bg-purple-950/30",
+      textColor: "text-purple-700 dark:text-purple-400",
+    },
   };
 
   const status = (payment.status as keyof typeof statusConfig) || "pendiente";
@@ -246,6 +251,36 @@ export function VerifyPaymentDialog({
                     <div className="space-y-0.5">
                       <p className="text-xs text-muted-foreground">Cliente</p>
                       <p className={cn(typography.body.large, "font-medium")}>{payment.clientName}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cuotas restantes por pagar */}
+                {payment.financingTotalQuotas && (
+                  <div className="flex items-start gap-3 col-span-2">
+                    <div className="mt-0.5">
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs text-muted-foreground">Cuotas restantes por pagar</p>
+                      <p className={cn(typography.body.large, "font-medium")}>
+                        {(() => {
+                          const totalQuotas = payment.financingTotalQuotas || 0;
+                          const paidQuotas = payment.financingPaidQuotas || 0;
+                          const quotasCovered = payment.quotasCovered || 0;
+                          const remainingQuotas = Math.max(0, totalQuotas - paidQuotas - quotasCovered);
+                          return (
+                            <span>
+                              {remainingQuotas} de {totalQuotas}
+                              {quotasCovered > 1 && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  (incluye {quotasCovered} cuotas cubiertas por este pago)
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })()}
+                      </p>
                     </div>
                   </div>
                 )}
