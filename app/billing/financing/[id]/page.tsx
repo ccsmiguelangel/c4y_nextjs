@@ -675,10 +675,11 @@ export default function FinancingDetailPage() {
         onDeletePayment={async (payment) => {
           if (!confirm(`¿Eliminar la cuota ${payment.invoiceNumber}?`)) return;
           
+          const totalAntes = payments.length;
           console.log(`[DeletePayment] Eliminando pago:`, {
             id: payment.id,
             invoiceNumber: payment.invoiceNumber,
-            totalPagosAntes: payments.length
+            totalPagosAntes: totalAntes
           });
           
           try {
@@ -692,11 +693,22 @@ export default function FinancingDetailPage() {
               throw new Error("Error al eliminar la cuota");
             }
             
-            console.log(`[DeletePayment] Eliminación exitosa, refrescando datos...`);
-            toast.success("Cuota eliminada correctamente");
-            // Refrescar datos - esto actualizará tanto el financiamiento como los pagos
+            console.log(`[DeletePayment] Eliminación exitosa, esperando 500ms antes de refrescar...`);
+            
+            // SOLUCIÓN TEMPORAL: Delay para dar tiempo a Strapi
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Refrescar datos
             await fetchFinancing();
-            console.log(`[DeletePayment] Refetch completado. Total pagos ahora:`, payments.length);
+            
+            // Verificar si se eliminaron todos (bug de cascade delete)
+            if (payments.length === 0 && totalAntes > 1) {
+              console.error(`[DeletePayment] ALERTA: Se eliminaron todos los pagos! Cascade delete detectado.`);
+              toast.error("Error: Se eliminaron todas las cuotas. Por favor recarga la página.");
+            } else {
+              toast.success("Cuota eliminada correctamente");
+              console.log(`[DeletePayment] OK. Total antes: ${totalAntes}, ahora: ${payments.length}`);
+            }
           } catch (err) {
             console.error(`[DeletePayment] Error:`, err);
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
