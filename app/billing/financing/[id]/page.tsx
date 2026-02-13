@@ -640,7 +640,8 @@ export default function FinancingDetailPage() {
           )}
           
           {/* Aviso si las multas consumieron todo el crédito */}
-          {totalMultas > 0 && creditReal === 0 && financing.partialPaymentCredit > 0 && (
+          {/* Se muestra si hay multas, no hay crédito real, pero hay abonos/adelantos que sin multas generarían crédito */}
+          {totalMultas > 0 && creditReal === 0 && payments.some(p => p.amount > 0 && (p.status === "abonado" || p.status === "adelanto")) && (
             <div className={cn(
               "mt-4 p-3 rounded-lg flex items-center justify-between",
               "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
