@@ -50,6 +50,9 @@ export type PeriodFilter = "all" | "week" | "biweekly" | "month" | "semester" | 
 
 export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
 
+// Tipo extendido para filtros que incluye "multa" (pagos con amount < 0)
+export type PaymentStatusFilter = PaymentStatus | "multa" | "all";
+
 export interface PaymentRecord {
   id: string | number;
   documentId?: string; // documentId de Strapi (para operaciones CRUD)
@@ -169,6 +172,16 @@ const statusConfig: Record<PaymentStatus, {
   },
 };
 
+// Config para multas (pagos con amount < 0)
+const multaConfig = {
+  label: "Multa",
+  icon: AlertCircle,
+  bgColor: "bg-orange-50 dark:bg-orange-950/30",
+  textColor: "text-orange-700 dark:text-orange-400",
+  borderColor: "border-orange-200 dark:border-orange-800",
+  dotColor: "bg-orange-500",
+};
+
 export function PaymentTimeline({
   payments,
   maxHeight = "400px",
@@ -197,7 +210,7 @@ export function PaymentTimeline({
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>("all");
   
   // Estado para expandir/colapsar detalle de abonos
   const [expandedAbonos, setExpandedAbonos] = useState<Set<string | number>>(new Set());
@@ -364,7 +377,12 @@ export function PaymentTimeline({
     
     // Filtrar por status
     if (statusFilter !== "all") {
-      result = result.filter((payment) => payment.status === statusFilter);
+      if (statusFilter === "multa") {
+        // Filtrar pagos con monto negativo (multas/ajustes)
+        result = result.filter((payment) => payment.amount < 0);
+      } else {
+        result = result.filter((payment) => payment.status === statusFilter);
+      }
     }
     
     return result;
@@ -377,6 +395,8 @@ export function PaymentTimeline({
     const advance = payments.filter((p) => p.status === "adelanto");
     const overdue = payments.filter((p) => p.status === "retrasado");
     const partial = payments.filter((p) => p.status === "abonado");
+    // Multas: pagos con monto negativo (independientemente del status)
+    const multas = payments.filter((p) => p.amount < 0);
 
     return {
       total: payments.length,
@@ -385,11 +405,13 @@ export function PaymentTimeline({
       advance: advance.length,
       overdue: overdue.length,
       partial: partial.length,
+      multas: multas.length,
       paidAmount: paid.reduce((sum, p) => sum + p.amount, 0),
       pendingAmount: pending.reduce((sum, p) => sum + p.amount, 0),
       advanceAmount: advance.reduce((sum, p) => sum + p.amount, 0),
       overdueAmount: overdue.reduce((sum, p) => sum + p.amount + (p.lateFeeAmount || 0), 0),
       partialAmount: partial.reduce((sum, p) => sum + p.amount, 0),
+      multasAmount: multas.reduce((sum, p) => sum + p.amount, 0), // Será negativo
       totalCollected: paid.reduce((sum, p) => sum + p.amount, 0) + advance.reduce((sum, p) => sum + p.amount, 0) + partial.reduce((sum, p) => sum + p.amount, 0),
     };
   }, [payments]);
@@ -828,7 +850,7 @@ export function PaymentTimeline({
                 <div className="flex items-center gap-2">
                   {statusFilter !== "all" && (
                     <Badge variant="outline" className="text-xs">
-                      Estado: {statusConfig[statusFilter].label}
+                      Estado: {statusFilter === "multa" ? "Multa" : statusConfig[statusFilter].label}
                     </Badge>
                   )}
                   {periodFilter !== "all" && (
@@ -856,7 +878,7 @@ export function PaymentTimeline({
               </div>
             )}
             
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               <button
                 onClick={() => setStatusFilter(statusFilter === "pagado" ? "all" : "pagado")}
                 className={cn(
@@ -927,6 +949,21 @@ export function PaymentTimeline({
                 </p>
                 <p className={cn("text-xs", statusConfig.retrasado.textColor)}>Retrasados</p>
               </button>
+              {/* Botón de Multas (pagos con amount < 0) */}
+              <button
+                onClick={() => setStatusFilter(statusFilter === "multa" ? "all" : "multa")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  multaConfig.bgColor,
+                  "border-2",
+                  statusFilter === "multa" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : multaConfig.borderColor
+                )}
+              >
+                <p className={cn("text-2xl font-bold", multaConfig.textColor)}>
+                  {summary.multas}
+                </p>
+                <p className={cn("text-xs", multaConfig.textColor)}>Multas</p>
+              </button>
             </div>
             <Separator />
           </>
@@ -958,7 +995,10 @@ export function PaymentTimeline({
 
                 <div className="flex flex-col gap-4">
                   {sortedPayments.map((payment) => {
-                    const config = statusConfig[payment.status];
+                    // Detectar si es una multa (monto negativo)
+                    const isMulta = payment.amount < 0;
+                    // Usar config de multa o el config normal según corresponda
+                    const config = isMulta ? multaConfig : statusConfig[payment.status];
                     const StatusIcon = config.icon;
 
                     return (
@@ -1014,22 +1054,30 @@ export function PaymentTimeline({
                                 ) : null}
                                 <Badge className={cn(
                                   "text-xs",
-                                  // Si es abonado pero la próxima cuota no está generada, mostrar como Adelanto
-                                  (payment.status === "abonado" && !isNextQuotaGenerated)
-                                    ? statusConfig.adelanto.bgColor
-                                    : config.bgColor,
-                                  (payment.status === "abonado" && !isNextQuotaGenerated)
-                                    ? statusConfig.adelanto.textColor
-                                    : config.textColor,
+                                  // Si es multa (amount < 0), usar estilo de multa
+                                  isMulta
+                                    ? multaConfig.bgColor
+                                    : (payment.status === "abonado" && !isNextQuotaGenerated)
+                                      ? statusConfig.adelanto.bgColor
+                                      : config.bgColor,
+                                  isMulta
+                                    ? multaConfig.textColor
+                                    : (payment.status === "abonado" && !isNextQuotaGenerated)
+                                      ? statusConfig.adelanto.textColor
+                                      : config.textColor,
                                   "border",
-                                  (payment.status === "abonado" && !isNextQuotaGenerated)
-                                    ? statusConfig.adelanto.borderColor
-                                    : config.borderColor
+                                  isMulta
+                                    ? multaConfig.borderColor
+                                    : (payment.status === "abonado" && !isNextQuotaGenerated)
+                                      ? statusConfig.adelanto.borderColor
+                                      : config.borderColor
                                 )}>
-                                  {/* Mostrar "Adelanto" si es abonado pero cuota no generada, sino el label normal */}
-                                  {(payment.status === "abonado" && !isNextQuotaGenerated)
-                                    ? statusConfig.adelanto.label
-                                    : config.label}
+                                  {/* Mostrar "Multa" si amount < 0, "Adelanto" si es abonado pero cuota no generada, sino el label normal */}
+                                  {isMulta
+                                    ? "Multa"
+                                    : (payment.status === "abonado" && !isNextQuotaGenerated)
+                                      ? statusConfig.adelanto.label
+                                      : config.label}
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
