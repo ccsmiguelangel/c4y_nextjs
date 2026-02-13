@@ -60,9 +60,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!data.amount || data.amount <= 0) {
+    // Permitir montos negativos para ajustes/devoluciones, pero no 0
+    if (data.amount === undefined || data.amount === null || data.amount === 0) {
       return NextResponse.json(
-        { error: "El monto debe ser mayor a 0." },
+        { error: "El monto es requerido y no puede ser 0." },
         { status: 400 }
       );
     }
