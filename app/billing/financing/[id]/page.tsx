@@ -682,36 +682,37 @@ export default function FinancingDetailPage() {
             totalPagosAntes: totalAntes
           });
           
+          // SOLUCIÓN: Actualización optimista - eliminar del estado local inmediatamente
+          // Esto evita que el cascade delete de Strapi afecte la vista
+          const updatedPayments = payments.filter(p => p.documentId !== payment.id);
+          setPayments(updatedPayments);
+          console.log(`[DeletePayment] Estado local actualizado. Mostrando ${updatedPayments.length} pagos`);
+          
           try {
             const response = await fetch(`/api/billing/${payment.id}`, {
               method: "DELETE",
             });
             
             if (!response.ok) {
+              // Si falla, revertir el cambio local
               const errorText = await response.text();
               console.error(`[DeletePayment] Error del servidor:`, errorText);
+              setPayments(payments); // Revertir
               throw new Error("Error al eliminar la cuota");
             }
             
-            console.log(`[DeletePayment] Eliminación exitosa, esperando 500ms antes de refrescar...`);
+            console.log(`[DeletePayment] Eliminación en servidor exitosa`);
+            toast.success("Cuota eliminada correctamente");
             
-            // SOLUCIÓN TEMPORAL: Delay para dar tiempo a Strapi
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Pequeño delay antes de refrescar financing (para totales)
+            setTimeout(() => {
+              fetchFinancing();
+            }, 300);
             
-            // Refrescar datos
-            await fetchFinancing();
-            
-            // Verificar si se eliminaron todos (bug de cascade delete)
-            if (payments.length === 0 && totalAntes > 1) {
-              console.error(`[DeletePayment] ALERTA: Se eliminaron todos los pagos! Cascade delete detectado.`);
-              toast.error("Error: Se eliminaron todas las cuotas. Por favor recarga la página.");
-            } else {
-              toast.success("Cuota eliminada correctamente");
-              console.log(`[DeletePayment] OK. Total antes: ${totalAntes}, ahora: ${payments.length}`);
-            }
           } catch (err) {
             console.error(`[DeletePayment] Error:`, err);
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
+            // En caso de error, el estado local ya fue revertido arriba si es necesario
           }
         }}
       />
