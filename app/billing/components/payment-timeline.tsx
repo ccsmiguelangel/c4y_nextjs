@@ -103,6 +103,9 @@ interface PaymentTimelineProps {
   partialPaymentCredit?: number; // Crédito acumulado del financiamiento
   quotaAmount?: number; // Monto de cada cuota
   paymentFrequency?: "semanal" | "quincenal" | "mensual"; // Frecuencia de pago
+  // Props para cálculo de cuota actual
+  paidQuotas?: number; // Cuotas pagadas/cubiertas del financiamiento
+  totalQuotas?: number; // Total de cuotas del financiamiento
 }
 
 const periodOptions: { value: PeriodFilter; label: string }[] = [
@@ -185,6 +188,8 @@ export function PaymentTimeline({
   partialPaymentCredit = 0,
   quotaAmount,
   paymentFrequency = "semanal",
+  paidQuotas = 0,
+  totalQuotas = 0,
 }: PaymentTimelineProps) {
   // Estado de filtros
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
@@ -562,6 +567,29 @@ export function PaymentTimeline({
     
     return result;
   }, [payments, filteredPayments, partialPaymentCredit, quotaAmount]);
+
+  // Calcular la próxima cuota por pagar basada en pagos y abonos
+  const nextQuotaToPay = useMemo(() => {
+    // Encontrar la última cuota cubierta entre todos los pagos
+    let maxCoveredQuota = 0;
+    
+    payments.forEach((payment) => {
+      if (payment.status === "pagado" && payment.quotaNumber) {
+        maxCoveredQuota = Math.max(maxCoveredQuota, payment.quotaNumber);
+      } else if ((payment.status === "abonado" || payment.status === "adelanto") && payment.quotaNumber) {
+        // Para abonos y adelantos, calcular el rango cubierto
+        const quotasCovered = payment.quotasCovered || 1;
+        const endQuota = payment.quotaNumber + quotasCovered - 1;
+        maxCoveredQuota = Math.max(maxCoveredQuota, endQuota);
+      }
+    });
+    
+    // La próxima cuota es la última cubierta + 1, o paidQuotas + 1 si no hay cubiertas
+    const baseNextQuota = maxCoveredQuota > 0 ? maxCoveredQuota + 1 : (paidQuotas || 0) + 1;
+    
+    // No exceder el total de cuotas
+    return totalQuotas > 0 ? Math.min(baseNextQuota, totalQuotas) : baseNextQuota;
+  }, [payments, paidQuotas, totalQuotas]);
 
   // Ordenar pagos por fecha de creación (descendente - más reciente primero)
   const sortedPayments = useMemo(() => {
@@ -1050,6 +1078,13 @@ export function PaymentTimeline({
                                               Ver detalle
                                             </button>
                                           </div>
+                                          {/* Próxima cuota por pagar */}
+                                          <p className="text-amber-600 dark:text-amber-400 font-medium">
+                                            Próxima cuota por pagar: <span className="font-bold">#{nextQuotaToPay}</span>
+                                            {totalQuotas > 0 && (
+                                              <span className="text-muted-foreground font-normal"> de {totalQuotas}</span>
+                                            )}
+                                          </p>
                                           {/* Fecha del próximo abono */}
                                           {nextDueDate && (
                                             <p className="text-green-600 dark:text-green-400 font-medium">

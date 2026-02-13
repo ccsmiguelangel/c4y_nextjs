@@ -647,6 +647,8 @@ export default function FinancingDetailPage() {
         partialPaymentCredit={financing?.partialPaymentCredit || 0}
         quotaAmount={financing?.quotaAmount || 0}
         paymentFrequency={financing?.paymentFrequency || "semanal"}
+        paidQuotas={financing?.paidQuotas || 0}
+        totalQuotas={financing?.totalQuotas || 0}
         title="Historial de Pagos"
         isLoading={isLoadingPayments}
         isTestModeEnabled={isTestModeEnabled}
