@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 
-// POST - Simular vencimiento de facturas (modo viernes) - Actualiza las facturas pendientes a retrasadas
+// POST - Simular vencimiento de facturas
+// Modo normal (viernes): marca pendientes como retrasadas + actualiza existentes
+// Modo update-existing (martes): solo actualiza cuotas ya retrasadas
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { simulationDate = new Date().toISOString().split('T')[0] } = body;
+    const { simulationDate = new Date().toISOString().split('T')[0], mode = "normal" } = body;
 
     // Obtener configuración de penalidad
     const configResponse = await fetch(
@@ -21,21 +23,30 @@ export async function POST(request: Request) {
     const penaltyConfig = configs.find((c: { key?: string; value?: string }) => c.key === "billing-penalty-percentage");
     const penaltyPercentage = penaltyConfig?.value ? parseFloat(penaltyConfig.value) : 10;
 
-    // Buscar CUOTAS PENDIENTES (billing-records) con vencimiento anterior o igual a la fecha de simulación
-    const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+    // Modo "update-existing": solo actualizar cuotas ya retrasadas (para Simular Martes)
+    // Modo "normal": marcar pendientes como retrasadas + actualizar existentes (para Simular Viernes)
     
-    const pendingResponse = await fetch(pendingQueryUrl, {
-      headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
-      cache: "no-store",
-    });
+    let pendingInvoices: any[] = [];
+    let existingOverdue: any[] = [];
+    
+    if (mode === "normal") {
+      // Buscar CUOTAS PENDIENTES para marcarlas como retrasadas
+      const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+      
+      const pendingResponse = await fetch(pendingQueryUrl, {
+        headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+        cache: "no-store",
+      });
 
-    if (!pendingResponse.ok) {
-      throw new Error("Error obteniendo cuotas pendientes");
+      if (!pendingResponse.ok) {
+        throw new Error("Error obteniendo cuotas pendientes");
+      }
+
+      const pendingData = await pendingResponse.json();
+      pendingInvoices = pendingData.data || [];
     }
-
-    const pendingData = await pendingResponse.json();
     
-    // Buscar CUOTAS YA RETRASADAS para recalcular multas
+    // Buscar CUOTAS YA RETRASADAS para recalcular multas (siempre, en ambos modos)
     const overdueQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lte]=${simulationDate}&populate=*`;
     
     const overdueResponse = await fetch(overdueQueryUrl, {
@@ -44,12 +55,9 @@ export async function POST(request: Request) {
     });
 
     const overdueData = overdueResponse.ok ? await overdueResponse.json() : { data: [] };
+    existingOverdue = overdueData.data || [];
 
     // Combinar resultados
-    const pendingInvoices = pendingData.data || [];
-    const existingOverdue = overdueData.data || [];
-    
-    // Manejar tanto el formato Strapi 4 como Strapi 5
     let invoices: any[] = [...pendingInvoices, ...existingOverdue];
     if (!Array.isArray(invoices)) {
       invoices = [];
@@ -68,10 +76,19 @@ export async function POST(request: Request) {
 
       const amount = parseFloat(invoiceData.amount) || 0;
       
-      // Calcular días de vencimiento
-      const dueDate = new Date(invoiceData.dueDate + 'T00:00:00');
-      const simDate = new Date(simulationDate + 'T00:00:00');
-      const rawDaysOverdue = Math.ceil((simDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Calcular días de vencimiento (días naturales DESPUÉS del dueDate)
+      // dueDate = jueves, simulationDate = viernes → 1 día de atraso
+      const dueParts = invoiceData.dueDate.split('-').map(Number);
+      const simParts = simulationDate.split('-').map(Number);
+      
+      // Crear fechas en UTC para evitar problemas de timezone
+      const dueDate = Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]);
+      const simDate = Date.UTC(simParts[0], simParts[1] - 1, simParts[2]);
+      
+      // Diferencia en días completos
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const rawDaysOverdue = Math.round((simDate - dueDate) / msPerDay);
+      
       // Mínimo 1 día de retraso si ya está vencida
       const daysOverdue = Math.max(1, rawDaysOverdue);
       
@@ -83,7 +100,14 @@ export async function POST(request: Request) {
 
       const recordId = invoice.documentId || invoiceData.documentId || invoice.id;
 
-      // Actualizar cuota a "retrasado" con penalidad
+      // Determinar si debemos cambiar el status
+      // En modo "normal", marcar pendientes como retrasado
+      // En modo "update-existing", mantener el status existente (ya está retrasado)
+      const newStatus = (mode === "normal" && invoiceData.status === "pendiente") 
+        ? "retrasado" 
+        : invoiceData.status;
+
+      // Actualizar cuota con penalidad (y nuevo status si aplica)
       const updateResponse = await fetch(
         `${STRAPI_BASE_URL}/api/billing-records/${recordId}`,
         {
@@ -94,7 +118,7 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify({
             data: {
-              status: "retrasado",
+              status: newStatus,
               lateFeeAmount: penaltyAmount,
               daysLate: daysOverdue,
             },
@@ -202,9 +226,15 @@ export async function GET(request: Request) {
 
       const amount = parseFloat(invoiceData.amount) || 0;
       
-      const dueDate = new Date(invoiceData.dueDate);
-      const simDate = new Date(simulationDate);
-      const rawDaysOverdue = Math.ceil((simDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Calcular días de vencimiento (días naturales DESPUÉS del dueDate)
+      const dueParts = invoiceData.dueDate.split('-').map(Number);
+      const simParts = simulationDate.split('-').map(Number);
+      
+      const dueDate = Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]);
+      const simDate = Date.UTC(simParts[0], simParts[1] - 1, simParts[2]);
+      
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const rawDaysOverdue = Math.round((simDate - dueDate) / msPerDay);
       const daysOverdue = Math.max(1, rawDaysOverdue);
       
       // Penalidad: 10% por día de retraso (acumulativo)

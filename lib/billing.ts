@@ -291,6 +291,38 @@ export async function fetchBillingRecordsFromStrapi(): Promise<BillingRecordCard
 }
 
 /**
+ * Obtener pagos por financiamiento
+ */
+export async function fetchBillingRecordsByFinancingFromStrapi(financingDocumentId: string): Promise<BillingRecordCard[]> {
+  const query = qs.stringify({
+    filters: {
+      financing: {
+        documentId: {
+          $eq: financingDocumentId,
+        },
+      },
+    },
+    sort: ["dueDate:asc"],
+    pagination: { pageSize: 100 },
+  }, { encodeValuesOnly: true });
+
+  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
+    headers: {
+      Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Error fetching billing records: ${errorText}`);
+  }
+
+  const data = await response.json();
+  return (data.data || []).map(normalizeBillingRecord);
+}
+
+/**
  * Obtener un pago por ID
  */
 export async function fetchBillingRecordByIdFromStrapi(documentId: string): Promise<BillingRecordCard | null> {
@@ -576,7 +608,8 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
           });
 
           // 4. Reorganizar los números de cuota de los pagos restantes
-          await reorganizeQuotaNumbers(record.financingDocumentId);
+          // NOTA: Temporalmente desactivado para debug - puede estar causando problemas
+          // await reorganizeQuotaNumbers(record.financingDocumentId);
         }
       }
     } catch (updateError) {
@@ -591,16 +624,20 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
  */
 async function reorganizeQuotaNumbers(financingDocumentId: string): Promise<void> {
   // Obtener todos los pagos del financiamiento ordenados por fecha de pago
+  // Usar formato de filtro compatible con Strapi 5
   const query = qs.stringify({
     filters: {
       financing: {
-        documentId: {
+        id: {
           $eq: financingDocumentId,
         },
       },
     },
     sort: ["paymentDate:asc", "createdAt:asc"],
     fields: ["documentId", "quotaNumber"],
+    pagination: {
+      pageSize: 100,
+    },
   }, { encodeValuesOnly: true });
 
   const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {

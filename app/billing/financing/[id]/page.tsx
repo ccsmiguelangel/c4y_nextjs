@@ -127,6 +127,19 @@ export default function FinancingDetailPage() {
   const [currentUserRole, setCurrentUserRole] = useState("");
   const [currentWeek, setCurrentWeek] = useState(1); // Semana de simulación actual
 
+  // Fetch billing records directamente (más confiable que populate)
+  const fetchBillingRecords = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/billing?financing=${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setPayments(data.data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching billing records:", err);
+    }
+  }, [id]);
+
   // Fetch financing data
   const fetchFinancing = useCallback(async () => {
     try {
@@ -144,16 +157,14 @@ export default function FinancingDetailPage() {
       const data = await response.json();
       setFinancing(data.data);
       
-      // Also fetch associated payments
-      if (data.data?.payments) {
-        setPayments(data.data.payments);
-      }
+      // Fetch payments directamente para asegurar datos actualizados
+      await fetchBillingRecords();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
     } finally {
       setIsLoading(false);
     }
-  }, [id]);
+  }, [id, fetchBillingRecords]);
 
   // Fetch test mode config
   const fetchTestModeConfig = useCallback(async () => {
@@ -521,42 +532,36 @@ export default function FinancingDetailPage() {
       {/* Payments Timeline */}
       <PaymentTimeline
         payments={(payments || []).map((p): PaymentRecord => {
-          // Calcular fecha de simulación basada en la semana actual (viernes de la semana simulada)
-          const baseDate = new Date();
-          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7 + 4);
-          const simulationDate = baseDate.toISOString().split("T")[0];
+          // Calcular faltante por pagar para adelantos
+          const remainingAmount = p.status === "adelanto" && p.quotaAmountCovered && p.amount
+            ? p.amount - p.quotaAmountCovered
+            : 0;
           
-          // Si es una cuota pendiente y está vencida según la fecha de simulación, calcular días y multa
-          let displayStatus = p.status as "pagado" | "pendiente" | "adelanto" | "retrasado";
-          let displayDaysLate = p.daysLate || 0;
-          let displayLateFeeAmount = p.lateFeeAmount || 0;
-          
-          if (p.status === "pendiente" && p.dueDate && p.dueDate < simulationDate) {
-            // Calcular días de atraso
-            const due = new Date(p.dueDate + 'T00:00:00');
-            const sim = new Date(simulationDate + 'T00:00:00');
-            const rawDaysOverdue = Math.ceil((sim.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-            displayDaysLate = Math.max(1, rawDaysOverdue);
-            
-            // Calcular multa: 10% × monto × días
-            displayLateFeeAmount = parseFloat((p.amount * 0.10 * displayDaysLate).toFixed(2));
-            
-            // Mostrar visualmente como retrasado
-            displayStatus = "retrasado";
-          }
+          // Calcular a qué cuota se está adelantando
+          const advanceForQuota = p.status === "adelanto" && p.quotaNumber && p.quotasCovered
+            ? p.quotaNumber + p.quotasCovered
+            : undefined;
           
           return {
+            // Mostrar datos directamente del backend sin recalcular
+            // Solo los botones Martes/Viernes actualizan el backend
             id: p.id,
             invoiceNumber: p.receiptNumber || "",
             amount: p.amount,
-            status: displayStatus,
+            status: p.status as "pagado" | "pendiente" | "adelanto" | "retrasado",
             dueDate: p.dueDate || new Date().toISOString(),
             paymentDate: p.paymentDate,
             quotaNumber: p.quotaNumber,
-            lateFeeAmount: displayLateFeeAmount,
-            daysLate: displayDaysLate,
+            lateFeeAmount: p.lateFeeAmount,
+            daysLate: p.daysLate,
             currency: p.currency,
             clientName: p.clientName,
+            // Datos de adelanto
+            quotasCovered: p.quotasCovered,
+            quotaAmountCovered: p.quotaAmountCovered,
+            advanceCredit: p.advanceCredit,
+            advanceForQuota,
+            remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
           };
         })}
         title="Historial de Pagos"
@@ -564,11 +569,20 @@ export default function FinancingDetailPage() {
         userRole={currentUserRole}
         financingId={id}
         currentWeek={currentWeek}
+        onWeekChange={(week) => setCurrentWeek(week)}
         onSimulateTuesday={async () => {
-          // Calcular fecha de simulación basada en la semana actual
-          // Martes de la semana simulada: hoy + (semana - 1) × 7 días
-          const baseDate = new Date();
-          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7);
+          // Calcular fecha de simulación: martes de la semana actual
+          // Encontrar el martes de la primera semana basado en startDate
+          const startDate = financing?.startDate ? new Date(financing.startDate) : new Date();
+          const startDay = startDate.getDay(); // 0=dom, 1=lun, 2=mar, 3=mie, 4=jue, 5=vie, 6=sab
+          // Días hasta el próximo martes (si startDate es martes, daysToTuesday = 0)
+          const daysToTuesday = (2 - startDay + 7) % 7;
+          const firstTuesday = new Date(startDate);
+          firstTuesday.setDate(startDate.getDate() + daysToTuesday);
+          
+          // Martes de la semana simulada
+          const baseDate = new Date(firstTuesday);
+          baseDate.setDate(firstTuesday.getDate() + (currentWeek - 1) * 7);
           const simulationDate = baseDate.toISOString().split("T")[0];
           
           const res = await fetch("/api/invoices/simulate-generation", {
@@ -579,16 +593,43 @@ export default function FinancingDetailPage() {
           const data = await res.json();
           if (data.success) {
             toast.success(`Semana ${currentWeek}: Se generaron ${data.generatedCount} cuotas pendientes`);
+            
+            // Después de generar, actualizar días de atraso de cuotas retrasadas anteriores
+            // usando el martes de esta semana como fecha de referencia
+            const startDate = financing?.startDate ? new Date(financing.startDate) : new Date();
+            const startDay = startDate.getDay();
+            const daysToTuesday = (2 - startDay + 7) % 7;
+            const firstTuesday = new Date(startDate);
+            firstTuesday.setDate(startDate.getDate() + daysToTuesday);
+            
+            const tuesdayDate = new Date(firstTuesday);
+            tuesdayDate.setDate(firstTuesday.getDate() + (currentWeek - 1) * 7);
+            const updateDate = tuesdayDate.toISOString().split("T")[0];
+            
+            // Llamar a simulate-overdue para recalcular días de cuotas ya retrasadas
+            await fetch("/api/invoices/simulate-overdue", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ simulationDate: updateDate, mode: "update-existing" }),
+            });
+            
             fetchFinancing();
           } else {
             toast.error(data.error || "Error al generar cuotas");
           }
         }}
         onSimulateFriday={async () => {
-          // Calcular fecha de simulación basada en la semana actual
-          // Viernes de la semana simulada: hoy + (semana - 1) × 7 días + 4 días
-          const baseDate = new Date();
-          baseDate.setDate(baseDate.getDate() + (currentWeek - 1) * 7 + 4);
+          // Calcular fecha de simulación: viernes de la semana actual
+          // Encontrar el martes de la primera semana basado en startDate
+          const startDate = financing?.startDate ? new Date(financing.startDate) : new Date();
+          const startDay = startDate.getDay();
+          const daysToTuesday = (2 - startDay + 7) % 7;
+          const firstTuesday = new Date(startDate);
+          firstTuesday.setDate(startDate.getDate() + daysToTuesday);
+          
+          // Viernes de la semana simulada (martes + 3 días)
+          const baseDate = new Date(firstTuesday);
+          baseDate.setDate(firstTuesday.getDate() + (currentWeek - 1) * 7 + 3);
           const simulationDate = baseDate.toISOString().split("T")[0];
           
           const res = await fetch("/api/invoices/simulate-overdue", {
@@ -603,8 +644,7 @@ export default function FinancingDetailPage() {
             } else {
               toast.warning(`Semana ${currentWeek}: ${data.overdueCount} cuotas marcadas como retrasadas. Penalidad total: $${data.totalPenaltyAmount?.toFixed(2) || 0}`);
             }
-            // Avanzar a la siguiente semana después de simular viernes
-            setCurrentWeek(prev => prev + 1);
+            // Quedarse en la misma semana para ver el resultado del viernes
             fetchFinancing();
           } else {
             toast.error(data.error || "Error al actualizar cuotas");
@@ -617,6 +657,24 @@ export default function FinancingDetailPage() {
           const record = payments.find(p => p.id === payment.id);
           if (record) {
             router.push(`/billing/details/${record.documentId}`);
+          }
+        }}
+        onDeletePayment={async (payment) => {
+          if (!confirm(`¿Eliminar la cuota ${payment.invoiceNumber}?`)) return;
+          
+          try {
+            const response = await fetch(`/api/billing/${payment.id}`, {
+              method: "DELETE",
+            });
+            
+            if (!response.ok) {
+              throw new Error("Error al eliminar la cuota");
+            }
+            
+            toast.success("Cuota eliminada correctamente");
+            fetchFinancing(); // Refrescar datos
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Error al eliminar");
           }
         }}
       />

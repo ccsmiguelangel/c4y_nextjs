@@ -11,10 +11,12 @@ import {
   DollarSign,
   FileText,
   ChevronRight,
+  ChevronLeft,
   Filter,
   X,
   Play,
-  Loader2
+  Loader2,
+  Trash2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Badge } from "@/components_shadcn/ui/badge";
@@ -49,6 +51,12 @@ export interface PaymentRecord {
   lateFeeAmount?: number;
   daysLate?: number;
   currency?: string;
+  // Info de adelanto
+  quotasCovered?: number;
+  quotaAmountCovered?: number;
+  advanceCredit?: number;
+  advanceForQuota?: number; // Cuota a la que se aplica el adelanto
+  remainingAmount?: number; // Faltante por pagar
   // Info de cliente para filtrado
   clientId?: string;
   clientDocumentId?: string;
@@ -70,6 +78,8 @@ interface PaymentTimelineProps {
   onSimulateFriday?: () => Promise<void>;
   financingId?: string;
   currentWeek?: number; // Semana de simulación actual
+  onWeekChange?: (week: number) => void; // Callback para cambiar de semana
+  onDeletePayment?: (payment: PaymentRecord) => void; // Callback para eliminar pago
 }
 
 const periodOptions: { value: PeriodFilter; label: string }[] = [
@@ -138,12 +148,15 @@ export function PaymentTimeline({
   onSimulateFriday,
   financingId,
   currentWeek = 1,
+  onWeekChange,
+  onDeletePayment,
 }: PaymentTimelineProps) {
   // Estado de filtros
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all");
   
   // Estado de simulación
   const [isSimulatingTuesday, setIsSimulatingTuesday] = useState(false);
@@ -193,19 +206,26 @@ export function PaymentTimeline({
     }
   };
 
-  // Filtrar pagos según el período seleccionado
+  // Filtrar pagos según período y status seleccionados
   const filteredPayments = useMemo(() => {
-    const dateRange = getDateRange(periodFilter);
+    let result = payments;
     
-    if (!dateRange) {
-      return payments;
+    // Filtrar por período
+    const dateRange = getDateRange(periodFilter);
+    if (dateRange) {
+      result = result.filter((payment) => {
+        const paymentDate = new Date(payment.paymentDate || payment.dueDate);
+        return isWithinInterval(paymentDate, { start: dateRange.start, end: dateRange.end });
+      });
     }
-
-    return payments.filter((payment) => {
-      const paymentDate = new Date(payment.paymentDate || payment.dueDate);
-      return isWithinInterval(paymentDate, { start: dateRange.start, end: dateRange.end });
-    });
-  }, [payments, periodFilter, startDate, endDate]);
+    
+    // Filtrar por status
+    if (statusFilter !== "all") {
+      result = result.filter((payment) => payment.status === statusFilter);
+    }
+    
+    return result;
+  }, [payments, periodFilter, startDate, endDate, statusFilter]);
 
   const summary = useMemo(() => {
     const paid = filteredPayments.filter((p) => p.status === "pagado");
@@ -277,7 +297,26 @@ export function PaymentTimeline({
             <div className="flex items-center gap-2 mr-2 p-2 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
               <div className="flex flex-col items-center px-2 border-r border-purple-200 dark:border-purple-700">
                 <span className="text-[10px] uppercase tracking-wider text-purple-600 dark:text-purple-400 font-semibold">Semana</span>
-                <span className="text-sm font-bold text-purple-700 dark:text-purple-300">{currentWeek}</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
+                    onClick={() => onWeekChange?.(Math.max(1, currentWeek - 1))}
+                    disabled={currentWeek <= 1}
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                  </Button>
+                  <span className="text-sm font-bold text-purple-700 dark:text-purple-300 min-w-[1.5rem] text-center">{currentWeek}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 text-purple-600 hover:text-purple-800 hover:bg-purple-100"
+                    onClick={() => onWeekChange?.(currentWeek + 1)}
+                  >
+                    <ChevronRight className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
               <span className="text-xs text-purple-700 dark:text-purple-400 font-medium">Simular:</span>
               <Button
@@ -402,54 +441,83 @@ export function PaymentTimeline({
           </div>
         )}
 
-        {/* Summary */}
+        {/* Summary con filtros */}
         {showSummary && (
           <>
+            {/* Filtro activo */}
+            {statusFilter !== "all" && (
+              <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2 mb-3">
+                <span className="text-xs text-muted-foreground">
+                  Filtrando: <strong className="text-foreground">{statusConfig[statusFilter].label}</strong>
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 text-xs"
+                  onClick={() => setStatusFilter("all")}
+                >
+                  Ver todos
+                </Button>
+              </div>
+            )}
+            
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className={cn(
-                "rounded-lg p-3 text-center",
-                statusConfig.pagado.bgColor,
-                "border",
-                statusConfig.pagado.borderColor
-              )}>
+              <button
+                onClick={() => setStatusFilter("pagado")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  statusConfig.pagado.bgColor,
+                  "border-2",
+                  statusFilter === "pagado" ? "border-gray-800" : statusConfig.pagado.borderColor
+                )}
+              >
                 <p className={cn("text-2xl font-bold", statusConfig.pagado.textColor)}>
                   {summary.paid}
                 </p>
                 <p className={cn("text-xs", statusConfig.pagado.textColor)}>Pagados</p>
-              </div>
-              <div className={cn(
-                "rounded-lg p-3 text-center",
-                statusConfig.pendiente.bgColor,
-                "border",
-                statusConfig.pendiente.borderColor
-              )}>
+              </button>
+              <button
+                onClick={() => setStatusFilter("pendiente")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  statusConfig.pendiente.bgColor,
+                  "border-2",
+                  statusFilter === "pendiente" ? "border-gray-800" : statusConfig.pendiente.borderColor
+                )}
+              >
                 <p className={cn("text-2xl font-bold", statusConfig.pendiente.textColor)}>
                   {summary.pending}
                 </p>
                 <p className={cn("text-xs", statusConfig.pendiente.textColor)}>Pendientes</p>
-              </div>
-              <div className={cn(
-                "rounded-lg p-3 text-center",
-                statusConfig.adelanto.bgColor,
-                "border",
-                statusConfig.adelanto.borderColor
-              )}>
+              </button>
+              <button
+                onClick={() => setStatusFilter("adelanto")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  statusConfig.adelanto.bgColor,
+                  "border-2",
+                  statusFilter === "adelanto" ? "border-gray-800" : statusConfig.adelanto.borderColor
+                )}
+              >
                 <p className={cn("text-2xl font-bold", statusConfig.adelanto.textColor)}>
                   {summary.advance}
                 </p>
                 <p className={cn("text-xs", statusConfig.adelanto.textColor)}>Adelantos</p>
-              </div>
-              <div className={cn(
-                "rounded-lg p-3 text-center",
-                statusConfig.retrasado.bgColor,
-                "border",
-                statusConfig.retrasado.borderColor
-              )}>
+              </button>
+              <button
+                onClick={() => setStatusFilter("retrasado")}
+                className={cn(
+                  "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
+                  statusConfig.retrasado.bgColor,
+                  "border-2",
+                  statusFilter === "retrasado" ? "border-gray-800" : statusConfig.retrasado.borderColor
+                )}
+              >
                 <p className={cn("text-2xl font-bold", statusConfig.retrasado.textColor)}>
                   {summary.overdue}
                 </p>
                 <p className={cn("text-xs", statusConfig.retrasado.textColor)}>Retrasados</p>
-              </div>
+              </button>
             </div>
             <Separator />
           </>
@@ -556,7 +624,36 @@ export function PaymentTimeline({
                                     )}
                                   </div>
                                 )}
+                                
+                                {/* Info de adelanto */}
+                                {payment.status === "adelanto" && (
+                                  <div className="text-xs text-blue-600 dark:text-blue-400">
+                                    {payment.advanceForQuota && (
+                                      <p>Adelanto para Cuota #{payment.advanceForQuota}</p>
+                                    )}
+                                    {payment.remainingAmount && payment.remainingAmount > 0 && (
+                                      <p>Falta por pagar: {formatCurrency(payment.remainingAmount, payment.currency)}</p>
+                                    )}
+                                    {payment.advanceCredit && payment.advanceCredit > 0 && (
+                                      <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
+                                    )}
+                                  </div>
+                                )}
                               </div>
+                              {/* Botón eliminar */}
+                              {onDeletePayment && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDeletePayment(payment);
+                                  }}
+                                  className="p-1 hover:bg-red-100 rounded-full text-red-500 transition-colors"
+                                  title="Eliminar cuota"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              )}
+                              
                               {onPaymentClick && (
                                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
                               )}
