@@ -5,7 +5,7 @@ import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { simulationDate = new Date().toISOString().split('T')[0] } = body;
+    const { simulationDate = new Date().toISOString().split('T')[0], currentWeek = 1 } = body;
 
     // Obtener financiamientos activos con pagos (billing-records)
     const financingResponse = await fetch(
@@ -62,58 +62,59 @@ export async function POST(request: Request) {
       const allRecords = allRecordsData.data || [];
       
       // Calcular cuántas cuotas están cubiertas por pagos/abonos/adelantos
-      let maxCoveredQuota = 0;
       const coveredQuotas = new Set<number>();
       
       for (const record of allRecords) {
         if (record.status === "pagado" && record.quotaNumber) {
           // Cuota pagada individual
           coveredQuotas.add(record.quotaNumber);
-          maxCoveredQuota = Math.max(maxCoveredQuota, record.quotaNumber);
         } else if ((record.status === "abonado" || record.status === "adelanto") && record.quotaNumber) {
           // Abono/adelanto cubre múltiples cuotas
           const quotasCovered = record.quotasCovered || 1;
           for (let i = 0; i < quotasCovered; i++) {
             coveredQuotas.add(record.quotaNumber + i);
           }
-          maxCoveredQuota = Math.max(maxCoveredQuota, record.quotaNumber + quotasCovered - 1);
         }
       }
       
-      // Encontrar la primera cuota NO cubierta
-      let nextQuotaNumber = 1;
-      while (coveredQuotas.has(nextQuotaNumber) && nextQuotaNumber <= (financing.totalQuotas || 999)) {
-        nextQuotaNumber++;
+      // La cuota a generar corresponde a la semana actual de simulación
+      const quotaNumberToGenerate = currentWeek;
+      
+      // Verificar que no exceda el total de cuotas del financiamiento
+      if (quotaNumberToGenerate > (financing.totalQuotas || 999)) {
+        continue; // Ya se generaron todas las cuotas
       }
       
-      // Verificar que no exceda el total de cuotas
-      if (nextQuotaNumber > (financing.totalQuotas || 999)) {
-        continue; // Todas las cuotas están cubiertas
-      }
-      
-      // Verificar que no se salte cuotas (si hay huecos, seguir la secuencia)
-      const maxExistingQuota = allRecords.reduce((max: number, r: { quotaNumber?: number }) => 
-        Math.max(max, r.quotaNumber || 0), 0);
-      
-      // La cuota a generar debe ser la siguiente a la última existente O la primera no cubierta,
-      // lo que sea MAYOR (para no generar cuotas "atrasadas" que ya deberían existir)
-      const effectiveNextQuota = Math.max(nextQuotaNumber, maxExistingQuota + 1);
-      
-      // Si la cuota efectiva ya está cubierta, saltar este financiamiento
-      if (coveredQuotas.has(effectiveNextQuota)) {
+      // Si la cuota de esta semana ya está cubierta por abono/adelanto, no generar nada
+      if (coveredQuotas.has(quotaNumberToGenerate)) {
+        console.log(`[SimulateGeneration] Cuota #${quotaNumberToGenerate} ya cubierta para financing ${financing.id}, no se genera`);
         continue;
       }
+      
+      // Verificar si ya existe un billing-record para esta cuota específica
+      const existingQuotaResponse = await fetch(
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&filters[quotaNumber][$eq]=${quotaNumberToGenerate}`,
+        {
+          headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+          cache: "no-store",
+        }
+      );
+      
+      const existingQuotaData = await existingQuotaResponse.json();
+      if (existingQuotaData.data && existingQuotaData.data.length > 0) {
+        continue; // Ya existe un registro para esta cuota
+      }
 
-      // Crear el pago/cuota simulada (billing-record)
+      // Crear el pago/cuota simulada (billing-record) para la semana actual
       const invoicePayload = {
         data: {
           financing: financing.id,
-          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financing.id}-${effectiveNextQuota}`,
+          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financing.id}-${quotaNumberToGenerate}`,
           amount: financing.quotaAmount,
           currency: "USD",
           status: "pendiente",
           dueDate: dueDate,
-          quotaNumber: effectiveNextQuota,
+          quotaNumber: quotaNumberToGenerate,
           lateFeeAmount: 0,
           isSimulated: true,
         },
@@ -139,7 +140,7 @@ export async function POST(request: Request) {
           receiptNumber: invoiceData.data.receiptNumber,
           financingId: financing.id,
           amount: financing.quotaAmount,
-          quotaNumber: effectiveNextQuota,
+          quotaNumber: quotaNumberToGenerate,
         };
         generatedInvoices.push(newInvoice);
         generatedCount++;
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
         // PASO 2: Revisar adelantos que ahora aplican a esta cuota generada
         // y convertirlos a abonados
         // ================================================================
-        await convertAdvanceToPartial(financing.id, effectiveNextQuota, financing.quotaAmount);
+        await convertAdvanceToPartial(financing.id, quotaNumberToGenerate, financing.quotaAmount);
       }
     }
     

@@ -674,7 +674,7 @@ export default function FinancingDetailPage() {
           const res = await fetch("/api/invoices/simulate-generation", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ simulationDate }),
+            body: JSON.stringify({ simulationDate, currentWeek }),
           });
           const data = await res.json();
           if (data.success) {
