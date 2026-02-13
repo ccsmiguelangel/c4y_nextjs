@@ -1,45 +1,65 @@
 import { NextResponse } from "next/server";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 
-// Función auxiliar: Verifica si una cuota está cubierta por abono/adelanto
-async function isQuotaCoveredByAdvance(financingId: number, quotaNumber: number): Promise<boolean> {
+// Función auxiliar: Calcula el mapa de cuotas cubiertas por financing
+async function getCoveredQuotasMap(financingIds: number[]): Promise<Map<number, Set<number>>> {
+  const coveredMap = new Map<number, Set<number>>();
+  
+  if (financingIds.length === 0) return coveredMap;
+  
   try {
-    // Obtener todos los billing-records del financing
+    // Obtener todos los billing-records de los financiamientos en una sola query
+    const idsFilter = financingIds.join(',');
     const response = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financingId}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&pagination[limit]=100`,
+      `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$in]=${idsFilter}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&fields[3]=financing&pagination[limit]=1000`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
       }
     );
     
-    if (!response.ok) return false;
+    if (!response.ok) {
+      console.error('[getCoveredQuotasMap] Error fetching records:', await response.text());
+      return coveredMap;
+    }
     
     const data = await response.json();
     const records = data.data || [];
     
-    // Calcular cuotas cubiertas
     for (const record of records) {
-      if (record.status === "pagado" && record.quotaNumber === quotaNumber) {
+      const financingId = record.financing?.id || record.financing;
+      if (!financingId) continue;
+      
+      if (!coveredMap.has(financingId)) {
+        coveredMap.set(financingId, new Set<number>());
+      }
+      
+      const coveredSet = coveredMap.get(financingId)!;
+      
+      if (record.status === "pagado" && record.quotaNumber) {
         // Cuota pagada individualmente
-        return true;
+        coveredSet.add(record.quotaNumber);
       } else if ((record.status === "abonado" || record.status === "adelanto") && record.quotaNumber) {
         // Abono/adelanto cubre un rango de cuotas
         const quotasCovered = record.quotasCovered || 1;
-        const startQuota = record.quotaNumber;
-        const endQuota = startQuota + quotasCovered - 1;
-        
-        if (quotaNumber >= startQuota && quotaNumber <= endQuota) {
-          return true; // La cuota está dentro del rango cubierto
+        for (let i = 0; i < quotasCovered; i++) {
+          coveredSet.add(record.quotaNumber + i);
         }
       }
     }
     
-    return false;
+    return coveredMap;
   } catch (error) {
-    console.error(`[isQuotaCoveredByAdvance] Error verificando cuota ${quotaNumber}:`, error);
-    return false;
+    console.error('[getCoveredQuotasMap] Error:', error);
+    return coveredMap;
   }
+}
+
+// Función auxiliar: Verifica si una cuota está cubierta
+function isQuotaCovered(coveredMap: Map<number, Set<number>>, financingId: number, quotaNumber: number): boolean {
+  const coveredSet = coveredMap.get(financingId);
+  if (!coveredSet) return false;
+  return coveredSet.has(quotaNumber);
 }
 
 // POST - Simular vencimiento de facturas
@@ -104,6 +124,22 @@ export async function POST(request: Request) {
       invoices = [];
     }
 
+    // Obtener todos los financingIds únicos para calcular cuotas cubiertas de una vez
+    const financingIds = new Set<number>();
+    for (const invoice of invoices) {
+      const invoiceData = invoice.attributes || invoice;
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id || invoiceData.financing;
+      if (financingId && typeof financingId === 'number') {
+        financingIds.add(financingId);
+      }
+    }
+    
+    // Calcular mapa de cuotas cubiertas por financing (una sola llamada)
+    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingIds));
+    console.log(`[SimulateOverdue] Cuotas cubiertas por financing:`, 
+      Array.from(coveredQuotasMap.entries()).map(([id, set]) => `F${id}: [${Array.from(set).join(',')}]`)
+    );
+
     const updatedInvoices = [];
     let totalPenaltyAmount = 0;
 
@@ -116,12 +152,12 @@ export async function POST(request: Request) {
       }
       
       // Obtener el financingId asociado al record
-      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id;
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id || invoiceData.financing;
       const quotaNumber = invoiceData.quotaNumber;
       
       // Si hay financing y quotaNumber, verificar si está cubierta por abono
-      if (financingId && quotaNumber) {
-        const isCovered = await isQuotaCoveredByAdvance(financingId, quotaNumber);
+      if (financingId && quotaNumber && typeof financingId === 'number') {
+        const isCovered = isQuotaCovered(coveredQuotasMap, financingId, quotaNumber);
         if (isCovered) {
           console.log(`[SimulateOverdue] Cuota #${quotaNumber} de financing ${financingId} está cubierta por abono, no se marca como retrasada`);
           continue; // No marcar como retrasado si está cubierta
@@ -267,6 +303,19 @@ export async function GET(request: Request) {
     // Combinar resultados
     const invoices = [...(pendingData.data || []), ...(overdueData.data || [])];
 
+    // Obtener todos los financingIds únicos
+    const financingIds = new Set<number>();
+    for (const invoice of invoices) {
+      const invoiceData = invoice.attributes || invoice;
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id || invoiceData.financing;
+      if (financingId && typeof financingId === 'number') {
+        financingIds.add(financingId);
+      }
+    }
+    
+    // Calcular mapa de cuotas cubiertas por financing
+    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingIds));
+
     const overdueInvoices = [];
     let totalPenaltyAmount = 0;
 
@@ -279,12 +328,12 @@ export async function GET(request: Request) {
       }
       
       // Obtener el financingId y quotaNumber
-      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id;
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id || invoiceData.financing;
       const quotaNumber = invoiceData.quotaNumber;
       
       // Si hay financing y quotaNumber, verificar si está cubierta por abono
-      if (financingId && quotaNumber) {
-        const isCovered = await isQuotaCoveredByAdvance(financingId, quotaNumber);
+      if (financingId && quotaNumber && typeof financingId === 'number') {
+        const isCovered = isQuotaCovered(coveredQuotasMap, financingId, quotaNumber);
         if (isCovered) {
           continue; // No incluir en consulta si está cubierta
         }

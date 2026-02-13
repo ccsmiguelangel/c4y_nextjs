@@ -591,6 +591,16 @@ export function PaymentTimeline({
     return totalQuotas > 0 ? Math.min(baseNextQuota, totalQuotas) : baseNextQuota;
   }, [payments, paidQuotas, totalQuotas]);
 
+  // Verificar si la próxima cuota por pagar ya tiene un billing-record generado
+  const isNextQuotaGenerated = useMemo(() => {
+    if (nextQuotaToPay <= 0) return false;
+    // Buscar si existe un billing-record con quotaNumber = nextQuotaToPay y status pendiente/retrasado
+    return payments.some(p => 
+      p.quotaNumber === nextQuotaToPay && 
+      (p.status === "pendiente" || p.status === "retrasado")
+    );
+  }, [payments, nextQuotaToPay]);
+
   // Ordenar pagos por fecha de creación (descendente - más reciente primero)
   const sortedPayments = useMemo(() => {
     return [...paymentsWithBalance].sort((a, b) => {
@@ -974,16 +984,27 @@ export function PaymentTimeline({
                                 ) : null}
                                 <Badge className={cn(
                                   "text-xs",
-                                  config.bgColor,
-                                  config.textColor,
+                                  // Si es abonado pero la próxima cuota no está generada, mostrar como Adelanto
+                                  (payment.status === "abonado" && !isNextQuotaGenerated)
+                                    ? statusConfig.adelanto.bgColor
+                                    : config.bgColor,
+                                  (payment.status === "abonado" && !isNextQuotaGenerated)
+                                    ? statusConfig.adelanto.textColor
+                                    : config.textColor,
                                   "border",
-                                  config.borderColor
+                                  (payment.status === "abonado" && !isNextQuotaGenerated)
+                                    ? statusConfig.adelanto.borderColor
+                                    : config.borderColor
                                 )}>
-                                  {config.label}
+                                  {/* Mostrar "Adelanto" si es abonado pero cuota no generada, sino el label normal */}
+                                  {(payment.status === "abonado" && !isNextQuotaGenerated)
+                                    ? statusConfig.adelanto.label
+                                    : config.label}
                                 </Badge>
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                                {payment.status !== "abonado" && (
+                                {/* Ocultar fecha de vencimiento para abonos y adelantos */}
+                                {payment.status !== "abonado" && payment.status !== "adelanto" && (
                                   <span className="flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />
                                     Vence: {formatDate(payment.dueDate)}
@@ -1004,7 +1025,9 @@ export function PaymentTimeline({
                                   <DollarSign className="h-4 w-4" />
                                   {formatCurrency(payment.amount, payment.currency)}
                                   {payment.status === "abonado" && (
-                                    <span className="text-xs text-muted-foreground ml-1">(abono)</span>
+                                    <span className="text-xs text-muted-foreground ml-1">
+                                      {isNextQuotaGenerated ? "(abono)" : "(adelanto)"}
+                                    </span>
                                   )}
                                 </p>
                                 {payment.lateFeeAmount !== undefined && payment.lateFeeAmount > 0 && (
@@ -1037,9 +1060,14 @@ export function PaymentTimeline({
                                   </div>
                                 )}
                                 
-                                {/* Info de abonado - Compacto con botón a modal */}
-                                {payment.status === "abonado" && (
-                                  <div className="text-xs text-purple-600 dark:text-purple-400">
+                                {/* Info de abonado/adelanto - Compacto con botón a modal */}
+                                {(payment.status === "abonado" || payment.status === "adelanto") && (
+                                  <div className={cn(
+                                    "text-xs",
+                                    isNextQuotaGenerated 
+                                      ? "text-purple-600 dark:text-purple-400"  // Abonado: cuota ya existe
+                                      : "text-blue-600 dark:text-blue-400"       // Adelanto: cuota no existe aún
+                                  )}>
                                     {(() => {
                                       // CORRECCIÓN: Crédito = abono - (número de cuotas × monto por cuota)
                                       const quotasCoveredCount = payment.quotasCovered || 1;
@@ -1051,6 +1079,9 @@ export function PaymentTimeline({
                                       const nextDueDate = payment.dueDate 
                                         ? calculateNextDueDate(payment.dueDate, quotasCoveredCount, paymentFrequency)
                                         : null;
+                                      
+                                      // Determinar si es Adelanto (cuota no generada) o Abonado (cuota existe)
+                                      const isAdelanto = !isNextQuotaGenerated;
                                       
                                       return (
                                         <div className="space-y-1">
@@ -1065,7 +1096,7 @@ export function PaymentTimeline({
                                               {creditFromAbono > 0 && (
                                                 <>
                                                   <span className="opacity-50">·</span>
-                                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                                  <span className={isAdelanto ? "text-blue-600 dark:text-blue-400" : "text-blue-600 dark:text-blue-400 font-semibold"}>
                                                     Crédito: {formatCurrency(creditFromAbono, payment.currency)}
                                                   </span>
                                                 </>
@@ -1079,10 +1110,13 @@ export function PaymentTimeline({
                                             </button>
                                           </div>
                                           {/* Próxima cuota por pagar */}
-                                          <p className="text-amber-600 dark:text-amber-400 font-medium">
+                                          <p className={isAdelanto ? "text-blue-600 dark:text-blue-400 font-medium" : "text-amber-600 dark:text-amber-400 font-medium"}>
                                             Próxima cuota por pagar: <span className="font-bold">#{nextQuotaToPay}</span>
                                             {totalQuotas > 0 && (
                                               <span className="text-muted-foreground font-normal"> de {totalQuotas}</span>
+                                            )}
+                                            {isAdelanto && (
+                                              <span className="ml-1 text-blue-500">(no generada)</span>
                                             )}
                                           </p>
                                           {/* Fecha del próximo abono */}
