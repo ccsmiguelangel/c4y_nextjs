@@ -51,12 +51,13 @@ export interface PaymentRecord {
   lateFeeAmount?: number;
   daysLate?: number;
   currency?: string;
+  createdAt?: string; // Fecha de creación para ordenamiento
   // Info de adelanto/abonado
   quotasCovered?: number;
   quotaAmountCovered?: number;
-  advanceCredit?: number;
+  advanceCredit?: number; // Crédito disponible para cuotas futuras
+  remainingQuotaBalance?: number; // Saldo pendiente de la cuota actual (falta por pagar)
   advanceForQuota?: number; // Cuota a la que se aplica el adelanto
-  remainingAmount?: number; // Faltante por pagar
   // Info de abonado
   partialQuotaStart?: number; // Primera cuota abonada
   partialQuotaEnd?: number; // Última cuota abonada
@@ -276,11 +277,14 @@ export function PaymentTimeline({
     };
   }, [payments]);
 
-  // Ordenar pagos por fecha de vencimiento (más reciente primero)
+  // Ordenar pagos por fecha de creación (ascendente - primeros creados primero)
   const sortedPayments = useMemo(() => {
-    return [...filteredPayments].sort((a, b) => 
-      new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()
-    );
+    return [...filteredPayments].sort((a, b) => {
+      // Usar createdAt si está disponible, de lo contrario usar dueDate como fallback
+      const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : new Date(a.dueDate).getTime();
+      const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : new Date(b.dueDate).getTime();
+      return dateA - dateB; // Orden ascendente (primero creado primero)
+    });
   }, [filteredPayments]);
 
   const clearFilters = () => {
@@ -700,13 +704,15 @@ export function PaymentTimeline({
                                   <div className="text-xs text-blue-600 dark:text-blue-400">
                                     {payment.quotasCovered && payment.quotasCovered > 1 ? (
                                       <p>Adelanto para Cuotas #{payment.quotaNumber}–#{payment.quotaNumber! + payment.quotasCovered - 1}</p>
-                                    ) : payment.advanceForQuota ? (
-                                      <p>Adelanto para Cuota #{payment.advanceForQuota}</p>
+                                    ) : payment.quotaNumber ? (
+                                      <p>Adelanto para Cuota #{payment.quotaNumber}</p>
                                     ) : null}
-                                    {payment.remainingAmount && payment.remainingAmount > 0 && (
-                                      <p>Falta por pagar: {formatCurrency(payment.remainingAmount, payment.currency)}</p>
+                                    {/* Falta por pagar: saldo de la cuota a la que se aplica el adelanto */}
+                                    {payment.remainingQuotaBalance !== undefined && payment.remainingQuotaBalance > 0 && (
+                                      <p>Falta por pagar: {formatCurrency(payment.remainingQuotaBalance, payment.currency)}</p>
                                     )}
-                                    {payment.advanceCredit && payment.advanceCredit > 0 && (
+                                    {/* Crédito disponible: para cuotas futuras (no aplicado aún) */}
+                                    {payment.advanceCredit !== undefined && payment.advanceCredit > 0 && (
                                       <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
                                     )}
                                   </div>
@@ -722,8 +728,13 @@ export function PaymentTimeline({
                                     ) : payment.quotaNumber ? (
                                       <p>Abono a Cuota #{payment.quotaNumber}</p>
                                     ) : null}
-                                    {payment.remainingAmount && payment.remainingAmount > 0 && (
-                                      <p>Resto por pagar: {formatCurrency(payment.remainingAmount, payment.currency)}</p>
+                                    {/* Resto por pagar: saldo pendiente de la cuota después del abono */}
+                                    {payment.remainingQuotaBalance !== undefined && payment.remainingQuotaBalance > 0 && (
+                                      <p>Resto por pagar: {formatCurrency(payment.remainingQuotaBalance, payment.currency)}</p>
+                                    )}
+                                    {/* Crédito disponible: si el abono genera crédito para futuras cuotas */}
+                                    {payment.advanceCredit !== undefined && payment.advanceCredit > 0 && (
+                                      <p>Crédito disponible: {formatCurrency(payment.advanceCredit, payment.currency)}</p>
                                     )}
                                   </div>
                                 )}

@@ -32,6 +32,7 @@ export interface BillingRecordRaw {
   quotasCovered: number;
   quotaAmountCovered?: number;
   advanceCredit: number;
+  remainingQuotaBalance: number; // Saldo pendiente de la cuota actual
   lateFeeAmount: number;
   daysLate: number;
   dueDate: string;
@@ -91,6 +92,7 @@ export interface BillingRecordCard {
   quotasCovered: number;
   quotaAmountCovered?: number;
   advanceCredit: number;
+  remainingQuotaBalance: number; // Saldo pendiente de la cuota actual
   lateFeeAmount: number;
   lateFeeAmountLabel: string;
   daysLate: number;
@@ -197,6 +199,7 @@ const normalizeBillingRecord = (raw: BillingRecordRaw): BillingRecordCard => {
     quotasCovered: raw.quotasCovered || 1,
     quotaAmountCovered: raw.quotaAmountCovered,
     advanceCredit: raw.advanceCredit || 0,
+    remainingQuotaBalance: raw.remainingQuotaBalance || 0,
     lateFeeAmount: raw.lateFeeAmount || 0,
     lateFeeAmountLabel: formatCurrency(raw.lateFeeAmount || 0, { currency }),
     daysLate: raw.daysLate || 0,
@@ -503,11 +506,18 @@ export async function createBillingRecordInStrapi(
     : 0;
 
   // Calcular cuotas cubiertas y crédito usando el crédito parcial acumulado
-  const { quotasCovered, advanceCredit, isPartialPayment } = processPayment(
+  const { quotasCovered, advanceCredit, totalApplied, isPartialPayment } = processPayment(
     payload.amount,
     financing.quotaAmount,
     financing.partialPaymentCredit
   );
+  
+  // Calcular el saldo pendiente de la cuota actual (diferente de advanceCredit)
+  // remainingQuotaBalance: lo que falta por pagar de la cuota actual
+  // advanceCredit: crédito disponible para cuotas futuras
+  const remainingQuotaBalance = isPartialPayment 
+    ? Math.max(0, financing.quotaAmount - totalApplied) // Para pagos parciales: cuota - lo aplicado
+    : (quotasCovered > 0 && advanceCredit > 0 ? 0 : Math.max(0, financing.quotaAmount - totalApplied));
 
   // Determinar estado del pago según reglas de negocio:
   // - Adelanto: cuota de la semana actual pagada + pago para futuro
@@ -546,6 +556,7 @@ export async function createBillingRecordInStrapi(
       ? payload.amount // Para pagos parciales, el monto cubierto es el pago mismo
       : Math.min(payload.amount, financing.quotaAmount * quotasCovered),
     advanceCredit,
+    remainingQuotaBalance,
     lateFeeAmount,
     daysLate,
     dueDate: payload.dueDate,

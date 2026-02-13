@@ -99,14 +99,90 @@ export async function POST(request: Request) {
 
       if (createResponse.ok) {
         const invoiceData = await createResponse.json();
-        generatedInvoices.push({
+        const newInvoice = {
           id: invoiceData.data.id,
           receiptNumber: invoiceData.data.receiptNumber,
           financingId: financing.id,
           amount: financing.quotaAmount,
           quotaNumber: nextQuotaNumber,
-        });
+        };
+        generatedInvoices.push(newInvoice);
         generatedCount++;
+        
+        // ================================================================
+        // PASO 2: Revisar adelantos que ahora aplican a esta cuota generada
+        // y convertirlos a abonados
+        // ================================================================
+        await convertAdvanceToPartial(financing.id, nextQuotaNumber, financing.quotaAmount);
+      }
+    }
+    
+    // Función auxiliar: Convierte adelantos a abonados cuando aplican a cuotas generadas
+    async function convertAdvanceToPartial(
+      financingId: number, 
+      newQuotaNumber: number, 
+      quotaAmount: number
+    ): Promise<void> {
+      try {
+        // Buscar billing-records con status "adelanto" para este financiamiento
+        const advanceResponse = await fetch(
+          `${STRAPI_BASE_URL}/api/billing-records?` + 
+          `filters[financing][id][$eq]=${financingId}&` +
+          `filters[status][$eq]=adelanto&` +
+          `fields[0]=documentId&fields[1]=quotaNumber&fields[2]=quotasCovered&fields[3]=advanceCredit&` +
+          `fields[4]=quotaAmountCovered&fields[5]=remainingQuotaBalance`,
+          {
+            headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+            cache: "no-store",
+          }
+        );
+        
+        if (!advanceResponse.ok) return;
+        
+        const advanceData = await advanceResponse.json();
+        const advanceRecords = advanceData.data || [];
+        
+        for (const record of advanceRecords) {
+          const { documentId, quotaNumber, quotasCovered, advanceCredit, quotaAmountCovered } = record;
+          
+          // Verificar si este adelanto aplica a la cuota recién generada
+          const coversNewQuota = 
+            // Caso 1: El adelanto cubre múltiples cuotas y la nueva cae en el rango
+            (quotasCovered > 1 && quotaNumber && newQuotaNumber >= quotaNumber && newQuotaNumber < quotaNumber + quotasCovered) ||
+            // Caso 2: El adelanto tiene crédito para cuotas futuras
+            (advanceCredit > 0 && quotaNumber && newQuotaNumber > quotaNumber);
+          
+          if (coversNewQuota) {
+            // Calcular el nuevo saldo pendiente
+            const remainingBalance = Math.max(0, quotaAmount - (advanceCredit || 0));
+            
+            // Actualizar el registro a status "abonado"
+            await fetch(
+              `${STRAPI_BASE_URL}/api/billing-records/${documentId}`,
+              {
+                method: "PUT",
+                headers: {
+                  Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  data: {
+                    status: "abonado",
+                    remainingQuotaBalance: remainingBalance,
+                    // Mantener el crédito que sobra para futuras cuotas
+                    advanceCredit: remainingBalance === 0 ? advanceCredit : 0,
+                  },
+                }),
+                cache: "no-store",
+              }
+            );
+            
+            console.log(`[SimulateGeneration] Convertido adelanto ${documentId} a abonado para cuota ${newQuotaNumber}`);
+          }
+        }
+      } catch (error) {
+        console.error("[SimulateGeneration] Error convirtiendo adelantos a abonados:", error);
+        // No lanzamos el error para no bloquear la generación
       }
     }
 
