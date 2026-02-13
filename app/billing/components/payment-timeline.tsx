@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths, subWeeks, isWithinInterval } from "date-fns";
 import { es } from "date-fns/locale";
 import { 
@@ -159,6 +159,17 @@ export function PaymentTimeline({
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<PaymentStatus | "all">("all");
+  
+  // DEBUG: Log de pagos recibidos
+  useEffect(() => {
+    console.log(`[PaymentTimeline] Pagos recibidos: ${payments.length}`, {
+      total: payments.length,
+      pagados: payments.filter(p => p.status === "pagado").length,
+      pendientes: payments.filter(p => p.status === "pendiente").length,
+      adelantos: payments.filter(p => p.status === "adelanto").length,
+      retrasados: payments.filter(p => p.status === "retrasado").length,
+    });
+  }, [payments]);
   
   // Estado de simulación
   const [isSimulatingTuesday, setIsSimulatingTuesday] = useState(false);

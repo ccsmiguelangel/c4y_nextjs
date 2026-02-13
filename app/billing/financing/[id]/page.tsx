@@ -130,11 +130,16 @@ export default function FinancingDetailPage() {
 
   // Fetch billing records directamente (más confiable que populate)
   const fetchBillingRecords = useCallback(async () => {
+    console.log(`[FetchBillingRecords] Iniciando fetch para financing=${id}`);
     setIsLoadingPayments(true);
     try {
       const response = await fetch(`/api/billing?financing=${id}`);
       if (response.ok) {
         const data = await response.json();
+        console.log(`[FetchBillingRecords] Respuesta recibida:`, {
+          count: data.data?.length || 0,
+          ids: data.data?.map((p: BillingRecordCard) => p.documentId)
+        });
         setPayments(data.data || []);
       } else {
         console.error("Error response from billing API:", await response.text());
@@ -539,6 +544,7 @@ export default function FinancingDetailPage() {
 
       {/* Payments Timeline */}
       <PaymentTimeline
+        key={`timeline-${payments.length}-${Date.now()}`}
         payments={(payments || []).map((p): PaymentRecord => {
           // Calcular faltante por pagar para adelantos
           const remainingAmount = p.status === "adelanto" && p.quotaAmountCovered && p.amount
@@ -669,19 +675,30 @@ export default function FinancingDetailPage() {
         onDeletePayment={async (payment) => {
           if (!confirm(`¿Eliminar la cuota ${payment.invoiceNumber}?`)) return;
           
+          console.log(`[DeletePayment] Eliminando pago:`, {
+            id: payment.id,
+            invoiceNumber: payment.invoiceNumber,
+            totalPagosAntes: payments.length
+          });
+          
           try {
             const response = await fetch(`/api/billing/${payment.id}`, {
               method: "DELETE",
             });
             
             if (!response.ok) {
+              const errorText = await response.text();
+              console.error(`[DeletePayment] Error del servidor:`, errorText);
               throw new Error("Error al eliminar la cuota");
             }
             
+            console.log(`[DeletePayment] Eliminación exitosa, refrescando datos...`);
             toast.success("Cuota eliminada correctamente");
             // Refrescar datos - esto actualizará tanto el financiamiento como los pagos
             await fetchFinancing();
+            console.log(`[DeletePayment] Refetch completado. Total pagos ahora:`, payments.length);
           } catch (err) {
+            console.error(`[DeletePayment] Error:`, err);
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
           }
         }}
