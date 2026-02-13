@@ -674,7 +674,7 @@ export default function BillingPage() {
         <TabsContent value="timeline" className="mt-4">
           <PaymentTimeline
             payments={payments.map((p): PaymentRecord => ({
-              id: p.id,
+              id: p.documentId, // Usar documentId para operaciones CRUD
               invoiceNumber: p.receiptNumber || "",
               amount: p.amount,
               status: p.status as "pagado" | "pendiente" | "adelanto" | "retrasado",
@@ -689,10 +689,8 @@ export default function BillingPage() {
             showSummary={true}
             showFilters={true}
             onPaymentClick={(payment) => {
-              const record = payments.find(p => p.id === payment.id);
-              if (record) {
-                router.push(`/billing/details/${record.documentId}`);
-              }
+              // payment.id es el documentId (mapeado arriba)
+              router.push(`/billing/details/${payment.id}`);
             }}
             onDeletePayment={async (payment) => {
               if (!confirm(`¿Eliminar el pago ${payment.invoiceNumber}?`)) return;

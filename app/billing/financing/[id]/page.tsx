@@ -545,7 +545,7 @@ export default function FinancingDetailPage() {
           return {
             // Mostrar datos directamente del backend sin recalcular
             // Solo los botones Martes/Viernes actualizan el backend
-            id: p.id,
+            id: p.documentId, // Usar documentId para operaciones CRUD
             invoiceNumber: p.receiptNumber || "",
             amount: p.amount,
             status: p.status as "pagado" | "pendiente" | "adelanto" | "retrasado",
@@ -654,10 +654,8 @@ export default function FinancingDetailPage() {
         showSummary={true}
         showFilters={true}
         onPaymentClick={(payment) => {
-          const record = payments.find(p => p.id === payment.id);
-          if (record) {
-            router.push(`/billing/details/${record.documentId}`);
-          }
+          // payment.id es el documentId (mapeado arriba)
+          router.push(`/billing/details/${payment.id}`);
         }}
         onDeletePayment={async (payment) => {
           if (!confirm(`¿Eliminar la cuota ${payment.invoiceNumber}?`)) return;
