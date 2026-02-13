@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -346,6 +346,22 @@ export default function FinancingDetailPage() {
     ? (financing.paidQuotas / financing.totalQuotas) * 100 
     : 0;
 
+  // Calcular totales desde los payments (separando pagos de multas)
+  const { totalPaidPositive, totalMultas, creditAfterMultas } = useMemo(() => {
+    const totalPaidPositive = payments
+      .filter(p => p.amount > 0)
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const totalMultas = payments
+      .filter(p => p.amount < 0)
+      .reduce((sum, p) => sum + Math.abs(p.amount), 0);
+    
+    // Crédito efectivo = crédito del financing - multas
+    const creditAfterMultas = Math.max(0, (financing.partialPaymentCredit || 0) - totalMultas);
+    
+    return { totalPaidPositive, totalMultas, creditAfterMultas };
+  }, [payments, financing.partialPaymentCredit]);
+
   // Preselected financing for payment dialog
   const preselectedFinancing = {
     documentId: financing.documentId,
@@ -499,7 +515,7 @@ export default function FinancingDetailPage() {
             <div className="p-3 rounded-lg bg-muted/50">
               <p className="text-xs text-muted-foreground">Total Pagado</p>
               <p className={cn(typography.metric.base, "text-green-600")}>
-                {formatCurrency(financing.totalPaid)}
+                {formatCurrency(totalPaidPositive)}
               </p>
             </div>
             <div className="p-3 rounded-lg bg-muted/50">
@@ -509,6 +525,29 @@ export default function FinancingDetailPage() {
               </p>
             </div>
           </div>
+
+          {/* Multas aplicadas - solo mostrar si hay multas */}
+          {totalMultas > 0 && (
+            <div className={cn(
+              "mt-4 p-3 rounded-lg flex items-center justify-between",
+              "bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800"
+            )}>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                <span className="text-sm text-orange-700 dark:text-orange-400">
+                  Multas Aplicadas
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-sm font-semibold text-orange-700 dark:text-orange-400">
+                  {formatCurrency(totalMultas)}
+                </span>
+                <p className="text-[10px] text-orange-600 dark:text-orange-400">
+                  Aumentan lo pendiente por pagar
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Additional Info */}
           <Separator className="my-4" />
@@ -526,9 +565,9 @@ export default function FinancingDetailPage() {
               <div>
                 <p className="text-xs text-muted-foreground">Próximo Vencimiento</p>
                 <p className="text-sm font-medium text-primary">{calculateRealNextDueDate()}</p>
-                {financing.partialPaymentCredit > 0 && (
+                {(financing.partialPaymentCredit > 0 || totalMultas > 0) && (
                   <p className="text-[10px] text-blue-600 dark:text-blue-400">
-                    (considerando crédito y abonos)
+                    (considerando crédito, abonos{totalMultas > 0 ? " y multas" : ""})
                   </p>
                 )}
               </div>
@@ -560,8 +599,8 @@ export default function FinancingDetailPage() {
             </div>
           )}
 
-          {/* Credit if any */}
-          {financing.partialPaymentCredit > 0 && (
+          {/* Credit if any (después de descontar multas) */}
+          {creditAfterMultas > 0 && (
             <div className={cn(
               "mt-4 p-3 rounded-lg flex items-center justify-between",
               "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
@@ -572,8 +611,33 @@ export default function FinancingDetailPage() {
                   Crédito a Favor
                 </span>
               </div>
-              <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                {formatCurrency(financing.partialPaymentCredit)}
+              <div className="text-right">
+                <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                  {formatCurrency(creditAfterMultas)}
+                </span>
+                {totalMultas > 0 && (
+                  <p className="text-[10px] text-blue-600 dark:text-blue-400">
+                    (después de multas)
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Aviso si las multas consumieron todo el crédito */}
+          {totalMultas > 0 && creditAfterMultas === 0 && financing.partialPaymentCredit > 0 && (
+            <div className={cn(
+              "mt-4 p-3 rounded-lg flex items-center justify-between",
+              "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
+            )}>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-sm text-amber-700 dark:text-amber-400">
+                  Crédito Consumido
+                </span>
+              </div>
+              <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                Las multas han consumido el crédito
               </span>
             </div>
           )}
