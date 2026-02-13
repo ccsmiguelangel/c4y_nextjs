@@ -151,9 +151,14 @@ export async function POST(request: Request) {
 
     const overdueData = overdueResponse.ok ? await overdueResponse.json() : { data: [] };
     existingOverdue = overdueData.data || [];
+    console.log(`[SimulateOverdue] Retrasadas encontradas: ${existingOverdue.length}`);
+    if (existingOverdue.length > 0) {
+      console.log(`[SimulateOverdue] Primera retrasada:`, JSON.stringify(existingOverdue[0], null, 2));
+    }
 
     // Combinar resultados
     let invoices: any[] = [...pendingInvoices, ...existingOverdue];
+    console.log(`[SimulateOverdue] Total invoices a procesar: ${invoices.length}`);
     if (!Array.isArray(invoices)) {
       invoices = [];
     }
