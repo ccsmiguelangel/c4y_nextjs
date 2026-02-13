@@ -8,8 +8,9 @@ export async function POST(request: Request) {
     const { simulationDate = new Date().toISOString().split('T')[0], currentWeek = 1 } = body;
 
     // Obtener financiamientos activos con pagos (billing-records)
+    // fields[0]=documentId para obtener el documentId necesario para relaciones
     const financingResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/financings?filters[status][$eq]=activo&populate[0]=client&populate[1]=vehicle`,
+      `${STRAPI_BASE_URL}/api/financings?filters[status][$eq]=activo&fields[0]=documentId&fields[1]=quotaAmount&fields[2]=totalQuotas&populate[0]=client&populate[1]=vehicle`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
@@ -22,6 +23,13 @@ export async function POST(request: Request) {
 
     const financingData = await financingResponse.json();
     const financings = financingData.data || [];
+    console.log(`[SimulateGeneration] Financiamientos activos: ${financings.length}`);
+    if (financings.length > 0) {
+      console.log(`[SimulateGeneration] Primer financing:`, { 
+        id: financings[0].id, 
+        documentId: financings[0].documentId 
+      });
+    }
 
     // Calcular jueves de la semana de simulación
     const simDate = new Date(simulationDate);
@@ -35,9 +43,12 @@ export async function POST(request: Request) {
     let generatedCount = 0;
 
     for (const financing of financings) {
+      // Usar documentId del financing para las relaciones (Strapi 5)
+      const financingDocumentId = financing.documentId || financing.id;
+      
       // Verificar si ya existe una factura para este financiamiento en esta fecha
       const existingResponse = await fetch(
-        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&filters[dueDate][$eq]=${dueDate}`,
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][documentId][$eq]=${financingDocumentId}&filters[dueDate][$eq]=${dueDate}`,
         {
           headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
           cache: "no-store",
@@ -51,7 +62,7 @@ export async function POST(request: Request) {
 
       // Obtener TODOS los billing-records para calcular cuotas cubiertas
       const allRecordsResponse = await fetch(
-        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&pagination[limit]=100`,
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][documentId][$eq]=${financingDocumentId}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&pagination[limit]=100`,
         {
           headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
           cache: "no-store",
@@ -87,13 +98,13 @@ export async function POST(request: Request) {
       
       // Si la cuota de esta semana ya está cubierta por abono/adelanto, no generar nada
       if (coveredQuotas.has(quotaNumberToGenerate)) {
-        console.log(`[SimulateGeneration] Cuota #${quotaNumberToGenerate} ya cubierta para financing ${financing.id}, no se genera`);
+        console.log(`[SimulateGeneration] Cuota #${quotaNumberToGenerate} ya cubierta para financing ${financingDocumentId}, no se genera`);
         continue;
       }
       
       // Verificar si ya existe un billing-record para esta cuota específica
       const existingQuotaResponse = await fetch(
-        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financing.id}&filters[quotaNumber][$eq]=${quotaNumberToGenerate}`,
+        `${STRAPI_BASE_URL}/api/billing-records?filters[financing][documentId][$eq]=${financingDocumentId}&filters[quotaNumber][$eq]=${quotaNumberToGenerate}`,
         {
           headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
           cache: "no-store",
@@ -106,10 +117,11 @@ export async function POST(request: Request) {
       }
 
       // Crear el pago/cuota simulada (billing-record) para la semana actual
+      // NOTA: Usar financingDocumentId (el documentId de Strapi 5) para la relación
       const invoicePayload = {
         data: {
-          financing: financing.id,
-          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financing.id}-${quotaNumberToGenerate}`,
+          financing: financingDocumentId,
+          receiptNumber: `SIM-${simulationDate.replace(/-/g, '')}-${financingDocumentId}-${quotaNumberToGenerate}`,
           amount: financing.quotaAmount,
           currency: "USD",
           status: "pendiente",
@@ -138,7 +150,7 @@ export async function POST(request: Request) {
         const newInvoice = {
           id: invoiceData.data.id,
           receiptNumber: invoiceData.data.receiptNumber,
-          financingId: financing.id,
+          financingId: financingDocumentId,
           amount: financing.quotaAmount,
           quotaNumber: quotaNumberToGenerate,
         };
@@ -149,21 +161,22 @@ export async function POST(request: Request) {
         // PASO 2: Revisar adelantos que ahora aplican a esta cuota generada
         // y convertirlos a abonados
         // ================================================================
-        await convertAdvanceToPartial(financing.id, quotaNumberToGenerate, financing.quotaAmount);
+        await convertAdvanceToPartial(financingDocumentId, quotaNumberToGenerate, financing.quotaAmount);
       }
     }
     
     // Función auxiliar: Convierte adelantos a abonados cuando aplican a cuotas generadas
     async function convertAdvanceToPartial(
-      financingId: number, 
+      financingDocumentId: string | number, 
       newQuotaNumber: number, 
       quotaAmount: number
     ): Promise<void> {
       try {
         // Buscar billing-records con status "adelanto" para este financiamiento
+        // Usar documentId para la relación en Strapi 5
         const advanceResponse = await fetch(
           `${STRAPI_BASE_URL}/api/billing-records?` + 
-          `filters[financing][id][$eq]=${financingId}&` +
+          `filters[financing][documentId][$eq]=${financingDocumentId}&` +
           `filters[status][$eq]=adelanto&` +
           `fields[0]=documentId&fields[1]=quotaNumber&fields[2]=quotasCovered&fields[3]=advanceCredit&` +
           `fields[4]=quotaAmountCovered&fields[5]=remainingQuotaBalance`,

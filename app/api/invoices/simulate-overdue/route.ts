@@ -2,16 +2,17 @@ import { NextResponse } from "next/server";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 
 // Función auxiliar: Calcula el mapa de cuotas cubiertas por financing
-async function getCoveredQuotasMap(financingIds: number[]): Promise<Map<number, Set<number>>> {
-  const coveredMap = new Map<number, Set<number>>();
+async function getCoveredQuotasMap(financingDocumentIds: string[]): Promise<Map<string, Set<number>>> {
+  const coveredMap = new Map<string, Set<number>>();
   
-  if (financingIds.length === 0) return coveredMap;
+  if (financingDocumentIds.length === 0) return coveredMap;
   
   try {
     // Obtener todos los billing-records de los financiamientos en una sola query
-    const idsFilter = financingIds.join(',');
+    // Usar documentId para Strapi 5
+    const idsFilter = financingDocumentIds.join(',');
     const response = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$in]=${idsFilter}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&fields[3]=financing&pagination[limit]=1000`,
+      `${STRAPI_BASE_URL}/api/billing-records?filters[financing][documentId][$in]=${idsFilter}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&fields[3]=financing&pagination[limit]=1000`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
@@ -26,26 +27,26 @@ async function getCoveredQuotasMap(financingIds: number[]): Promise<Map<number, 
     const data = await response.json();
     const records = data.data || [];
     
-    console.log(`[getCoveredQuotasMap] Encontrados ${records.length} records para financingIds: [${idsFilter}]`);
+    console.log(`[getCoveredQuotasMap] Encontrados ${records.length} records para financingDocumentIds: [${idsFilter}]`);
     
     for (const record of records) {
-      // Manejar formato Strapi v4 (attributes) o formato plano
+      // Manejar formato Strapi v5 (data) o formato plano
       const recordData = record.attributes || record;
-      const financingData = recordData.financing?.data || recordData.financing || record.financing;
-      const financingId = financingData?.id || financingData;
+      const financingData = recordData.financing?.data || recordData.financing;
+      const financingDocumentId = financingData?.documentId || financingData?.id;
       
-      if (!financingId) {
-        console.log(`[getCoveredQuotasMap] Record sin financingId:`, recordData);
+      if (!financingDocumentId) {
+        console.log(`[getCoveredQuotasMap] Record sin financingDocumentId:`, recordData);
         continue;
       }
       
-      const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
+      const financingKey = String(financingDocumentId);
       
-      if (!coveredMap.has(financingIdNum)) {
-        coveredMap.set(financingIdNum, new Set<number>());
+      if (!coveredMap.has(financingKey)) {
+        coveredMap.set(financingKey, new Set<number>());
       }
       
-      const coveredSet = coveredMap.get(financingIdNum)!;
+      const coveredSet = coveredMap.get(financingKey)!;
       const quotaNumber = recordData.quotaNumber;
       const status = recordData.status;
       const quotasCovered = recordData.quotasCovered;
@@ -53,14 +54,14 @@ async function getCoveredQuotasMap(financingIds: number[]): Promise<Map<number, 
       if (status === "pagado" && quotaNumber) {
         // Cuota pagada individualmente
         coveredSet.add(quotaNumber);
-        console.log(`[getCoveredQuotasMap] F${financingIdNum} Cuota #${quotaNumber} pagada`);
+        console.log(`[getCoveredQuotasMap] F${financingKey} Cuota #${quotaNumber} pagada`);
       } else if ((status === "abonado" || status === "adelanto") && quotaNumber) {
         // Abono/adelanto cubre un rango de cuotas
         const coveredCount = quotasCovered || 1;
         for (let i = 0; i < coveredCount; i++) {
           coveredSet.add(quotaNumber + i);
         }
-        console.log(`[getCoveredQuotasMap] F${financingIdNum} Cuotas #${quotaNumber}-${quotaNumber + coveredCount - 1} ${status}`);
+        console.log(`[getCoveredQuotasMap] F${financingKey} Cuotas #${quotaNumber}-${quotaNumber + coveredCount - 1} ${status}`);
       }
     }
     
@@ -72,22 +73,15 @@ async function getCoveredQuotasMap(financingIds: number[]): Promise<Map<number, 
 }
 
 // Función auxiliar: Verifica si una cuota está cubierta
-function isQuotaCovered(coveredMap: Map<number, Set<number>>, financingId: number, quotaNumber: number): boolean {
-  // Buscar el financingId directamente
-  let coveredSet = coveredMap.get(financingId);
-  
-  // Si no se encuentra, intentar buscar como string
+function isQuotaCovered(coveredMap: Map<string, Set<number>>, financingDocumentId: string, quotaNumber: number): boolean {
+  const coveredSet = coveredMap.get(financingDocumentId);
   if (!coveredSet) {
-    coveredSet = coveredMap.get(financingId as any);
-  }
-  
-  if (!coveredSet) {
-    console.log(`[isQuotaCovered] No hay datos de cuotas cubiertas para F${financingId}`);
+    console.log(`[isQuotaCovered] No hay datos de cuotas cubiertas para F${financingDocumentId}`);
     return false;
   }
   
   const isCovered = coveredSet.has(quotaNumber);
-  console.log(`[isQuotaCovered] F${financingId} quota #${quotaNumber}: ${isCovered ? 'CUBIERTA' : 'NO cubierta'} (set: [${Array.from(coveredSet).join(',')}])`);
+  console.log(`[isQuotaCovered] F${financingDocumentId} quota #${quotaNumber}: ${isCovered ? 'CUBIERTA' : 'NO cubierta'} (set: [${Array.from(coveredSet).join(',')}])`);
   return isCovered;
 }
 
@@ -121,7 +115,7 @@ export async function POST(request: Request) {
     
     if (mode === "normal") {
       // Buscar CUOTAS PENDIENTES para marcarlas como retrasadas
-      // populate[financing] para obtener el financingId
+      // populate[financing] para obtener el financingDocumentId
       const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate[financing]=true`;
       
       const pendingResponse = await fetch(pendingQueryUrl, {
@@ -158,58 +152,30 @@ export async function POST(request: Request) {
 
     // Combinar resultados
     let invoices: any[] = [...pendingInvoices, ...existingOverdue];
-    console.log(`[SimulateOverdue] Total invoices a procesar: ${invoices.length}`);
     if (!Array.isArray(invoices)) {
       invoices = [];
     }
+    console.log(`[SimulateOverdue] Total invoices a procesar: ${invoices.length}`);
 
-    // Obtener todos los financingIds únicos para calcular cuotas cubiertas de una vez
-    const financingIds = new Set<number>();
+    // Obtener todos los financingDocumentIds únicos para calcular cuotas cubiertas de una vez
+    const financingDocumentIds = new Set<string>();
     for (const invoice of invoices) {
-      // Strapi v4 format: invoice.attributes.financing.data.id
-      // o formato plano: invoice.financing.id
       const invoiceData = invoice.attributes || invoice;
+      const financingData = invoiceData.financing?.data || invoiceData.financing;
+      const financingDocumentId = financingData?.documentId || financingData?.id;
       
-      console.log(`[SimulateOverdue] Analizando invoice:`, {
-        id: invoice.id,
-        quotaNumber: invoiceData.quotaNumber,
-        status: invoiceData.status,
-        financing: invoiceData.financing
-      });
-      
-      // Intentar múltiples formatos de Strapi
-      let financingId = null;
-      
-      if (invoiceData.financing?.data?.id) {
-        // Strapi v4 populate format
-        financingId = invoiceData.financing.data.id;
-      } else if (invoiceData.financing?.id) {
-        // Relación directa
-        financingId = invoiceData.financing.id;
-      } else if (invoiceData.financingId) {
-        // Campo plano
-        financingId = invoiceData.financingId;
-      } else if (typeof invoiceData.financing === 'number') {
-        // ID directo
-        financingId = invoiceData.financing;
-      } else if (typeof invoiceData.financing === 'string') {
-        // ID como string
-        financingId = parseInt(invoiceData.financing);
-      }
-      
-      if (financingId) {
-        const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
-        financingIds.add(financingIdNum);
-        console.log(`[SimulateOverdue]   → FinancingId extraído: ${financingIdNum}`);
+      if (financingDocumentId) {
+        financingDocumentIds.add(String(financingDocumentId));
+        console.log(`[SimulateOverdue] FinancingDocumentId extraído: ${financingDocumentId}`);
       } else {
-        console.log(`[SimulateOverdue]   → No se pudo extraer financingId`);
+        console.log(`[SimulateOverdue] No se pudo extraer financingDocumentId de:`, invoiceData.financing);
       }
     }
     
-    console.log(`[SimulateOverdue] FinancingIds encontrados: [${Array.from(financingIds).join(',')}]`);
+    console.log(`[SimulateOverdue] FinancingDocumentIds encontrados: [${Array.from(financingDocumentIds).join(',')}]`);
     
     // Calcular mapa de cuotas cubiertas por financing (una sola llamada)
-    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingIds));
+    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingDocumentIds));
     
     // Log detallado del mapa
     console.log(`[SimulateOverdue] Mapa de cuotas cubiertas:`);
@@ -229,35 +195,22 @@ export async function POST(request: Request) {
         continue;
       }
       
-      // Obtener el financingId asociado al record (múltiples formatos)
-      let financingId = null;
-      if (invoiceData.financing?.data?.id) {
-        financingId = invoiceData.financing.data.id;
-      } else if (invoiceData.financing?.id) {
-        financingId = invoiceData.financing.id;
-      } else if (invoiceData.financingId) {
-        financingId = invoiceData.financingId;
-      } else if (typeof invoiceData.financing === 'number') {
-        financingId = invoiceData.financing;
-      } else if (typeof invoiceData.financing === 'string') {
-        financingId = parseInt(invoiceData.financing);
-      }
-      
+      // Obtener el financingDocumentId asociado al record
+      const financingData = invoiceData.financing?.data || invoiceData.financing;
+      const financingDocumentId = financingData?.documentId || financingData?.id;
       const quotaNumber = invoiceData.quotaNumber;
       
-      console.log(`[SimulateOverdue] Procesando record: quotaNumber=${quotaNumber}, status=${invoiceData.status}, financingId=${financingId}`);
+      console.log(`[SimulateOverdue] Procesando record: quotaNumber=${quotaNumber}, status=${invoiceData.status}, financingDocumentId=${financingDocumentId}`);
       
       // Si hay financing y quotaNumber, verificar si está cubierta por abono
-      if (financingId && quotaNumber) {
-        const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
-        const isCovered = isQuotaCovered(coveredQuotasMap, financingIdNum, quotaNumber);
-        console.log(`[SimulateOverdue]   Verificando F${financingIdNum} quota #${quotaNumber}: cubierta=${isCovered}`);
+      if (financingDocumentId && quotaNumber) {
+        const isCovered = isQuotaCovered(coveredQuotasMap, String(financingDocumentId), quotaNumber);
         if (isCovered) {
-          console.log(`[SimulateOverdue]   → SKIPPED: Cuota #${quotaNumber} de financing ${financingIdNum} está cubierta por abono/adelanto`);
+          console.log(`[SimulateOverdue]   → SKIPPED: Cuota #${quotaNumber} de financing ${financingDocumentId} está cubierta por abono/adelanto`);
           continue; // No marcar como retrasado si está cubierta
         }
       } else {
-        console.log(`[SimulateOverdue]   → No se pudo verificar: financingId=${financingId}, quotaNumber=${quotaNumber}`);
+        console.log(`[SimulateOverdue]   → No se pudo verificar: financingDocumentId=${financingDocumentId}, quotaNumber=${quotaNumber}`);
       }
 
       const amount = parseFloat(invoiceData.amount) || 0;
@@ -321,14 +274,14 @@ export async function POST(request: Request) {
         id: invoice.id,
         documentId: invoice.documentId,
         receiptNumber: invoiceData.receiptNumber,
-        financingId: invoiceData.financing?.id || invoiceData.financing?.data?.id,
+        financingId: financingDocumentId,
         amount: amount,
         penaltyPerDay: penaltyPerDay,
         daysOverdue: daysOverdue,
         penaltyAmount: penaltyAmount,
         totalWithPenalty: totalWithPenalty,
         dueDate: invoiceData.dueDate,
-        quotaNumber: invoiceData.quotaNumber,
+        quotaNumber: quotaNumber,
       });
       totalPenaltyAmount += penaltyAmount;
     }
@@ -399,30 +352,19 @@ export async function GET(request: Request) {
     // Combinar resultados
     const invoices = [...(pendingData.data || []), ...(overdueData.data || [])];
 
-    // Obtener todos los financingIds únicos
-    const financingIds = new Set<number>();
+    // Obtener todos los financingDocumentIds únicos
+    const financingDocumentIds = new Set<string>();
     for (const invoice of invoices) {
       const invoiceData = invoice.attributes || invoice;
-      let financingId = null;
-      if (invoiceData.financing?.data?.id) {
-        financingId = invoiceData.financing.data.id;
-      } else if (invoiceData.financing?.id) {
-        financingId = invoiceData.financing.id;
-      } else if (invoiceData.financingId) {
-        financingId = invoiceData.financingId;
-      } else if (typeof invoiceData.financing === 'number') {
-        financingId = invoiceData.financing;
-      } else if (typeof invoiceData.financing === 'string') {
-        financingId = parseInt(invoiceData.financing);
-      }
-      if (financingId) {
-        const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
-        financingIds.add(financingIdNum);
+      const financingData = invoiceData.financing?.data || invoiceData.financing;
+      const financingDocumentId = financingData?.documentId || financingData?.id;
+      if (financingDocumentId) {
+        financingDocumentIds.add(String(financingDocumentId));
       }
     }
     
     // Calcular mapa de cuotas cubiertas por financing
-    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingIds));
+    const coveredQuotasMap = await getCoveredQuotasMap(Array.from(financingDocumentIds));
 
     const overdueInvoices = [];
     let totalPenaltyAmount = 0;
@@ -435,25 +377,14 @@ export async function GET(request: Request) {
         continue;
       }
       
-      // Obtener el financingId y quotaNumber
-      let financingId = null;
-      if (invoiceData.financing?.data?.id) {
-        financingId = invoiceData.financing.data.id;
-      } else if (invoiceData.financing?.id) {
-        financingId = invoiceData.financing.id;
-      } else if (invoiceData.financingId) {
-        financingId = invoiceData.financingId;
-      } else if (typeof invoiceData.financing === 'number') {
-        financingId = invoiceData.financing;
-      } else if (typeof invoiceData.financing === 'string') {
-        financingId = parseInt(invoiceData.financing);
-      }
+      // Obtener el financingDocumentId y quotaNumber
+      const financingData = invoiceData.financing?.data || invoiceData.financing;
+      const financingDocumentId = financingData?.documentId || financingData?.id;
       const quotaNumber = invoiceData.quotaNumber;
       
       // Si hay financing y quotaNumber, verificar si está cubierta por abono
-      if (financingId && quotaNumber) {
-        const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
-        const isCovered = isQuotaCovered(coveredQuotasMap, financingIdNum, quotaNumber);
+      if (financingDocumentId && quotaNumber) {
+        const isCovered = isQuotaCovered(coveredQuotasMap, String(financingDocumentId), quotaNumber);
         if (isCovered) {
           continue; // No incluir en consulta si está cubierta
         }
@@ -481,7 +412,7 @@ export async function GET(request: Request) {
         id: invoice.id,
         documentId: invoice.documentId,
         receiptNumber: invoiceData.receiptNumber,
-        financingId: financingId,
+        financingId: financingDocumentId,
         amount: amount,
         penaltyPerDay: penaltyPerDay,
         daysOverdue: daysOverdue,
