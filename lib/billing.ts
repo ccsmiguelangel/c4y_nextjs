@@ -738,38 +738,108 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
         
         console.log(`[deleteBillingRecordFromStrapi] Financing obtenido:`, {
           id: financing?.id,
+          documentId: financing?.documentId,
           paidQuotas: financing?.paidQuotas,
           totalPaid: financing?.totalPaid,
           status: financing?.status,
         });
 
         if (financing) {
-          // Calcular nuevos valores restando el pago eliminado
-          const quotasCovered = record.quotasCovered || 1;
-          const newPaidQuotas = Math.max(0, (financing.paidQuotas || 0) - quotasCovered);
-          const newTotalPaid = Math.max(0, (financing.totalPaid || 0) - (record.amount || 0));
-          const newCurrentBalance = (financing.totalAmount || 0) - newTotalPaid;
-          const newTotalLateFees = Math.max(0, (financing.totalLateFees || 0) - (record.lateFeeAmount || 0));
-
-          // Determinar nuevo estado
-          let newStatus = financing.status;
-          if (newPaidQuotas < financing.totalQuotas && financing.status === "completado") {
-            newStatus = "activo";
+          // 3.1 Obtener TODOS los billing-records restantes para este financing
+          console.log(`[deleteBillingRecordFromStrapi] Paso 3.1: Obteniendo billing-records restantes...`);
+          const remainingRecordsUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[financing][documentId][$eq]=${record.financingDocumentId}&pagination[limit]=100`;
+          
+          const remainingResponse = await fetch(remainingRecordsUrl, {
+            headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+            cache: "no-store",
+          });
+          
+          let remainingRecords: any[] = [];
+          if (remainingResponse.ok) {
+            const remainingData = await remainingResponse.json();
+            remainingRecords = remainingData.data || [];
           }
           
-          console.log(`[deleteBillingRecordFromStrapi] Actualizando financing con:`, {
+          console.log(`[deleteBillingRecordFromStrapi] Registros restantes: ${remainingRecords.length}`);
+
+          // 3.2 Recalcular valores desde los registros restantes
+          console.log(`[deleteBillingRecordFromStrapi] Paso 3.2: Recalculando valores...`);
+          
+          let newPaidQuotas = 0;
+          let newTotalPaid = 0;
+          let newTotalLateFees = 0;
+          let newPartialPaymentCredit = 0;
+          let maxCoveredQuota = 0;
+
+          for (const billingRecord of remainingRecords) {
+            const recordData = billingRecord.attributes || billingRecord;
+            const status = recordData.status;
+            const amount = recordData.amount || 0;
+            const quotaNumber = recordData.quotaNumber || 0;
+            const quotasCovered = recordData.quotasCovered || 1;
+            const lateFeeAmount = recordData.lateFeeAmount || 0;
+            
+            // Sumar multas de todas las cuotas retrasadas
+            if (status === "retrasado") {
+              newTotalLateFees += lateFeeAmount;
+            }
+            
+            // Para pagos que cubren cuotas (pagado, abonado, adelanto)
+            if (status === "pagado" || status === "abonado" || status === "adelanto") {
+              // Acumular monto pagado
+              newTotalPaid += amount;
+              
+              // Calcular cuotas cubiertas
+              const endQuota = quotaNumber + quotasCovered - 1;
+              maxCoveredQuota = Math.max(maxCoveredQuota, endQuota);
+              
+              // Calcular crédito disponible desde abonos/adelantos
+              if (status === "abonado" || status === "adelanto") {
+                // El crédito es el excedente del abono sobre el monto de las cuotas cubiertas
+                const quotaAmount = financing.quotaAmount || 0;
+                const totalQuotasAmount = quotasCovered * quotaAmount;
+                const creditFromThisRecord = Math.max(0, amount - totalQuotasAmount);
+                newPartialPaymentCredit += creditFromThisRecord;
+                
+                console.log(`[deleteBillingRecordFromStrapi] Crédito de ${status}: +${creditFromThisRecord} (monto:${amount} - cuotas:${totalQuotasAmount})`);
+              }
+            }
+          }
+          
+          // Las paidQuotas son el máximo de cuotas cubiertas
+          newPaidQuotas = maxCoveredQuota;
+          
+          // Calcular balance actual
+          const newCurrentBalance = (financing.totalAmount || 0) - newTotalPaid;
+          
+          // Determinar nuevo estado
+          let newStatus = financing.status;
+          if (newPaidQuotas >= financing.totalQuotas) {
+            newStatus = "completado";
+          } else if (newPaidQuotas > 0 || remainingRecords.length > 0) {
+            newStatus = "activo";
+          } else {
+            newStatus = "activo"; // Mantener activo si hay cuotas pendientes
+          }
+          
+          console.log(`[deleteBillingRecordFromStrapi] Valores recalculados:`, {
             newPaidQuotas,
             newTotalPaid,
             newCurrentBalance,
+            newTotalLateFees,
+            newPartialPaymentCredit,
             newStatus,
+            remainingRecords: remainingRecords.length,
           });
 
-          // Actualizar el financiamiento
+          // 3.3 Actualizar el financiamiento con valores recalculados
+          console.log(`[deleteBillingRecordFromStrapi] Paso 3.3: Actualizando financing...`);
           await updateFinancingInStrapi(record.financingDocumentId, {
             paidQuotas: newPaidQuotas,
             totalPaid: newTotalPaid,
             currentBalance: newCurrentBalance,
             totalLateFees: newTotalLateFees,
+            partialPaymentCredit: newPartialPaymentCredit,
             status: newStatus,
           });
           
