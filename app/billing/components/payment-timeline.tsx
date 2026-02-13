@@ -447,19 +447,36 @@ export function PaymentTimeline({
         {/* Summary con filtros */}
         {showSummary && (
           <>
-            {/* Filtro activo */}
-            {statusFilter !== "all" && (
+            {/* Filtros activos */}
+            {(statusFilter !== "all" || periodFilter !== "all") && (
               <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2 mb-3">
-                <span className="text-xs text-muted-foreground">
-                  Filtrando: <strong className="text-foreground">{statusConfig[statusFilter].label}</strong>
-                </span>
+                <div className="flex items-center gap-2">
+                  {statusFilter !== "all" && (
+                    <Badge variant="outline" className="text-xs">
+                      Estado: {statusConfig[statusFilter].label}
+                    </Badge>
+                  )}
+                  {periodFilter !== "all" && (
+                    <Badge variant="outline" className="text-xs">
+                      Período: {periodOptions.find(p => p.value === periodFilter)?.label}
+                    </Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground ml-2">
+                    Mostrando {filteredPayments.length} de {payments.length} pagos
+                  </span>
+                </div>
                 <Button 
                   variant="ghost" 
                   size="sm" 
                   className="h-6 text-xs"
-                  onClick={() => setStatusFilter("all")}
+                  onClick={() => {
+                    setStatusFilter("all");
+                    setPeriodFilter("all");
+                    setStartDate("");
+                    setEndDate("");
+                  }}
                 >
-                  Ver todos
+                  Limpiar filtros
                 </Button>
               </div>
             )}

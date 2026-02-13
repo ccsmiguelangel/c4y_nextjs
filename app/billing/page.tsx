@@ -685,6 +685,7 @@ export default function BillingPage() {
               currency: p.currency,
               clientName: p.clientName,
             }))}
+            isLoading={isLoadingPayments}
             maxHeight="500px"
             showSummary={true}
             showFilters={true}

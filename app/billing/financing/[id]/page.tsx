@@ -115,7 +115,7 @@ export default function FinancingDetailPage() {
   const [financing, setFinancing] = useState<FinancingCard | null>(null);
   const [payments, setPayments] = useState<BillingRecordCard[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
+  const [isLoadingPayments, setIsLoadingPayments] = useState(true); // Inicia en true para primera carga
   const [error, setError] = useState<string | null>(null);
   
   // Dialogs
@@ -679,7 +679,8 @@ export default function FinancingDetailPage() {
             }
             
             toast.success("Cuota eliminada correctamente");
-            fetchFinancing(); // Refrescar datos
+            // Refrescar datos - esto actualizará tanto el financiamiento como los pagos
+            await fetchFinancing();
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
           }
