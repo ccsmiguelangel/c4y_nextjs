@@ -1,6 +1,47 @@
 import { NextResponse } from "next/server";
 import { STRAPI_API_TOKEN, STRAPI_BASE_URL } from "@/lib/config";
 
+// Función auxiliar: Verifica si una cuota está cubierta por abono/adelanto
+async function isQuotaCoveredByAdvance(financingId: number, quotaNumber: number): Promise<boolean> {
+  try {
+    // Obtener todos los billing-records del financing
+    const response = await fetch(
+      `${STRAPI_BASE_URL}/api/billing-records?filters[financing][id][$eq]=${financingId}&fields[0]=quotaNumber&fields[1]=status&fields[2]=quotasCovered&pagination[limit]=100`,
+      {
+        headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
+        cache: "no-store",
+      }
+    );
+    
+    if (!response.ok) return false;
+    
+    const data = await response.json();
+    const records = data.data || [];
+    
+    // Calcular cuotas cubiertas
+    for (const record of records) {
+      if (record.status === "pagado" && record.quotaNumber === quotaNumber) {
+        // Cuota pagada individualmente
+        return true;
+      } else if ((record.status === "abonado" || record.status === "adelanto") && record.quotaNumber) {
+        // Abono/adelanto cubre un rango de cuotas
+        const quotasCovered = record.quotasCovered || 1;
+        const startQuota = record.quotaNumber;
+        const endQuota = startQuota + quotasCovered - 1;
+        
+        if (quotaNumber >= startQuota && quotaNumber <= endQuota) {
+          return true; // La cuota está dentro del rango cubierto
+        }
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error(`[isQuotaCoveredByAdvance] Error verificando cuota ${quotaNumber}:`, error);
+    return false;
+  }
+}
+
 // POST - Simular vencimiento de facturas
 // Modo normal (viernes): marca pendientes como retrasadas + actualiza existentes
 // Modo update-existing (martes): solo actualiza cuotas ya retrasadas
@@ -72,6 +113,19 @@ export async function POST(request: Request) {
       // Verificar nuevamente que no esté pagada (doble verificación)
       if (invoiceData.status === "pagado" || invoiceData.status === "adelanto") {
         continue;
+      }
+      
+      // Obtener el financingId asociado al record
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id;
+      const quotaNumber = invoiceData.quotaNumber;
+      
+      // Si hay financing y quotaNumber, verificar si está cubierta por abono
+      if (financingId && quotaNumber) {
+        const isCovered = await isQuotaCoveredByAdvance(financingId, quotaNumber);
+        if (isCovered) {
+          console.log(`[SimulateOverdue] Cuota #${quotaNumber} de financing ${financingId} está cubierta por abono, no se marca como retrasada`);
+          continue; // No marcar como retrasado si está cubierta
+        }
       }
 
       const amount = parseFloat(invoiceData.amount) || 0;
@@ -223,6 +277,18 @@ export async function GET(request: Request) {
       if (invoiceData.status === "pagado" || invoiceData.status === "adelanto") {
         continue;
       }
+      
+      // Obtener el financingId y quotaNumber
+      const financingId = invoiceData.financing?.id || invoiceData.financing?.data?.id;
+      const quotaNumber = invoiceData.quotaNumber;
+      
+      // Si hay financing y quotaNumber, verificar si está cubierta por abono
+      if (financingId && quotaNumber) {
+        const isCovered = await isQuotaCoveredByAdvance(financingId, quotaNumber);
+        if (isCovered) {
+          continue; // No incluir en consulta si está cubierta
+        }
+      }
 
       const amount = parseFloat(invoiceData.amount) || 0;
       
@@ -246,14 +312,14 @@ export async function GET(request: Request) {
         id: invoice.id,
         documentId: invoice.documentId,
         receiptNumber: invoiceData.receiptNumber,
-        financingId: invoiceData.financing?.id || invoiceData.financing?.data?.id,
+        financingId: financingId,
         amount: amount,
         penaltyPerDay: penaltyPerDay,
         daysOverdue: daysOverdue,
         penaltyAmount: penaltyAmount,
         totalWithPenalty: totalWithPenalty,
         dueDate: invoiceData.dueDate,
-        quotaNumber: invoiceData.quotaNumber,
+        quotaNumber: quotaNumber,
       });
 
       totalPenaltyAmount += penaltyAmount;
