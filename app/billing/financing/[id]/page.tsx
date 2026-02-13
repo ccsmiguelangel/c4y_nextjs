@@ -130,6 +130,22 @@ export default function FinancingDetailPage() {
   const [currentUserRole, setCurrentUserRole] = useState("");
   const [currentWeek, setCurrentWeek] = useState(1); // Semana de simulación actual
 
+  // Calcular totales desde los payments (separando pagos de multas) - DEBE estar antes de cualquier return condicional
+  const { totalPaidPositive, totalMultas, creditAfterMultas } = useMemo(() => {
+    const totalPaidPositive = payments
+      .filter(p => p.amount > 0)
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const totalMultas = payments
+      .filter(p => p.amount < 0)
+      .reduce((sum, p) => sum + Math.abs(p.amount), 0);
+    
+    // Crédito efectivo = crédito del financing - multas
+    const creditAfterMultas = Math.max(0, (financing?.partialPaymentCredit || 0) - totalMultas);
+    
+    return { totalPaidPositive, totalMultas, creditAfterMultas };
+  }, [payments, financing?.partialPaymentCredit]);
+
   // Fetch billing records directamente (más confiable que populate)
   const fetchBillingRecords = useCallback(async () => {
     console.log(`[FetchBillingRecords] Iniciando fetch para financing=${id}`);
@@ -345,22 +361,6 @@ export default function FinancingDetailPage() {
   const progressPercentage = financing.totalQuotas > 0 
     ? (financing.paidQuotas / financing.totalQuotas) * 100 
     : 0;
-
-  // Calcular totales desde los payments (separando pagos de multas)
-  const { totalPaidPositive, totalMultas, creditAfterMultas } = useMemo(() => {
-    const totalPaidPositive = payments
-      .filter(p => p.amount > 0)
-      .reduce((sum, p) => sum + p.amount, 0);
-    
-    const totalMultas = payments
-      .filter(p => p.amount < 0)
-      .reduce((sum, p) => sum + Math.abs(p.amount), 0);
-    
-    // Crédito efectivo = crédito del financing - multas
-    const creditAfterMultas = Math.max(0, (financing.partialPaymentCredit || 0) - totalMultas);
-    
-    return { totalPaidPositive, totalMultas, creditAfterMultas };
-  }, [payments, financing.partialPaymentCredit]);
 
   // Preselected financing for payment dialog
   const preselectedFinancing = {
