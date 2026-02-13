@@ -464,12 +464,12 @@ export function PaymentTimeline({
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <button
-                onClick={() => setStatusFilter("pagado")}
+                onClick={() => setStatusFilter(statusFilter === "pagado" ? "all" : "pagado")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.pagado.bgColor,
                   "border-2",
-                  statusFilter === "pagado" ? "border-gray-800" : statusConfig.pagado.borderColor
+                  statusFilter === "pagado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pagado.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.pagado.textColor)}>
@@ -478,12 +478,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.pagado.textColor)}>Pagados</p>
               </button>
               <button
-                onClick={() => setStatusFilter("pendiente")}
+                onClick={() => setStatusFilter(statusFilter === "pendiente" ? "all" : "pendiente")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.pendiente.bgColor,
                   "border-2",
-                  statusFilter === "pendiente" ? "border-gray-800" : statusConfig.pendiente.borderColor
+                  statusFilter === "pendiente" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pendiente.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.pendiente.textColor)}>
@@ -492,12 +492,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.pendiente.textColor)}>Pendientes</p>
               </button>
               <button
-                onClick={() => setStatusFilter("adelanto")}
+                onClick={() => setStatusFilter(statusFilter === "adelanto" ? "all" : "adelanto")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.adelanto.bgColor,
                   "border-2",
-                  statusFilter === "adelanto" ? "border-gray-800" : statusConfig.adelanto.borderColor
+                  statusFilter === "adelanto" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.adelanto.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.adelanto.textColor)}>
@@ -506,12 +506,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.adelanto.textColor)}>Adelantos</p>
               </button>
               <button
-                onClick={() => setStatusFilter("retrasado")}
+                onClick={() => setStatusFilter(statusFilter === "retrasado" ? "all" : "retrasado")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.retrasado.bgColor,
                   "border-2",
-                  statusFilter === "retrasado" ? "border-gray-800" : statusConfig.retrasado.borderColor
+                  statusFilter === "retrasado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.retrasado.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.retrasado.textColor)}>
