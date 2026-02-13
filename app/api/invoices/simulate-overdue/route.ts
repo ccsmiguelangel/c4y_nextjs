@@ -121,7 +121,8 @@ export async function POST(request: Request) {
     
     if (mode === "normal") {
       // Buscar CUOTAS PENDIENTES para marcarlas como retrasadas
-      const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+      // populate[financing] para obtener el financingId
+      const pendingQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lte]=${simulationDate}&populate[financing]=true`;
       
       const pendingResponse = await fetch(pendingQueryUrl, {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
@@ -134,10 +135,14 @@ export async function POST(request: Request) {
 
       const pendingData = await pendingResponse.json();
       pendingInvoices = pendingData.data || [];
+      console.log(`[SimulateOverdue] Pendientes encontrados: ${pendingInvoices.length}`);
+      if (pendingInvoices.length > 0) {
+        console.log(`[SimulateOverdue] Primer pendiente:`, JSON.stringify(pendingInvoices[0], null, 2));
+      }
     }
     
     // Buscar CUOTAS YA RETRASADAS para recalcular multas (siempre, en ambos modos)
-    const overdueQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lte]=${simulationDate}&populate=*`;
+    const overdueQueryUrl = `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lte]=${simulationDate}&populate[financing]=true`;
     
     const overdueResponse = await fetch(overdueQueryUrl, {
       headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
@@ -156,12 +161,43 @@ export async function POST(request: Request) {
     // Obtener todos los financingIds únicos para calcular cuotas cubiertas de una vez
     const financingIds = new Set<number>();
     for (const invoice of invoices) {
+      // Strapi v4 format: invoice.attributes.financing.data.id
+      // o formato plano: invoice.financing.id
       const invoiceData = invoice.attributes || invoice;
-      const financingData = invoiceData.financing?.data || invoiceData.financing;
-      const financingId = financingData?.id || financingData;
+      
+      console.log(`[SimulateOverdue] Analizando invoice:`, {
+        id: invoice.id,
+        quotaNumber: invoiceData.quotaNumber,
+        status: invoiceData.status,
+        financing: invoiceData.financing
+      });
+      
+      // Intentar múltiples formatos de Strapi
+      let financingId = null;
+      
+      if (invoiceData.financing?.data?.id) {
+        // Strapi v4 populate format
+        financingId = invoiceData.financing.data.id;
+      } else if (invoiceData.financing?.id) {
+        // Relación directa
+        financingId = invoiceData.financing.id;
+      } else if (invoiceData.financingId) {
+        // Campo plano
+        financingId = invoiceData.financingId;
+      } else if (typeof invoiceData.financing === 'number') {
+        // ID directo
+        financingId = invoiceData.financing;
+      } else if (typeof invoiceData.financing === 'string') {
+        // ID como string
+        financingId = parseInt(invoiceData.financing);
+      }
+      
       if (financingId) {
         const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
         financingIds.add(financingIdNum);
+        console.log(`[SimulateOverdue]   → FinancingId extraído: ${financingIdNum}`);
+      } else {
+        console.log(`[SimulateOverdue]   → No se pudo extraer financingId`);
       }
     }
     
@@ -188,9 +224,20 @@ export async function POST(request: Request) {
         continue;
       }
       
-      // Obtener el financingId asociado al record
-      const financingData = invoiceData.financing?.data || invoiceData.financing;
-      const financingId = financingData?.id || financingData;
+      // Obtener el financingId asociado al record (múltiples formatos)
+      let financingId = null;
+      if (invoiceData.financing?.data?.id) {
+        financingId = invoiceData.financing.data.id;
+      } else if (invoiceData.financing?.id) {
+        financingId = invoiceData.financing.id;
+      } else if (invoiceData.financingId) {
+        financingId = invoiceData.financingId;
+      } else if (typeof invoiceData.financing === 'number') {
+        financingId = invoiceData.financing;
+      } else if (typeof invoiceData.financing === 'string') {
+        financingId = parseInt(invoiceData.financing);
+      }
+      
       const quotaNumber = invoiceData.quotaNumber;
       
       console.log(`[SimulateOverdue] Procesando record: quotaNumber=${quotaNumber}, status=${invoiceData.status}, financingId=${financingId}`);
@@ -320,7 +367,7 @@ export async function GET(request: Request) {
 
     // Buscar cuotas pendientes que estarían vencidas
     const pendingResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lt]=${simulationDate}&populate=*`,
+      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=pendiente&filters[dueDate][$lt]=${simulationDate}&populate[financing]=true`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
@@ -335,7 +382,7 @@ export async function GET(request: Request) {
     
     // Buscar cuotas ya retrasadas
     const overdueResponse = await fetch(
-      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lt]=${simulationDate}&populate=*`,
+      `${STRAPI_BASE_URL}/api/billing-records?filters[status][$eq]=retrasado&filters[dueDate][$lt]=${simulationDate}&populate[financing]=true`,
       {
         headers: { Authorization: `Bearer ${STRAPI_API_TOKEN}` },
         cache: "no-store",
@@ -351,8 +398,18 @@ export async function GET(request: Request) {
     const financingIds = new Set<number>();
     for (const invoice of invoices) {
       const invoiceData = invoice.attributes || invoice;
-      const financingData = invoiceData.financing?.data || invoiceData.financing;
-      const financingId = financingData?.id || financingData;
+      let financingId = null;
+      if (invoiceData.financing?.data?.id) {
+        financingId = invoiceData.financing.data.id;
+      } else if (invoiceData.financing?.id) {
+        financingId = invoiceData.financing.id;
+      } else if (invoiceData.financingId) {
+        financingId = invoiceData.financingId;
+      } else if (typeof invoiceData.financing === 'number') {
+        financingId = invoiceData.financing;
+      } else if (typeof invoiceData.financing === 'string') {
+        financingId = parseInt(invoiceData.financing);
+      }
       if (financingId) {
         const financingIdNum = typeof financingId === 'string' ? parseInt(financingId) : financingId;
         financingIds.add(financingIdNum);
@@ -374,8 +431,18 @@ export async function GET(request: Request) {
       }
       
       // Obtener el financingId y quotaNumber
-      const financingData = invoiceData.financing?.data || invoiceData.financing;
-      const financingId = financingData?.id || financingData;
+      let financingId = null;
+      if (invoiceData.financing?.data?.id) {
+        financingId = invoiceData.financing.data.id;
+      } else if (invoiceData.financing?.id) {
+        financingId = invoiceData.financing.id;
+      } else if (invoiceData.financingId) {
+        financingId = invoiceData.financingId;
+      } else if (typeof invoiceData.financing === 'number') {
+        financingId = invoiceData.financing;
+      } else if (typeof invoiceData.financing === 'string') {
+        financingId = parseInt(invoiceData.financing);
+      }
       const quotaNumber = invoiceData.quotaNumber;
       
       // Si hay financing y quotaNumber, verificar si está cubierta por abono
