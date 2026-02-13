@@ -131,20 +131,35 @@ export default function FinancingDetailPage() {
   const [currentWeek, setCurrentWeek] = useState(1); // Semana de simulación actual
 
   // Calcular totales desde los payments (separando pagos de multas) - DEBE estar antes de cualquier return condicional
-  const { totalPaidPositive, totalMultas, creditAfterMultas } = useMemo(() => {
+  const { totalPaidPositive, totalMultas, creditReal } = useMemo(() => {
+    // Solo pagos positivos cuentan como "pagado"
     const totalPaidPositive = payments
       .filter(p => p.amount > 0)
       .reduce((sum, p) => sum + p.amount, 0);
     
+    // Montos negativos = multas
     const totalMultas = payments
       .filter(p => p.amount < 0)
       .reduce((sum, p) => sum + Math.abs(p.amount), 0);
     
-    // Crédito efectivo = crédito del financing - multas
-    const creditAfterMultas = Math.max(0, (financing?.partialPaymentCredit || 0) - totalMultas);
+    // Calcular crédito REAL desde los payments (no del financing que puede estar desactualizado)
+    // Crédito = excedente de abonos/adelantos (amount - quotaAmount) para pagos que cubren más de una cuota
+    const creditFromPayments = payments
+      .filter(p => p.amount > 0 && (p.status === "abonado" || p.status === "adelanto"))
+      .reduce((sum, p) => {
+        const quotaAmount = financing?.quotaAmount || 0;
+        const quotasCovered = p.quotasCovered || 1;
+        // Si el pago cubre más del monto de las cuotas, el excedente es crédito
+        const amountForQuotas = quotasCovered * quotaAmount;
+        const creditFromThisPayment = Math.max(0, p.amount - amountForQuotas);
+        return sum + creditFromThisPayment;
+      }, 0);
     
-    return { totalPaidPositive, totalMultas, creditAfterMultas };
-  }, [payments, financing?.partialPaymentCredit]);
+    // Crédito real = crédito de payments - multas (no puede ser negativo)
+    const creditReal = Math.max(0, creditFromPayments - totalMultas);
+    
+    return { totalPaidPositive, totalMultas, creditReal };
+  }, [payments, financing?.quotaAmount]);
 
   // Fetch billing records directamente (más confiable que populate)
   const fetchBillingRecords = useCallback(async () => {
@@ -600,7 +615,7 @@ export default function FinancingDetailPage() {
           )}
 
           {/* Credit if any (después de descontar multas) */}
-          {creditAfterMultas > 0 && (
+          {creditReal > 0 && (
             <div className={cn(
               "mt-4 p-3 rounded-lg flex items-center justify-between",
               "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
@@ -613,7 +628,7 @@ export default function FinancingDetailPage() {
               </div>
               <div className="text-right">
                 <span className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                  {formatCurrency(creditAfterMultas)}
+                  {formatCurrency(creditReal)}
                 </span>
                 {totalMultas > 0 && (
                   <p className="text-[10px] text-blue-600 dark:text-blue-400">
@@ -625,7 +640,7 @@ export default function FinancingDetailPage() {
           )}
           
           {/* Aviso si las multas consumieron todo el crédito */}
-          {totalMultas > 0 && creditAfterMultas === 0 && financing.partialPaymentCredit > 0 && (
+          {totalMultas > 0 && creditReal === 0 && financing.partialPaymentCredit > 0 && (
             <div className={cn(
               "mt-4 p-3 rounded-lg flex items-center justify-between",
               "bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800"
