@@ -580,9 +580,10 @@ export default function FinancingDetailPage() {
               <div>
                 <p className="text-xs text-muted-foreground">Próximo Vencimiento</p>
                 <p className="text-sm font-medium text-primary">{calculateRealNextDueDate()}</p>
-                {(financing.partialPaymentCredit > 0 || totalMultas > 0) && (
+                {/* Solo mostrar "considerando crédito..." cuando NO hay multas */}
+                {creditReal > 0 && totalMultas === 0 && (
                   <p className="text-[10px] text-blue-600 dark:text-blue-400">
-                    (considerando crédito, abonos{totalMultas > 0 ? " y multas" : ""})
+                    (considerando crédito y abonos)
                   </p>
                 )}
               </div>
