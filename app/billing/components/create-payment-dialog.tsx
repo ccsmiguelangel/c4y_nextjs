@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Hash,
   CreditCard,
+  MinusCircle,
 } from "lucide-react";
 import { Button } from "@/components_shadcn/ui/button";
 import {
@@ -168,7 +169,8 @@ export function CreatePaymentDialog({
 
   // Cálculos basados en el financiamiento seleccionado
   const paymentCalculations = useMemo(() => {
-    if (!selectedFinancing || formData.amount <= 0) {
+    // Permitir montos negativos para ajustes/devoluciones
+    if (!selectedFinancing || formData.amount === 0) {
       return {
         daysLate: 0,
         lateFeeAmount: 0,
@@ -219,11 +221,11 @@ export function CreatePaymentDialog({
     };
   }, [selectedFinancing, formData.amount, formData.paymentDate]);
 
-  // Validación del formulario
+  // Validación del formulario (permitir montos negativos para ajustes)
   const isFormValid = useMemo(() => {
     return (
       formData.financingId !== "" &&
-      formData.amount > 0 &&
+      formData.amount !== 0 &&
       formData.paymentDate !== ""
     );
   }, [formData]);
@@ -554,7 +556,6 @@ export function CreatePaymentDialog({
                         <Input
                           id="amount"
                           type="number"
-                          min={0}
                           step={0.01}
                           value={formData.amount || ""}
                           onChange={(e) =>
@@ -635,27 +636,31 @@ export function CreatePaymentDialog({
                   </div>
                 </div>
 
-                {/* Cálculos del Pago */}
-                {selectedFinancing && formData.amount > 0 && (
+                {/* Cálculos del Pago / Ajuste */}
+                {selectedFinancing && formData.amount !== 0 && (
                   <>
                     <Separator />
                     <div className={`flex flex-col ${spacing.gap.base}`}>
                       <h3 className={`${typography.h4} flex items-center gap-2`}>
                         <Hash className="h-4 w-4" />
-                        Resumen del Pago
+                        {formData.amount < 0 ? "Ajuste / Devolución" : "Resumen del Pago"}
                       </h3>
 
                       <div className="grid grid-cols-2 gap-4">
                         <Card
                           className={cn(
                             "p-4",
-                            paymentCalculations.isLate
-                              ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                              : "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
+                            formData.amount < 0
+                              ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800"
+                              : paymentCalculations.isLate
+                                ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                                : "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
                           )}
                         >
                           <div className="flex items-center gap-2 mb-2">
-                            {paymentCalculations.isLate ? (
+                            {formData.amount < 0 ? (
+                              <MinusCircle className="h-4 w-4 text-amber-600" />
+                            ) : paymentCalculations.isLate ? (
                               <AlertTriangle className="h-4 w-4 text-red-600" />
                             ) : (
                               <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -663,17 +668,25 @@ export function CreatePaymentDialog({
                             <span
                               className={cn(
                                 "text-sm font-medium",
-                                paymentCalculations.isLate
-                                  ? "text-red-700 dark:text-red-400"
-                                  : "text-green-700 dark:text-green-400"
+                                formData.amount < 0
+                                  ? "text-amber-700 dark:text-amber-400"
+                                  : paymentCalculations.isLate
+                                    ? "text-red-700 dark:text-red-400"
+                                    : "text-green-700 dark:text-green-400"
                               )}
                             >
-                              {paymentCalculations.isLate
-                                ? `${paymentCalculations.daysLate} día${paymentCalculations.daysLate > 1 ? "s" : ""} de atraso`
-                                : "Pago a tiempo"}
+                              {formData.amount < 0
+                                ? "Ajuste Negativo"
+                                : paymentCalculations.isLate
+                                  ? `${paymentCalculations.daysLate} día${paymentCalculations.daysLate > 1 ? "s" : ""} de atraso`
+                                  : "Pago a tiempo"}
                             </span>
                           </div>
-                          {paymentCalculations.isLate && (
+                          {formData.amount < 0 ? (
+                            <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                              Monto: {formatCurrency(formData.amount)}
+                            </p>
+                          ) : paymentCalculations.isLate && (
                             <p className="text-sm font-semibold text-red-700 dark:text-red-400">
                               Multa: {formatCurrency(paymentCalculations.lateFeeAmount)}
                             </p>
@@ -682,12 +695,12 @@ export function CreatePaymentDialog({
 
                         <Card className="p-4 bg-muted/50">
                           <p className="text-xs text-muted-foreground mb-1">
-                            Cuotas Cubiertas
+                            {formData.amount < 0 ? "Tipo de Ajuste" : "Cuotas Cubiertas"}
                           </p>
                           <p className={cn(typography.metric.base, "text-primary")}>
-                            {paymentCalculations.quotasCovered}
+                            {formData.amount < 0 ? "Devolución/Ajuste" : paymentCalculations.quotasCovered}
                           </p>
-                          {paymentCalculations.advanceCredit > 0 && (
+                          {formData.amount >= 0 && paymentCalculations.advanceCredit > 0 && (
                             <p className="text-xs text-blue-600 mt-1">
                               + {formatCurrency(paymentCalculations.advanceCredit)} de
                               crédito
@@ -699,21 +712,25 @@ export function CreatePaymentDialog({
                       <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
                         <div className="flex items-center justify-between">
                           <p className="text-sm text-muted-foreground">
-                            Estado del Pago
+                            {formData.amount < 0 ? "Tipo de Registro" : "Estado del Pago"}
                           </p>
                           <Badge
                             variant={
-                              paymentCalculations.status === "retrasado"
-                                ? "destructive"
-                                : paymentCalculations.status === "adelanto"
-                                  ? "default"
-                                  : "secondary"
+                              formData.amount < 0
+                                ? "outline"
+                                : paymentCalculations.status === "retrasado"
+                                  ? "destructive"
+                                  : paymentCalculations.status === "adelanto"
+                                    ? "default"
+                                    : "secondary"
                             }
                             className="text-sm"
                           >
-                            {paymentCalculations.status === "pagado" && "Pagado"}
-                            {paymentCalculations.status === "adelanto" && "Adelanto"}
-                            {paymentCalculations.status === "retrasado" && "Retrasado"}
+                            {formData.amount < 0
+                              ? "Ajuste"
+                              : paymentCalculations.status === "pagado" && "Pagado"}
+                            {formData.amount >= 0 && paymentCalculations.status === "adelanto" && "Adelanto"}
+                            {formData.amount >= 0 && paymentCalculations.status === "retrasado" && "Retrasado"}
                           </Badge>
                         </div>
                       </div>
