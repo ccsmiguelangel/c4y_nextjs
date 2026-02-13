@@ -294,6 +294,50 @@ export async function fetchBillingRecordsFromStrapi(): Promise<BillingRecordCard
  * Obtener pagos por financiamiento
  */
 export async function fetchBillingRecordsByFinancingFromStrapi(financingDocumentId: string): Promise<BillingRecordCard[]> {
+  // SOLUCIÓN ALTERNATIVA: Obtener el financing con sus billing records populados
+  // Esto evita problemas con filtros de relación en Strapi 5
+  const financingQuery = qs.stringify({
+    populate: {
+      billingRecords: {
+        ...populateConfig.populate,
+        sort: ["dueDate:asc"],
+      },
+    },
+  }, { encodeValuesOnly: true });
+
+  console.log(`[Billing] Fetching financing with records: ${financingDocumentId}`);
+  
+  const financingResponse = await fetch(
+    `${STRAPI_BASE_URL}/api/financings/${financingDocumentId}?${financingQuery}`,
+    {
+      headers: {
+        Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+      },
+      cache: "no-store",
+    }
+  );
+
+  if (!financingResponse.ok) {
+    const errorText = await financingResponse.text();
+    console.error(`[Billing] Error fetching financing:`, errorText);
+    // Fallback al método anterior
+    return fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumentId);
+  }
+
+  const financingData = await financingResponse.json();
+  const billingRecords = financingData.data?.billingRecords || [];
+  
+  console.log(`[Billing] Found ${billingRecords.length} records via financing populate`);
+  
+  return billingRecords.map((record: BillingRecordRaw) => normalizeBillingRecord(record));
+}
+
+/**
+ * Fallback: Obtener pagos por financiamiento usando filtro directo
+ */
+async function fetchBillingRecordsByFinancingFromStrapiFallback(financingDocumentId: string): Promise<BillingRecordCard[]> {
+  console.log(`[Billing] Using fallback method for: ${financingDocumentId}`);
+  
   const query = qs.stringify({
     filters: {
       financing: {
@@ -307,6 +351,8 @@ export async function fetchBillingRecordsByFinancingFromStrapi(financingDocument
     pagination: { pageSize: 100 },
   }, { encodeValuesOnly: true });
 
+  console.log(`[Billing] Query:`, query);
+
   const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records?${query}`, {
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
@@ -316,10 +362,12 @@ export async function fetchBillingRecordsByFinancingFromStrapi(financingDocument
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`[Billing] Error response:`, errorText);
     throw new Error(`Error fetching billing records: ${errorText}`);
   }
 
   const data = await response.json();
+  console.log(`[Billing] Fallback found ${data.data?.length || 0} records`);
   return (data.data || []).map(normalizeBillingRecord);
 }
 

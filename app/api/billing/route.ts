@@ -18,7 +18,9 @@ export async function GET(request: Request) {
     
     if (financingId) {
       // Obtener pagos específicos de un financiamiento
+      console.log(`[API Billing] Fetching records for financing: ${financingId}`);
       const records = await fetchBillingRecordsByFinancingFromStrapi(financingId);
+      console.log(`[API Billing] Found ${records.length} records`);
       return NextResponse.json({ data: records });
     }
     
