@@ -683,7 +683,6 @@ export default function FinancingDetailPage() {
           });
           
           // SOLUCIÓN: Actualización optimista - eliminar del estado local inmediatamente
-          // Esto evita que el cascade delete de Strapi afecte la vista
           const updatedPayments = payments.filter(p => p.documentId !== payment.id);
           setPayments(updatedPayments);
           console.log(`[DeletePayment] Estado local actualizado. Mostrando ${updatedPayments.length} pagos`);
@@ -704,15 +703,26 @@ export default function FinancingDetailPage() {
             console.log(`[DeletePayment] Eliminación en servidor exitosa`);
             toast.success("Cuota eliminada correctamente");
             
-            // Pequeño delay antes de refrescar financing (para totales)
-            setTimeout(() => {
-              fetchFinancing();
-            }, 300);
+            // NO hacer refetch de payments porque Strapi tiene cascade delete
+            // Solo actualizar el financing para los totales (sin esperar)
+            // Usar el financing actual y ajustar los totales localmente
+            if (financing) {
+              const quotasCovered = 1; // Asumimos 1 cuota por simplicidad
+              const newPaidQuotas = Math.max(0, financing.paidQuotas - quotasCovered);
+              const newTotalPaid = Math.max(0, financing.totalPaid - payment.amount);
+              const newCurrentBalance = financing.totalAmount - newTotalPaid;
+              
+              setFinancing({
+                ...financing,
+                paidQuotas: newPaidQuotas,
+                totalPaid: newTotalPaid,
+                currentBalance: newCurrentBalance,
+              });
+            }
             
           } catch (err) {
             console.error(`[DeletePayment] Error:`, err);
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
-            // En caso de error, el estado local ya fue revertido arriba si es necesario
           }
         }}
       />
