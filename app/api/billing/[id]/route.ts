@@ -77,9 +77,9 @@ export async function PUT(request: Request, context: RouteContext) {
 
     // Validar status si está presente
     if (data.status !== undefined) {
-      if (!["pagado", "pendiente", "adelanto", "retrasado"].includes(data.status)) {
+      if (!["pagado", "pendiente", "adelanto", "retrasado", "abonado"].includes(data.status)) {
         return NextResponse.json(
-          { error: "El estado debe ser 'pagado', 'pendiente', 'adelanto' o 'retrasado'." },
+          { error: "El estado debe ser 'pagado', 'pendiente', 'adelanto', 'retrasado' o 'abonado'." },
           { status: 400 }
         );
       }
@@ -111,15 +111,30 @@ export async function PUT(request: Request, context: RouteContext) {
 export async function DELETE(request: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
+    console.log(`[API DELETE /api/billing/${id}] Iniciando eliminación`);
+    
     await deleteBillingRecordFromStrapi(id);
+    
+    console.log(`[API DELETE /api/billing/${id}] Eliminación exitosa`);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error deleting billing record:", error);
+    console.error("[API DELETE] Error detallado:", error);
     
-    if (error instanceof Error && error.message.includes("404")) {
+    if (error instanceof Error) {
+      console.error("[API DELETE] Error message:", error.message);
+      console.error("[API DELETE] Error stack:", error.stack);
+      
+      if (error.message.includes("404")) {
+        return NextResponse.json(
+          { error: "Pago no encontrado." },
+          { status: 404 }
+        );
+      }
+      
+      // Devolver el mensaje de error específico para debugging
       return NextResponse.json(
-        { error: "Pago no encontrado." },
-        { status: 404 }
+        { error: `Error al eliminar: ${error.message}` },
+        { status: 500 }
       );
     }
 

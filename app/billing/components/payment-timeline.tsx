@@ -277,13 +277,13 @@ export function PaymentTimeline({
     };
   }, [payments]);
 
-  // Ordenar pagos por fecha de creación (ascendente - primeros creados primero)
+  // Ordenar pagos por fecha de creación (descendente - más reciente primero)
   const sortedPayments = useMemo(() => {
     return [...filteredPayments].sort((a, b) => {
       // Usar createdAt si está disponible, de lo contrario usar dueDate como fallback
       const dateA = (a as any).createdAt ? new Date((a as any).createdAt).getTime() : new Date(a.dueDate).getTime();
       const dateB = (b as any).createdAt ? new Date((b as any).createdAt).getTime() : new Date(b.dueDate).getTime();
-      return dateA - dateB; // Orden ascendente (primero creado primero)
+      return dateB - dateA; // Orden descendente (más reciente primero)
     });
   }, [filteredPayments]);
 

@@ -666,15 +666,31 @@ export async function updateBillingRecordInStrapi(
  * Eliminar un pago
  */
 export async function deleteBillingRecordFromStrapi(documentId: string): Promise<void> {
+  console.log(`[deleteBillingRecordFromStrapi] Iniciando eliminación de: ${documentId}`);
+  
   // 1. Primero obtener el registro para saber el financiamiento asociado y el monto
+  console.log(`[deleteBillingRecordFromStrapi] Paso 1: Obteniendo registro...`);
   const record = await fetchBillingRecordByIdFromStrapi(documentId);
   
   if (!record) {
+    console.error(`[deleteBillingRecordFromStrapi] Registro no encontrado: ${documentId}`);
     throw new Error("Billing record not found: 404");
   }
+  
+  console.log(`[deleteBillingRecordFromStrapi] Registro encontrado:`, {
+    id: record.id,
+    documentId: record.documentId,
+    financingDocumentId: record.financingDocumentId,
+    amount: record.amount,
+    status: record.status,
+  });
 
   // 2. Eliminar el registro
-  const response = await fetch(`${STRAPI_BASE_URL}/api/billing-records/${documentId}`, {
+  console.log(`[deleteBillingRecordFromStrapi] Paso 2: Eliminando registro en Strapi...`);
+  const deleteUrl = `${STRAPI_BASE_URL}/api/billing-records/${documentId}`;
+  console.log(`[deleteBillingRecordFromStrapi] URL: ${deleteUrl}`);
+  
+  const response = await fetch(deleteUrl, {
     method: "DELETE",
     headers: {
       Authorization: `Bearer ${STRAPI_API_TOKEN}`,
@@ -682,28 +698,50 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
     cache: "no-store",
   });
 
+  console.log(`[deleteBillingRecordFromStrapi] Respuesta DELETE:`, {
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+  });
+
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`[deleteBillingRecordFromStrapi] Error en DELETE:`, errorText);
     throw new Error(`Error deleting billing record: ${errorText}`);
   }
+  
+  console.log(`[deleteBillingRecordFromStrapi] Registro eliminado exitosamente`);
 
   // 3. Si tiene financiamiento asociado, actualizar el financiamiento padre
   if (record.financingDocumentId) {
+    console.log(`[deleteBillingRecordFromStrapi] Paso 3: Actualizando financing ${record.financingDocumentId}...`);
     try {
       // Obtener el financiamiento actual
-      const financingResponse = await fetch(
-        `${STRAPI_BASE_URL}/api/financings/${record.financingDocumentId}?populate=*`,
-        {
-          headers: {
-            Authorization: `Bearer ${STRAPI_API_TOKEN}`,
-          },
-          cache: "no-store",
-        }
-      );
+      const financingUrl = `${STRAPI_BASE_URL}/api/financings/${record.financingDocumentId}?populate=*`;
+      console.log(`[deleteBillingRecordFromStrapi] Fetching financing: ${financingUrl}`);
+      
+      const financingResponse = await fetch(financingUrl, {
+        headers: {
+          Authorization: `Bearer ${STRAPI_API_TOKEN}`,
+        },
+        cache: "no-store",
+      });
+      
+      console.log(`[deleteBillingRecordFromStrapi] Respuesta financing:`, {
+        status: financingResponse.status,
+        ok: financingResponse.ok,
+      });
 
       if (financingResponse.ok) {
         const financingData = await financingResponse.json();
         const financing = financingData.data;
+        
+        console.log(`[deleteBillingRecordFromStrapi] Financing obtenido:`, {
+          id: financing?.id,
+          paidQuotas: financing?.paidQuotas,
+          totalPaid: financing?.totalPaid,
+          status: financing?.status,
+        });
 
         if (financing) {
           // Calcular nuevos valores restando el pago eliminado
@@ -718,6 +756,13 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
           if (newPaidQuotas < financing.totalQuotas && financing.status === "completado") {
             newStatus = "activo";
           }
+          
+          console.log(`[deleteBillingRecordFromStrapi] Actualizando financing con:`, {
+            newPaidQuotas,
+            newTotalPaid,
+            newCurrentBalance,
+            newStatus,
+          });
 
           // Actualizar el financiamiento
           await updateFinancingInStrapi(record.financingDocumentId, {
@@ -727,17 +772,26 @@ export async function deleteBillingRecordFromStrapi(documentId: string): Promise
             totalLateFees: newTotalLateFees,
             status: newStatus,
           });
+          
+          console.log(`[deleteBillingRecordFromStrapi] Financing actualizado exitosamente`);
 
           // 4. Reorganizar los números de cuota de los pagos restantes
           // NOTA: Temporalmente desactivado para debug - puede estar causando problemas
           // await reorganizeQuotaNumbers(record.financingDocumentId);
         }
+      } else {
+        const errorText = await financingResponse.text();
+        console.error(`[deleteBillingRecordFromStrapi] Error obteniendo financing:`, errorText);
       }
     } catch (updateError) {
-      console.error("Error updating financing after payment deletion:", updateError);
+      console.error("[deleteBillingRecordFromStrapi] Error updating financing after payment deletion:", updateError);
       // No lanzamos el error para no bloquear la eliminación del pago
     }
+  } else {
+    console.log(`[deleteBillingRecordFromStrapi] No hay financing asociado`);
   }
+  
+  console.log(`[deleteBillingRecordFromStrapi] Eliminación completada`);
 }
 
 /**
