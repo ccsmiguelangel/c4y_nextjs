@@ -227,14 +227,15 @@ export function PaymentTimeline({
     return result;
   }, [payments, periodFilter, startDate, endDate, statusFilter]);
 
+  // Calcular totales SIEMPRE de todos los pagos (no de la lista filtrada)
   const summary = useMemo(() => {
-    const paid = filteredPayments.filter((p) => p.status === "pagado");
-    const pending = filteredPayments.filter((p) => p.status === "pendiente");
-    const advance = filteredPayments.filter((p) => p.status === "adelanto");
-    const overdue = filteredPayments.filter((p) => p.status === "retrasado");
+    const paid = payments.filter((p) => p.status === "pagado");
+    const pending = payments.filter((p) => p.status === "pendiente");
+    const advance = payments.filter((p) => p.status === "adelanto");
+    const overdue = payments.filter((p) => p.status === "retrasado");
 
     return {
-      total: filteredPayments.length,
+      total: payments.length,
       paid: paid.length,
       pending: pending.length,
       advance: advance.length,
