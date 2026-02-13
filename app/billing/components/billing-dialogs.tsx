@@ -655,9 +655,10 @@ export const initialBillingFormData: CreateBillingFormData = {
 };
 
 export function validateBillingForm(formData: CreateBillingFormData): boolean {
+  // Permitir montos negativos para ajustes de multas manuales
   return (
     formData.invoiceNumber.trim() !== "" &&
     formData.amount.trim() !== "" &&
-    parseFloat(formData.amount) >= 0
+    !isNaN(parseFloat(formData.amount))
   );
 }

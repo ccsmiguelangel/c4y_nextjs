@@ -65,11 +65,11 @@ export async function PUT(request: Request, context: RouteContext) {
       );
     }
 
-    // Validar monto si está presente
+    // Validar monto si está presente (permitir negativos para ajustes de multas)
     if (data.amount !== undefined && data.amount !== null) {
-      if (typeof data.amount !== "number" || data.amount < 0) {
+      if (typeof data.amount !== "number") {
         return NextResponse.json(
-          { error: "El monto debe ser un número válido mayor o igual a 0." },
+          { error: "El monto debe ser un número válido." },
           { status: 400 }
         );
       }
