@@ -1108,7 +1108,17 @@ export function PaymentTimeline({
                                     </span>
                                   )}
                                 </p>
-                                {payment.lateFeeAmount !== undefined && payment.lateFeeAmount > 0 && (
+                                {/* Info de multa (monto negativo) - TRATAR COMO PENALIDAD */}
+                                {isMulta && (
+                                  <div className="text-xs text-orange-600 dark:text-orange-400 font-medium">
+                                    <p>Penalidad aplicada</p>
+                                    <p className="text-orange-700 dark:text-orange-300">
+                                      Aumenta pendiente: {formatCurrency(Math.abs(payment.amount), payment.currency)}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {payment.lateFeeAmount !== undefined && payment.lateFeeAmount > 0 && !isMulta && (
                                   <div className="text-xs text-destructive">
                                     <p>+ {formatCurrency(payment.lateFeeAmount, payment.currency)} multa</p>
                                     {payment.daysLate !== undefined && payment.daysLate > 0 && (
@@ -1119,8 +1129,8 @@ export function PaymentTimeline({
                                   </div>
                                 )}
                                 
-                                {/* Info de adelanto */}
-                                {payment.status === "adelanto" && (
+                                {/* Info de adelanto - NO mostrar si es multa */}
+                                {payment.status === "adelanto" && !isMulta && (
                                   <div className="text-xs text-blue-600 dark:text-blue-400">
                                     {payment.quotasCovered !== undefined && payment.quotasCovered > 1 ? (
                                       <p>Adelanto para Cuotas #{payment.quotaNumber}–#{payment.quotaNumber! + payment.quotasCovered - 1}</p>
@@ -1138,8 +1148,8 @@ export function PaymentTimeline({
                                   </div>
                                 )}
                                 
-                                {/* Info de abonado/adelanto - Compacto con botón a modal */}
-                                {(payment.status === "abonado" || payment.status === "adelanto") && (
+                                {/* Info de abonado/adelanto - Compacto con botón a modal - NO mostrar si es multa */}
+                                {(payment.status === "abonado" || payment.status === "adelanto") && !isMulta && (
                                   <div className={cn(
                                     "text-xs",
                                     isNextQuotaGenerated 
@@ -1297,20 +1307,78 @@ export function PaymentTimeline({
         )}
       </CardContent>
       
-      {/* Modal de detalle de abono */}
+      {/* Modal de detalle de abono o multa */}
       <Dialog open={isAbonoModalOpen} onOpenChange={setIsAbonoModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-purple-600" />
-              Detalle del Abono
-            </DialogTitle>
-            <DialogDescription>
-              {selectedAbono?.invoiceNumber}
-            </DialogDescription>
+            {selectedAbono && selectedAbono.amount < 0 ? (
+              // Título para MULTA (monto negativo)
+              <>
+                <DialogTitle className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-orange-600" />
+                  Detalle de la Multa
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedAbono?.invoiceNumber}
+                </DialogDescription>
+              </>
+            ) : (
+              // Título para ABONO (monto positivo)
+              <>
+                <DialogTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-purple-600" />
+                  Detalle del Abono
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedAbono?.invoiceNumber}
+                </DialogDescription>
+              </>
+            )}
           </DialogHeader>
           
-          {selectedAbono && (
+          {selectedAbono && selectedAbono.amount < 0 ? (
+            // CONTENIDO PARA MULTA (monto negativo)
+            <div className="space-y-4 py-4">
+              {/* Resumen de la multa */}
+              <div className="bg-orange-50 dark:bg-orange-950/30 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Penalidad aplicada:</span>
+                  <span className="text-lg font-semibold text-orange-700 dark:text-orange-400">
+                    {formatCurrency(Math.abs(selectedAbono.amount), selectedAbono.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Fecha:</span>
+                  <span className="text-sm">{formatDate(selectedAbono.paymentDate || selectedAbono.dueDate)}</span>
+                </div>
+              </div>
+              
+              {/* Descripción del impacto */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Impacto en el financiamiento:</h4>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center py-2 border-b border-border/50">
+                    <span className="text-sm text-muted-foreground">Tipo de registro:</span>
+                    <span className="text-sm font-medium">Multa / Penalidad</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 bg-red-50 dark:bg-red-950/30 px-3 rounded">
+                    <span className="text-sm text-red-700 dark:text-red-400">Aumenta lo pendiente:</span>
+                    <span className="text-sm font-semibold text-red-700 dark:text-red-400">
+                      +{formatCurrency(Math.abs(selectedAbono.amount), selectedAbono.currency)}
+                    </span>
+                  </div>
+                  
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Esta penalidad aumenta el saldo pendiente del financiamiento. 
+                    No genera crédito ni cubre cuotas.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : selectedAbono ? (
+            // CONTENIDO PARA ABONO (monto positivo) - Original
             <div className="space-y-4 py-4">
               {/* Resumen del abono */}
               <div className="bg-purple-50 dark:bg-purple-950/30 p-4 rounded-lg space-y-2">
@@ -1384,7 +1452,7 @@ export function PaymentTimeline({
                 })()}
               </div>
             </div>
-          )}
+          ) : null}
           
           <DialogFooter>
             <Button onClick={closeAbonoDetail} variant="outline">
