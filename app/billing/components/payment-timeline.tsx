@@ -52,6 +52,7 @@ export type PaymentStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | 
 
 export interface PaymentRecord {
   id: string | number;
+  documentId?: string; // documentId de Strapi (para operaciones CRUD)
   invoiceNumber: string;
   amount: number;
   status: PaymentStatus;
@@ -266,6 +267,26 @@ export function PaymentTimeline({
     } catch {
       return dateString;
     }
+  };
+
+  // Generar identificador corto para mostrar en la UI (sin documentId largo)
+  const getShortIdentifier = (payment: PaymentRecord): string => {
+    // Si es una cuota SIM, mostrar formato corto: SIM-YYYYMMDD-#N
+    if (payment.invoiceNumber?.startsWith("SIM-")) {
+      const parts = payment.invoiceNumber.split("-");
+      if (parts.length >= 4) {
+        // parts[0] = SIM, parts[1] = fecha, parts[2] = documentId (omitir), parts[3] = cuota
+        const date = parts[1];
+        const quota = parts[parts.length - 1];
+        return `SIM-${date}-#${quota}`;
+      }
+    }
+    // Para otros formatos, truncar si es muy largo
+    if (payment.invoiceNumber && payment.invoiceNumber.length > 25) {
+      return payment.invoiceNumber.substring(0, 22) + "...";
+    }
+    // Default: devolver el invoiceNumber completo o un identificador basado en cuota
+    return payment.invoiceNumber || `Cuota #${payment.quotaNumber || "?"}`;
   };
 
   // Calcular fecha hasta la que cubre el abono (próximo vencimiento)
@@ -960,17 +981,26 @@ export function PaymentTimeline({
                         </div>
 
                         {/* Content Card */}
-                        <div className={cn(
-                          "rounded-lg p-3 border transition-all",
-                          config.bgColor,
-                          config.borderColor,
-                          "group-hover:shadow-sm"
-                        )}>
+                        <div 
+                          className={cn(
+                            "rounded-lg p-3 border transition-all",
+                            config.bgColor,
+                            config.borderColor,
+                            "group-hover:shadow-sm"
+                          )}
+                          data-payment-id={payment.id}
+                          data-document-id={payment.documentId}
+                          data-receipt-number={payment.invoiceNumber}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className={typography.body.large}>
-                                  {payment.invoiceNumber}
+                                {/* Identificador corto (sin documentId largo) */}
+                                <span 
+                                  className={typography.body.large}
+                                  title={payment.invoiceNumber} // Tooltip con valor completo
+                                >
+                                  {getShortIdentifier(payment)}
                                 </span>
                                 {/* Mostrar rango de cuotas en un solo tag */}
                                 {payment.quotasCovered !== undefined && payment.quotasCovered > 1 && payment.quotaNumber ? (
