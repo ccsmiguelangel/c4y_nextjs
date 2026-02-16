@@ -216,6 +216,8 @@ export interface FleetVehicleRawAttributes {
       };
     }>;
   };
+  financing?: any;
+  billingInitials?: string;
 }
 
 export type FleetVehicleRaw =
@@ -313,6 +315,8 @@ export interface FleetVehicleCard {
     nextDueDate?: string;
     partialPaymentCredit?: number;
   };
+  // Siglas para facturación (ej: FM para Ford Mustang)
+  billingInitials?: string;
 }
 
 export interface FleetVehicleUpdatePayload {
@@ -336,6 +340,7 @@ export interface FleetVehicleUpdatePayload {
   nextMaintenanceDate?: string | null;
   placa?: string | null;
   interestedPersons?: number[];
+  billingInitials?: string | null;
 }
 
 export interface VehicleStatus {
@@ -603,7 +608,7 @@ export interface InventoryItemUpdatePayload {
 // Billing Types (Facturación y pagos)
 // ============================================
 
-export type BillingStatus = "pagado" | "pendiente" | "adelanto" | "retrasado";
+export type BillingStatus = "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
 
 export interface BillingDocumentFile {
   id?: number;
@@ -700,6 +705,7 @@ export interface BillingRecordCard {
   id: string;
   documentId: string;
   invoiceNumber: string;
+  receiptNumber?: string;
   amount: number;
   amountLabel: string;
   currency: string;
@@ -721,6 +727,20 @@ export interface BillingRecordCard {
   vehicleDocumentId?: string;
   documents: BillingDocument[];
   createdAt?: string;
+  // Campos de cuotas y adelantos
+  quotaNumber?: number;
+  quotasCovered?: number;
+  quotaAmountCovered?: number;
+  advanceCredit?: number;
+  remainingQuotaBalance?: number;
+  // Financiamiento asociado
+  financingDocumentId?: string;
+  financingNumber?: string;
+  financingQuotaAmount?: number;
+  financingTotalQuotas?: number;
+  financingPaidQuotas?: number;
+  financingCurrentBalance?: number;
+  financingFrequency?: string;
   // Nuevos campos Módulo 3
   receiptId?: string;
   confirmationNumber?: string;

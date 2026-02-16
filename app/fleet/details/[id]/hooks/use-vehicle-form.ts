@@ -18,6 +18,7 @@ interface FormData {
   imageAlt: string;
   nextMaintenanceDate: string;
   placa: string;
+  billingInitials: string;
 }
 
 interface UseVehicleFormReturn {
@@ -78,6 +79,7 @@ const initialFormData: FormData = {
   imageAlt: "",
   nextMaintenanceDate: "",
   placa: "",
+  billingInitials: "",
 };
 
 export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
@@ -128,6 +130,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
         imageAlt: data.imageAlt ?? "",
         nextMaintenanceDate: data.nextMaintenanceDate ? new Date(data.nextMaintenanceDate).toISOString().split('T')[0] : "",
         placa: (data as any).placa ?? "",
+        billingInitials: data.billingInitials ?? "",
       });
       
       // Establecer valores de mantenimiento desde nextMaintenanceDate
@@ -308,6 +311,7 @@ export function useVehicleForm(vehicleId: string): UseVehicleFormReturn {
         year: Number(formData.year) || vehicleData.year,
         imageAlt: formData.imageAlt || null,
         placa: formData.placa || null,
+        billingInitials: formData.billingInitials || null,
         nextMaintenanceDate: maintenanceScheduledDate ? (() => {
           const timeToUse = maintenanceIsAllDay ? "00:00" : (maintenanceScheduledTime || "00:00");
           return `${maintenanceScheduledDate}T${timeToUse}:00`;

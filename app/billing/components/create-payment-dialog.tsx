@@ -58,11 +58,11 @@ import {
 } from "@/lib/financing";
 
 // Tipos
-interface FinancingOption {
+export interface FinancingOption {
   documentId: string;
   financingNumber: string;
   vehicleName: string;
-  vehiclePlate?: string;
+  vehiclePlaca?: string;
   clientName: string;
   quotaAmount: number;
   paidQuotas: number;
@@ -120,7 +120,7 @@ export function CreatePaymentDialog({
   useEffect(() => {
     if (!isOpen) return;
 
-    // Si hay financiamiento preseleccionado, usarlo
+    // Si hay financiamiento preseleccionado, usarlo (siempre actualizar para tener datos frescos)
     if (preselectedFinancing) {
       setSelectedFinancing(preselectedFinancing);
       setFormData((prev) => ({
@@ -144,7 +144,7 @@ export function CreatePaymentDialog({
               documentId: f.documentId,
               financingNumber: f.financingNumber,
               vehicleName: f.vehicleName || "Sin vehículo",
-              vehiclePlate: f.vehiclePlate,
+              vehiclePlaca: f.vehiclePlaca,
               clientName: f.clientName || "Sin cliente",
               quotaAmount: f.quotaAmount,
               paidQuotas: f.paidQuotas,
@@ -166,6 +166,39 @@ export function CreatePaymentDialog({
 
     loadFinancings();
   }, [isOpen, preselectedFinancing]);
+
+  // Refrescar datos del financiamiento seleccionado cuando se abre el dialog
+  // Esto asegura que el crédito a favor y otros valores estén actualizados
+  useEffect(() => {
+    if (!isOpen || !selectedFinancing) return;
+
+    const refreshFinancing = async () => {
+      try {
+        const response = await fetch(`/api/financing/${selectedFinancing.documentId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const freshFinancing = data.data;
+          if (freshFinancing) {
+            setSelectedFinancing({
+              ...selectedFinancing,
+              partialPaymentCredit: freshFinancing.partialPaymentCredit || 0,
+              paidQuotas: freshFinancing.paidQuotas || 0,
+              totalQuotas: freshFinancing.totalQuotas || 0,
+              currentBalance: freshFinancing.currentBalance || 0,
+              nextDueDate: freshFinancing.nextDueDate,
+              lateFeePercentage: freshFinancing.lateFeePercentage || 10,
+              status: freshFinancing.status,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Error refreshing financing data:", err);
+        // No mostrar error al usuario, usar datos que ya tenemos
+      }
+    };
+
+    refreshFinancing();
+  }, [isOpen, selectedFinancing?.documentId]);
 
   // Cálculos basados en el financiamiento seleccionado
   const paymentCalculations = useMemo(() => {
@@ -431,7 +464,7 @@ export function CreatePaymentDialog({
                                         </div>
                                         <span className="text-xs text-muted-foreground">
                                           {fin.vehicleName}
-                                          {fin.vehiclePlate && ` (${fin.vehiclePlate})`} •{" "}
+                                          {fin.vehiclePlaca && ` (${fin.vehiclePlaca})`} •{" "}
                                           {fin.clientName}
                                         </span>
                                       </div>

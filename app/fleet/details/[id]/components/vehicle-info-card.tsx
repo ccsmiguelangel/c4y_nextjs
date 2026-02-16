@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Badge } from "@/components_shadcn/ui/badge";
-import { Car, Calendar, DollarSign, Settings } from "lucide-react";
+import { Car, Calendar, DollarSign, Settings, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { spacing, typography } from "@/lib/design-system";
@@ -139,6 +139,15 @@ export function VehicleInfoCard({ vehicleData, priceLabel }: VehicleInfoCardProp
               <div className="flex-1">
                 <p className={`${typography.body.small} text-muted-foreground`}>Placa</p>
                 <p className={typography.body.base}>{(vehicleData as any).placa}</p>
+              </div>
+            </div>
+          )}
+          {vehicleData.billingInitials && (
+            <div className={`flex items-center ${spacing.gap.medium}`}>
+              <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div className="flex-1">
+                <p className={`${typography.body.small} text-muted-foreground`}>Siglas Facturación</p>
+                <p className={`${typography.body.base} font-semibold text-primary`}>{vehicleData.billingInitials}</p>
               </div>
             </div>
           )}

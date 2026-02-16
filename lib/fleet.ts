@@ -63,7 +63,7 @@ const populateImageQueryString = qs.stringify(populateImageConfig, { encodeValue
 
 const listQueryString = qs.stringify(
   {
-    fields: ["name", "vin", "price", "condition", "brand", "model", "year", "imageAlt", "placa"],
+    fields: ["name", "vin", "price", "condition", "brand", "model", "year", "imageAlt", "placa", "billingInitials"],
     populate: {
       ...populateImageConfig.populate,
       // Incluir financiamiento para verificar si el vehículo tiene uno activo
@@ -327,6 +327,7 @@ const normalizeVehicle = (entry: FleetVehicleRaw, useSmallImage = false): FleetV
     currentDrivers: currentDrivers,
     interestedPersons: interestedPersons,
     financing: financing,
+    billingInitials: attributes.billingInitials ?? undefined,
   };
 };
 
@@ -380,7 +381,7 @@ const buildFleetDetailQuery = (id: string | number) => {
   return qs.stringify(
     {
       filters,
-      fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "nextMaintenanceDate", "placa"],
+      fields: ["name", "vin", "price", "condition", "brand", "model", "year", "color", "mileage", "fuelType", "transmission", "imageAlt", "nextMaintenanceDate", "placa", "billingInitials"],
       populate: {
         ...populateImageConfigForDetails.populate,
         interestedPersons: {
@@ -611,6 +612,7 @@ export interface FleetVehicleCreatePayload {
   responsables?: number[];
   assignedDrivers?: number[];
   nextMaintenanceDate?: string | null;
+  billingInitials?: string | null;
 }
 
 export async function createFleetVehicleInStrapi(

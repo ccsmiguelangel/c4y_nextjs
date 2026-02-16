@@ -162,8 +162,9 @@ export interface FinancingCreatePayload {
   maxLateQuotasAllowed?: number;
   lateFeePercentage?: number;
   notes?: string;
-  vehicle: string; // documentId
-  client: string; // documentId
+  // Strapi 5: relaciones usan formato connect
+  vehicle: string | { connect: string[] };
+  client: string | { connect: string[] };
 }
 
 export interface PaymentCreatePayload {
@@ -348,6 +349,7 @@ const getPaymentStatusLabel = (status: PaymentStatus): string => {
   const labels: Record<PaymentStatus, string> = {
     pagado: "Pagado",
     pendiente: "Pendiente",
+    abonado: "Abonado",
     adelanto: "Adelanto",
     retrasado: "Retrasado",
   };

@@ -49,7 +49,7 @@ export interface InvoiceData {
   date: string;
   dueDate?: string;
   paymentDate?: string;
-  status: "pagado" | "pendiente" | "adelanto" | "retrasado";
+  status: "pagado" | "pendiente" | "adelanto" | "retrasado" | "abonado";
   quotaNumber?: number;
   totalQuotas?: number;
   amount: number;

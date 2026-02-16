@@ -56,6 +56,13 @@ const statusConfig = {
     textColor: "text-yellow-700 dark:text-yellow-400",
     borderColor: "border-yellow-200 dark:border-yellow-800",
   },
+  abonado: {
+    label: "Abonado",
+    icon: DollarSign,
+    bgColor: "bg-purple-50 dark:bg-purple-950/30",
+    textColor: "text-purple-700 dark:text-purple-400",
+    borderColor: "border-purple-200 dark:border-purple-800",
+  },
   adelanto: {
     label: "Adelanto",
     icon: DollarSign,

@@ -83,6 +83,8 @@ const getStatusColor = (status: string): string => {
       return "text-yellow-600";
     case "adelanto":
       return "text-blue-600";
+    case "abonado":
+      return "text-purple-600";
     case "pagado":
       return "text-green-600";
     default:
@@ -98,6 +100,8 @@ const getAmountColor = (status: BillingStatus): string => {
       return "text-yellow-600";
     case "adelanto":
       return "text-blue-600";
+    case "abonado":
+      return "text-purple-600";
     case "pagado":
       return "text-green-600";
     default:
@@ -504,9 +508,16 @@ export default function BillingDetailsPage() {
     );
   }
 
+  // Título dinámico según el tipo de pago
+  const pageTitle = record.status === 'adelanto' 
+    ? 'Detalle del Adelanto' 
+    : record.status === 'abonado' 
+      ? 'Detalle del Abono' 
+      : 'Detalle del Pago';
+
   return (
     <AdminLayout
-      title="Detalle del Pago"
+      title={pageTitle}
       showFilterAction
       leftActions={backButton}
     >
@@ -525,9 +536,22 @@ export default function BillingDetailsPage() {
                   <p className={`${typography.body.large} font-bold`}>
                     {record.clientName || "Cliente no asignado"}
                   </p>
-                  <p className={typography.body.small}>
-                    Recibo {record.receiptNumber || `Cuota #${record.quotaNumber || "-"}`}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={typography.body.small}>
+                      Recibo {record.receiptNumber || `Cuota #${record.quotaNumber || "-"}`}
+                    </p>
+                    {/* Badge de tipo de pago para adelantos/abonos */}
+                    {record.status === 'adelanto' && (
+                      <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-blue-200">
+                        Adelanto
+                      </Badge>
+                    )}
+                    {record.status === 'abonado' && (
+                      <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-200">
+                        Abonado
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
               {record.clientDocumentId && (
@@ -596,10 +620,10 @@ export default function BillingDetailsPage() {
                     <span className="font-medium">${record.financingQuotaAmount?.toFixed(2)}</span>
                   </div>
                 )}
-                {record.financingBalance !== undefined && (
+                {record.financingCurrentBalance !== undefined && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Saldo pendiente</span>
-                    <span className="font-medium">${record.financingBalance?.toFixed(2)}</span>
+                    <span className="font-medium">${record.financingCurrentBalance?.toFixed(2)}</span>
                   </div>
                 )}
               </div>
@@ -624,7 +648,7 @@ export default function BillingDetailsPage() {
                   {record.amountLabel}
                 </span>
               </div>
-              {record.status === 'retrasado' && record.lateFeeAmount > 0 && (
+              {record.status === 'retrasado' && record.lateFeeAmount && record.lateFeeAmount > 0 && (
                 <>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
@@ -645,16 +669,16 @@ export default function BillingDetailsPage() {
                   <div className="flex items-center justify-between pt-1 border-t border-dashed border-red-200">
                     <span className={typography.label}>Total Multa</span>
                     <span className={`${typography.body.large} font-bold text-red-600`}>
-                      +${record.lateFeeAmount.toFixed(2)}
+                      +${(record.lateFeeAmount || 0).toFixed(2)}
                     </span>
                   </div>
                 </>
               )}
-              {record.status === 'retrasado' && record.lateFeeAmount > 0 && (
+              {record.status === 'retrasado' && record.lateFeeAmount && record.lateFeeAmount > 0 && (
                 <div className="flex items-center justify-between border-t border-dashed pt-2 mt-1">
                   <span className={`${typography.label} font-semibold`}>Total a Pagar</span>
                   <span className={`${typography.metric.base} font-bold text-red-600`}>
-                    ${(record.amount + record.lateFeeAmount).toFixed(2)}
+                    ${(record.amount + (record.lateFeeAmount || 0)).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -683,6 +707,9 @@ export default function BillingDetailsPage() {
                     </SelectItem>
                     <SelectItem value="pendiente" className="text-yellow-600">
                       Pendiente
+                    </SelectItem>
+                    <SelectItem value="abonado" className="text-purple-600">
+                      Abonado
                     </SelectItem>
                     <SelectItem value="adelanto" className="text-blue-600">
                       Adelanto
@@ -730,9 +757,43 @@ export default function BillingDetailsPage() {
             <div className={`flex flex-col ${spacing.gap.medium}`}>
               {/* Grid de información principal */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {/* Letra/Cuota Asignada */}
+                {/* Monto de este Pago - NUEVO: destacar el monto real del pago */}
+                <div className={cn(
+                  "rounded-lg p-4 text-center",
+                  record.status === 'adelanto' || record.status === 'abonado'
+                    ? "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
+                    : record.status === 'pagado'
+                      ? "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"
+                      : record.status === 'retrasado'
+                        ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
+                        : "bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800"
+                )}>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    {record.status === 'adelanto' ? 'Monto del Adelanto' : 
+                     record.status === 'abonado' ? 'Monto Abonado' : 
+                     'Monto de este Pago'}
+                  </p>
+                  <p className={cn(
+                    typography.metric.base,
+                    record.status === 'adelanto' || record.status === 'abonado' ? "text-blue-600" :
+                    record.status === 'pagado' ? "text-green-600" :
+                    record.status === 'retrasado' ? "text-red-600" : "text-yellow-600"
+                  )}>
+                    ${(record.amount || 0).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {record.status === 'adelanto' ? 'pago adelantado' :
+                     record.status === 'abonado' ? 'abono parcial' :
+                     record.status === 'pagado' ? 'pagado' :
+                     record.status === 'retrasado' ? 'vencido' : 'pendiente'}
+                  </p>
+                </div>
+
+                {/* Letra/Cuota Asignada - ahora con tooltip aclaratorio */}
                 <div className="rounded-lg bg-muted/50 p-4 text-center">
-                  <p className="text-xs text-muted-foreground mb-1">Letra Asignada</p>
+                  <p className="text-xs text-muted-foreground mb-1" title="Monto de cada cuota según el plan de financiamiento">
+                    Letra del Plan
+                  </p>
                   <p className={`${typography.metric.base} text-primary`}>
                     ${(record.financingQuotaAmount || record.weeklyQuotaAmount || parseFloat(weeklyQuotaAmount) || 0).toFixed(2)}
                   </p>
@@ -760,52 +821,70 @@ export default function BillingDetailsPage() {
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">del financiamiento</p>
                 </div>
-
-                {/* Monto Abonado / Cuotas Cubiertas */}
-                <div className={cn(
-                  "rounded-lg p-4 text-center",
-                  record.status === 'pagado' 
-                    ? ((record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
-                        ? "bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
-                        : "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800")
-                    : record.status === 'retrasado'
-                      ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
-                      : "bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800"
-                )}>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    {record.quotasCovered && record.quotasCovered > 1 ? "Cuotas Cubiertas" : "Monto Abonado"}
-                  </p>
-                  <p className={cn(
-                    typography.metric.base,
-                    record.status === 'pagado'
-                      ? ((record.quotasCovered && record.quotasCovered > 1) || record.advanceCredit 
-                          ? "text-blue-600" 
-                          : "text-green-600")
-                      : record.status === 'retrasado'
-                        ? "text-red-600"
-                        : "text-yellow-600"
-                  )}>
-                    {record.quotasCovered && record.quotasCovered > 1 
-                      ? `${record.quotasCovered} cuotas`
-                      : record.status === 'pagado' || record.status === 'adelanto'
-                        ? `$${(record.amount || 0).toFixed(2)}`
-                        : '$0.00'
-                    }
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {record.quotasCovered && record.quotasCovered > 1 
-                      ? "adelantadas"
-                      : record.status === 'pagado'
-                        ? "pagado"
-                        : record.status === 'retrasado'
-                          ? "sin pagar"
-                          : record.advanceCredit && record.advanceCredit > 0
-                            ? `+$${record.advanceCredit.toFixed(2)} crédito`
-                            : "pendiente"
-                    }
-                  </p>
-                </div>
               </div>
+
+              {/* Info adicional para adelantos y abonos */}
+              {(record.status === 'adelanto' || record.status === 'abonado') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Cuotas cubiertas por este pago */}
+                  {record.quotasCovered && record.quotasCovered > 0 && (
+                    <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Cuotas Cubiertas</p>
+                          <p className={`${typography.body.large} font-semibold text-blue-600`}>
+                            {record.quotasCovered} {record.quotasCovered === 1 ? 'cuota' : 'cuotas'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground mb-1">
+                            {record.status === 'adelanto' ? 'Desde cuota' : 'Aplicado a'}
+                          </p>
+                          <p className={`${typography.body.large} font-semibold text-blue-600`}>
+                            #{record.quotaNumber || '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Crédito disponible para futuras cuotas */}
+                  {record.advanceCredit && record.advanceCredit > 0 && (
+                    <div className="rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Crédito Disponible</p>
+                          <p className={`${typography.body.large} font-semibold text-green-600`}>
+                            +${record.advanceCredit.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground mb-1">Para próximas cuotas</p>
+                          <p className="text-sm text-green-600">Acumulado</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Saldo pendiente de la cuota actual (para abonos) */}
+                  {record.status === 'abonado' && record.remainingQuotaBalance && record.remainingQuotaBalance > 0 && (
+                    <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Saldo Pendiente</p>
+                          <p className={`${typography.body.large} font-semibold text-yellow-600`}>
+                            ${record.remainingQuotaBalance.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground mb-1">De esta cuota</p>
+                          <p className="text-sm text-yellow-600">Por completar</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Barra de progreso del financiamiento */}
               {record.financingDocumentId && (

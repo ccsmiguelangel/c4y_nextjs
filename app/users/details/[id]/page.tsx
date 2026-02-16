@@ -798,8 +798,8 @@ export default function UserDetailsPage() {
                     />
                   </div>
                 </div>
-                <div className="flex gap-2 w-full">
-                  <Button onClick={handleSave} disabled={isSaving || isUploadingImage} className="flex-1">
+                <div className="flex flex-col sm:flex-row gap-2 w-full">
+                  <Button onClick={handleSave} disabled={isSaving || isUploadingImage} size="lg" className="flex-1 min-h-[44px]">
                     {isSaving || isUploadingImage ? "Guardando..." : "Guardar"}
                   </Button>
                   <Button 
@@ -815,7 +815,8 @@ export default function UserDetailsPage() {
                       setShouldRemoveImage(false);
                     }} 
                     variant="outline" 
-                    className="flex-1"
+                    size="lg"
+                    className="flex-1 min-h-[44px]"
                     disabled={isSaving || isUploadingImage}
                   >
                     Cancelar

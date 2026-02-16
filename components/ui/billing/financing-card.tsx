@@ -181,9 +181,9 @@ export function FinancingCard({
           <div className="flex items-center gap-2 text-sm">
             <Car className="h-4 w-4 text-muted-foreground" />
             <span className="truncate">{financing.vehicleName || "Sin vehículo asignado"}</span>
-            {financing.vehiclePlate && (
+            {financing.vehiclePlaca && (
               <Badge variant="outline" className="text-xs ml-auto">
-                {financing.vehiclePlate}
+                {financing.vehiclePlaca}
               </Badge>
             )}
           </div>

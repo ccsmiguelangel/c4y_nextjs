@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, subMonths, subWeeks, isWithinInterval } from "date-fns";
 import { es } from "date-fns/locale";
 import { 
@@ -18,7 +18,8 @@ import {
   X,
   Play,
   Loader2,
-  Trash2
+  Trash2,
+  CreditCard
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components_shadcn/ui/card";
 import { Badge } from "@/components_shadcn/ui/badge";
@@ -45,6 +46,7 @@ import {
 } from "@/components_shadcn/ui/dialog";
 import { typography, spacing, components } from "@/lib/design-system";
 import { cn } from "@/lib/utils";
+import { PaymentExport } from "./payment-export";
 
 export type PeriodFilter = "all" | "week" | "biweekly" | "month" | "semester" | "year" | "custom";
 
@@ -83,10 +85,21 @@ export interface PaymentRecord {
   clientId?: string;
   clientDocumentId?: string;
   clientName?: string;
+  // Info adicional del cliente
+  clientPhone?: string;
+  clientEmail?: string;
+  // Info del vehículo
+  vehicleName?: string;
+  vehiclePlate?: string;
 }
 
 interface PaymentTimelineProps {
   payments: PaymentRecord[];
+  financingNumber?: string; // Para exportar
+  vehicleName?: string; // Para exportar
+  clientName?: string; // Para exportar
+  totalAmount?: number; // Monto total del financiamiento
+  currentBalance?: number; // Saldo pendiente del financiamiento
   maxHeight?: string;
   showSummary?: boolean;
   showFilters?: boolean;
@@ -99,10 +112,11 @@ interface PaymentTimelineProps {
   userRole?: string;
   onSimulateTuesday?: () => Promise<void>;
   onSimulateFriday?: () => Promise<void>;
-  financingId?: string;
+  financingId?: string; // ID del financiamiento (documentId) - para simulación y exportación
   currentWeek?: number; // Semana de simulación actual
   onWeekChange?: (week: number) => void; // Callback para cambiar de semana
   onDeletePayment?: (payment: PaymentRecord) => void; // Callback para eliminar pago
+  onPayPending?: (payment: PaymentRecord, paymentData: { paymentDate: string; confirmationNumber?: string; notes?: string }) => Promise<void>; // Callback para pagar pendiente
   // Props para cálculo de saldos
   partialPaymentCredit?: number; // Crédito acumulado del financiamiento
   quotaAmount?: number; // Monto de cada cuota
@@ -199,18 +213,25 @@ export function PaymentTimeline({
   currentWeek = 1,
   onWeekChange,
   onDeletePayment,
+  onPayPending,
   partialPaymentCredit = 0,
   quotaAmount,
   paymentFrequency = "semanal",
   paidQuotas = 0,
   totalQuotas = 0,
+  financingNumber,
+  vehicleName,
+  clientName,
+  totalAmount,
+  currentBalance,
 }: PaymentTimelineProps) {
   // Estado de filtros
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<PaymentStatusFilter>("all");
+  // Filtro multi-selección: array de estados seleccionados
+  const [selectedStatuses, setSelectedStatuses] = useState<PaymentStatusFilter[]>([]);
   
   // Estado para expandir/colapsar detalle de abonos
   const [expandedAbonos, setExpandedAbonos] = useState<Set<string | number>>(new Set());
@@ -218,6 +239,19 @@ export function PaymentTimeline({
   // Estado para modal de detalle de abono
   const [selectedAbono, setSelectedAbono] = useState<PaymentRecord | null>(null);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
+  
+  // Estado para modal de pagar pendiente
+  const [isPayPendingOpen, setIsPayPendingOpen] = useState(false);
+  const [selectedPendingPayment, setSelectedPendingPayment] = useState<PaymentRecord | null>(null);
+  const [pendingPaymentData, setPendingPaymentData] = useState({
+    paymentDate: new Date().toISOString().split('T')[0],
+    confirmationNumber: '',
+    notes: '',
+  });
+  const [isPaying, setIsPaying] = useState(false);
+  
+  // Ref para captura de screenshot
+  const timelineRef = useRef<HTMLDivElement>(null);
   
   // DEBUG: Log de pagos recibidos
   useEffect(() => {
@@ -228,8 +262,9 @@ export function PaymentTimeline({
       abonados: payments.filter(p => p.status === "abonado").length,
       adelantos: payments.filter(p => p.status === "adelanto").length,
       retrasados: payments.filter(p => p.status === "retrasado").length,
+      selectedStatuses,
     });
-  }, [payments]);
+  }, [payments, selectedStatuses]);
   
   // Estado de simulación
   const [isSimulatingTuesday, setIsSimulatingTuesday] = useState(false);
@@ -264,6 +299,44 @@ export function PaymentTimeline({
   const closeAbonoDetail = () => {
     setIsAbonoModalOpen(false);
     setSelectedAbono(null);
+  };
+  
+  // Funciones para modal de pagar pendiente
+  const openPayPendingModal = (payment: PaymentRecord, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    setSelectedPendingPayment(payment);
+    setPendingPaymentData({
+      paymentDate: new Date().toISOString().split('T')[0],
+      confirmationNumber: '',
+      notes: '',
+    });
+    setIsPayPendingOpen(true);
+  };
+  
+  const closePayPendingModal = () => {
+    setIsPayPendingOpen(false);
+    setSelectedPendingPayment(null);
+    setPendingPaymentData({
+      paymentDate: new Date().toISOString().split('T')[0],
+      confirmationNumber: '',
+      notes: '',
+    });
+  };
+  
+  const handlePayPending = async () => {
+    if (!selectedPendingPayment || !onPayPending) return;
+    
+    setIsPaying(true);
+    try {
+      await onPayPending(selectedPendingPayment, pendingPaymentData);
+      closePayPendingModal();
+    } catch (error) {
+      console.error('Error al pagar:', error);
+    } finally {
+      setIsPaying(false);
+    }
   };
 
   const formatCurrency = (value: number, currency = "USD"): string => {
@@ -375,18 +448,30 @@ export function PaymentTimeline({
       });
     }
     
-    // Filtrar por status
-    if (statusFilter !== "all") {
-      if (statusFilter === "multa") {
-        // Filtrar pagos con monto negativo (multas/ajustes)
-        result = result.filter((payment) => payment.amount < 0);
-      } else {
-        result = result.filter((payment) => payment.status === statusFilter);
-      }
+    // Filtrar por múltiples estados seleccionados
+    if (selectedStatuses.length > 0) {
+      result = result.filter((payment) => {
+        // Si está seleccionado "multa", incluir pagos con amount < 0
+        const isMultaSelected = selectedStatuses.includes("multa");
+        const isPaymentMulta = payment.amount < 0;
+        
+        // Si el pago es multa y "multa" está seleccionado, incluirlo
+        if (isPaymentMulta && isMultaSelected) return true;
+        
+        // Si el pago es multa pero "multa" no está seleccionado, no incluirlo por multa
+        // pero podría incluirse por otro estado si coincide
+        if (isPaymentMulta && !isMultaSelected) {
+          // Verificar si su status está en los seleccionados
+          return selectedStatuses.includes(payment.status);
+        }
+        
+        // Para pagos normales (no multa), verificar si su status está seleccionado
+        return selectedStatuses.includes(payment.status);
+      });
     }
     
     return result;
-  }, [payments, periodFilter, startDate, endDate, statusFilter]);
+  }, [payments, periodFilter, startDate, endDate, selectedStatuses]);
 
   // Calcular totales SIEMPRE de todos los pagos (no de la lista filtrada)
   const summary = useMemo(() => {
@@ -662,6 +747,19 @@ export function PaymentTimeline({
 
   const hasActiveFilters = periodFilter !== "all";
   
+  // Handler para toggle de estados (multi-selección)
+  const toggleStatus = (status: PaymentStatusFilter) => {
+    setSelectedStatuses((prev) => {
+      if (prev.includes(status)) {
+        // Si ya está seleccionado, quitarlo
+        return prev.filter((s) => s !== status);
+      } else {
+        // Si no está seleccionado, añadirlo
+        return [...prev, status];
+      }
+    });
+  };
+
   // Handlers para simulación
   const handleSimulateTuesday = async () => {
     if (!onSimulateTuesday) return;
@@ -751,6 +849,19 @@ export function PaymentTimeline({
               </Button>
             </div>
           )}
+          
+          {/* Botón Exportar */}
+          <PaymentExport
+            payments={filteredPayments}
+            selectedStatuses={selectedStatuses}
+            containerRef={timelineRef}
+            financingNumber={financingNumber}
+            financingId={financingId}
+            clientName={clientName}
+            vehicleName={vehicleName}
+            totalAmount={totalAmount}
+            currentBalance={currentBalance}
+          />
         
         {showFilters && (
           <div className="flex items-center gap-2">
@@ -825,6 +936,9 @@ export function PaymentTimeline({
         )}
         </div>
       </CardHeader>
+      
+      {/* Contenedor para screenshot */}
+      <div ref={timelineRef} className="contents">
       <CardContent className={cn("flex flex-col", spacing.gap.medium, spacing.card.content)}>
         {/* Período activo */}
         {hasActiveFilters && (
@@ -844,15 +958,20 @@ export function PaymentTimeline({
         {/* Summary con filtros */}
         {showSummary && (
           <>
-            {/* Filtros activos */}
-            {(statusFilter !== "all" || periodFilter !== "all") && (
+            {/* Filtros activos - Multi-selección */}
+            {(selectedStatuses.length > 0 || periodFilter !== "all") && (
               <div className="flex items-center justify-between bg-muted/50 rounded-lg px-3 py-2 mb-3">
-                <div className="flex items-center gap-2">
-                  {statusFilter !== "all" && (
-                    <Badge variant="outline" className="text-xs">
-                      Estado: {statusFilter === "multa" ? "Multa" : statusConfig[statusFilter].label}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {selectedStatuses.map((status) => (
+                    <Badge 
+                      key={status} 
+                      variant="outline" 
+                      className="text-xs cursor-pointer hover:bg-destructive/10"
+                      onClick={() => toggleStatus(status)}
+                    >
+                      {status === "multa" ? "Multa" : statusConfig[status as PaymentStatus].label} ×
                     </Badge>
-                  )}
+                  ))}
                   {periodFilter !== "all" && (
                     <Badge variant="outline" className="text-xs">
                       Período: {periodOptions.find(p => p.value === periodFilter)?.label}
@@ -867,7 +986,7 @@ export function PaymentTimeline({
                   size="sm" 
                   className="h-6 text-xs"
                   onClick={() => {
-                    setStatusFilter("all");
+                    setSelectedStatuses([]);
                     setPeriodFilter("all");
                     setStartDate("");
                     setEndDate("");
@@ -880,12 +999,12 @@ export function PaymentTimeline({
             
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               <button
-                onClick={() => setStatusFilter(statusFilter === "pagado" ? "all" : "pagado")}
+                onClick={() => toggleStatus("pagado")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.pagado.bgColor,
                   "border-2",
-                  statusFilter === "pagado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pagado.borderColor
+                  selectedStatuses.includes("pagado") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pagado.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.pagado.textColor)}>
@@ -894,12 +1013,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.pagado.textColor)}>Pagados</p>
               </button>
               <button
-                onClick={() => setStatusFilter(statusFilter === "pendiente" ? "all" : "pendiente")}
+                onClick={() => toggleStatus("pendiente")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.pendiente.bgColor,
                   "border-2",
-                  statusFilter === "pendiente" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pendiente.borderColor
+                  selectedStatuses.includes("pendiente") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.pendiente.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.pendiente.textColor)}>
@@ -908,12 +1027,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.pendiente.textColor)}>Pendientes</p>
               </button>
               <button
-                onClick={() => setStatusFilter(statusFilter === "abonado" ? "all" : "abonado")}
+                onClick={() => toggleStatus("abonado")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.abonado.bgColor,
                   "border-2",
-                  statusFilter === "abonado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.abonado.borderColor
+                  selectedStatuses.includes("abonado") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.abonado.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.abonado.textColor)}>
@@ -922,12 +1041,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.abonado.textColor)}>Abonados</p>
               </button>
               <button
-                onClick={() => setStatusFilter(statusFilter === "adelanto" ? "all" : "adelanto")}
+                onClick={() => toggleStatus("adelanto")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.adelanto.bgColor,
                   "border-2",
-                  statusFilter === "adelanto" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.adelanto.borderColor
+                  selectedStatuses.includes("adelanto") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.adelanto.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.adelanto.textColor)}>
@@ -936,12 +1055,12 @@ export function PaymentTimeline({
                 <p className={cn("text-xs", statusConfig.adelanto.textColor)}>Adelantos</p>
               </button>
               <button
-                onClick={() => setStatusFilter(statusFilter === "retrasado" ? "all" : "retrasado")}
+                onClick={() => toggleStatus("retrasado")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   statusConfig.retrasado.bgColor,
                   "border-2",
-                  statusFilter === "retrasado" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.retrasado.borderColor
+                  selectedStatuses.includes("retrasado") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : statusConfig.retrasado.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", statusConfig.retrasado.textColor)}>
@@ -951,12 +1070,12 @@ export function PaymentTimeline({
               </button>
               {/* Botón de Multas (pagos con amount < 0) */}
               <button
-                onClick={() => setStatusFilter(statusFilter === "multa" ? "all" : "multa")}
+                onClick={() => toggleStatus("multa")}
                 className={cn(
                   "rounded-lg p-3 text-center cursor-pointer hover:opacity-80 transition-opacity",
                   multaConfig.bgColor,
                   "border-2",
-                  statusFilter === "multa" ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : multaConfig.borderColor
+                  selectedStatuses.includes("multa") ? "border-gray-800 ring-2 ring-offset-1 ring-gray-800" : multaConfig.borderColor
                 )}
               >
                 <p className={cn("text-2xl font-bold", multaConfig.textColor)}>
@@ -1242,6 +1361,17 @@ export function PaymentTimeline({
                                   </div>
                                 )}
                               </div>
+                              {/* Botón pagar (solo para pendientes) */}
+                              {onPayPending && payment.status === "pendiente" && (
+                                <button
+                                  onClick={(e) => openPayPendingModal(payment, e)}
+                                  className="p-1.5 hover:bg-green-100 rounded-full text-green-600 transition-colors"
+                                  title="Pagar cuota"
+                                >
+                                  <CreditCard className="h-4 w-4" />
+                                </button>
+                              )}
+                              
                               {/* Botón eliminar */}
                               {onDeletePayment && (
                                 <button
@@ -1306,6 +1436,7 @@ export function PaymentTimeline({
           </>
         )}
       </CardContent>
+      </div>{/* Cierre del contenedor para screenshot */}
       
       {/* Modal de detalle de abono o multa */}
       <Dialog open={isAbonoModalOpen} onOpenChange={setIsAbonoModalOpen}>
@@ -1457,6 +1588,108 @@ export function PaymentTimeline({
           <DialogFooter>
             <Button onClick={closeAbonoDetail} variant="outline">
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Modal para pagar cuota pendiente */}
+      <Dialog open={isPayPendingOpen} onOpenChange={setIsPayPendingOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-green-600" />
+              Registrar Pago
+            </DialogTitle>
+            <DialogDescription>
+              {selectedPendingPayment?.invoiceNumber}
+              {selectedPendingPayment?.quotaNumber && (
+                <span className="ml-2 text-muted-foreground">
+                  (Cuota #{selectedPendingPayment.quotaNumber})
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedPendingPayment && (
+            <div className="space-y-4 py-4">
+              {/* Info de la cuota */}
+              <div className="bg-green-50 dark:bg-green-950/30 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Monto a pagar:</span>
+                  <span className="text-lg font-semibold text-green-700 dark:text-green-400">
+                    {formatCurrency(selectedPendingPayment.amount, selectedPendingPayment.currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Vencimiento:</span>
+                  <span className="text-sm">{formatDate(selectedPendingPayment.dueDate)}</span>
+                </div>
+              </div>
+              
+              {/* Formulario */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="paymentDate">Fecha de pago *</Label>
+                  <Input
+                    id="paymentDate"
+                    type="date"
+                    value={pendingPaymentData.paymentDate}
+                    onChange={(e) => setPendingPaymentData(prev => ({ ...prev, paymentDate: e.target.value }))}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="confirmationNumber">Número de confirmación (opcional)</Label>
+                  <Input
+                    id="confirmationNumber"
+                    type="text"
+                    placeholder="Ej: TRANS-123456"
+                    value={pendingPaymentData.confirmationNumber}
+                    onChange={(e) => setPendingPaymentData(prev => ({ ...prev, confirmationNumber: e.target.value }))}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="notes">Notas (opcional)</Label>
+                  <Input
+                    id="notes"
+                    type="text"
+                    placeholder="Notas adicionales..."
+                    value={pendingPaymentData.notes}
+                    onChange={(e) => setPendingPaymentData(prev => ({ ...prev, notes: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              onClick={closePayPendingModal} 
+              variant="outline"
+              className="flex-1"
+              disabled={isPaying}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handlePayPending}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              disabled={isPaying || !pendingPaymentData.paymentDate}
+            >
+              {isPaying ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Confirmar Pago
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

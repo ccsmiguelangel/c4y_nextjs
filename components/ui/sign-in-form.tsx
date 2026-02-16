@@ -80,7 +80,7 @@ export function SignInForm({ data }: SignInFormProps) {
         </CardHeader>
         <CardContent className="px-0">
           <Form {...form}>
-            <div className="space-y-6">
+            <div className="space-y-6" suppressHydrationWarning>
               <FormField 
                 control={form.control} 
                 name="email" 
@@ -136,6 +136,7 @@ export function SignInForm({ data }: SignInFormProps) {
                   className="btn-black"
                   disabled={form.formState.isSubmitting || formState.success}
                   onClick={form.handleSubmit(onSubmit)}
+                  suppressHydrationWarning
                 >
                   {form.formState.isSubmitting ? (
                     <>

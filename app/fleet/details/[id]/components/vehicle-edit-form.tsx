@@ -36,6 +36,7 @@ interface FormData {
   imageAlt: string;
   nextMaintenanceDate: string;
   placa: string;
+  billingInitials: string;
 }
 
 interface AvailableUser {
@@ -315,6 +316,19 @@ export function VehicleEditForm({
               placeholder="Ej: ABC-123"
               maxLength={20}
             />
+          </div>
+          <div className={`flex flex-col ${spacing.gap.small}`}>
+            <Label htmlFor="billingInitials">Siglas Facturación</Label>
+            <Input
+              id="billingInitials"
+              value={formData.billingInitials}
+              onChange={(e) => onFormDataChange({ ...formData, billingInitials: e.target.value.toUpperCase() })}
+              placeholder={`Ej: ${formData.brand?.charAt(0)?.toUpperCase() || 'F'}${formData.model?.charAt(0)?.toUpperCase() || 'M'}`}
+              maxLength={10}
+            />
+            <p className="text-xs text-muted-foreground">
+              Se calcula automáticamente si se deja vacío (ej: {formData.brand?.charAt(0)?.toUpperCase() || 'F'}{formData.model?.charAt(0)?.toUpperCase() || 'M'})
+            </p>
           </div>
         </div>
         
@@ -829,13 +843,13 @@ export function VehicleEditForm({
           </div>
         </div>
         <div className={`flex flex-col md:flex-row ${spacing.gap.small} mt-4`}>
-          <Button variant="default" size="lg" className="flex-1" onClick={onSave} disabled={isSaving}>
+          <Button variant="default" size="lg" className="flex-1 min-h-[44px]" onClick={onSave} disabled={isSaving}>
             {isSaving ? "Guardando..." : "Guardar Cambios"}
           </Button>
           <Button
             variant="outline"
             size="lg"
-            className="flex-1"
+            className="flex-1 min-h-[44px]"
             onClick={onCancel}
             disabled={isSaving}
           >

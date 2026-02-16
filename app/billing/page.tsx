@@ -210,7 +210,9 @@ export default function BillingPage() {
       toast.success(`${itemToDelete.type === "financing" ? "Financiamiento" : "Pago"} ${identifier} eliminado`);
       
       if (itemToDelete.type === "financing") {
+        // Al eliminar un financiamiento, también refrescar pagos para eliminar huérfanos de la UI
         fetchFinancings();
+        fetchPayments();
       } else {
         fetchPayments();
       }
@@ -237,6 +239,11 @@ export default function BillingPage() {
 
   // Filter payments
   const filteredPayments = payments.filter((p) => {
+    // Filtro defensivo: excluir pagos huérfanos (cuyo financiamiento ya no existe)
+    const isOrphan = p.financingDocumentId && 
+      !financings.some(f => f.documentId === p.financingDocumentId);
+    if (isOrphan) return false;
+    
     const matchesSearch = 
       (p.receiptNumber?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
       (p.clientName?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
@@ -709,6 +716,34 @@ export default function BillingPage() {
                 fetchPayments(); // Refrescar lista
               } catch (err) {
                 toast.error(err instanceof Error ? err.message : "Error al eliminar");
+              }
+            }}
+            onPayPending={async (payment, paymentData) => {
+              try {
+                const response = await fetch(`/api/billing/${payment.id}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    data: {
+                      status: "pagado",
+                      paymentDate: paymentData.paymentDate,
+                      confirmationNumber: paymentData.confirmationNumber || undefined,
+                      comments: paymentData.notes || undefined,
+                    },
+                  }),
+                });
+                
+                if (!response.ok) {
+                  const errorData = await response.json();
+                  throw new Error(errorData.error || "Error al registrar el pago");
+                }
+                
+                toast.success(`Pago ${payment.invoiceNumber} registrado correctamente`);
+                fetchPayments(); // Refrescar lista
+                fetchFinancings(); // Refrescar financiamientos (saldo actualizado)
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : "Error al registrar el pago");
+                throw err;
               }
             }}
           />

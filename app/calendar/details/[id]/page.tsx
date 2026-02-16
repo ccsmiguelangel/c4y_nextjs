@@ -438,10 +438,11 @@ export default function CalendarDetailsPage() {
                     rows={3}
                   />
                 </div>
-                <div className={`flex ${spacing.gap.small} mt-2`}>
+                <div className={`flex flex-col sm:flex-row ${spacing.gap.small} mt-2`}>
                   <Button
                     variant="default"
-                    className="flex-1"
+                    size="lg"
+                    className="flex-1 min-h-[44px]"
                     onClick={handleSaveChanges}
                     disabled={isSaving}
                   >
@@ -450,7 +451,8 @@ export default function CalendarDetailsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="flex-1"
+                    size="lg"
+                    className="flex-1 min-h-[44px]"
                     onClick={() => {
                       setIsEditing(false);
                       // Restaurar valores originales

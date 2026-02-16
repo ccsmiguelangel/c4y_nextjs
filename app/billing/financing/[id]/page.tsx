@@ -55,7 +55,7 @@ import { cn } from "@/lib/utils";
 // Components
 import { FinancingCalculator } from "@/components/ui/billing";
 import { PaymentTimeline, type PaymentRecord } from "../../components/payment-timeline";
-import { CreatePaymentDialog } from "../../components/create-payment-dialog";
+import { CreatePaymentDialog, type FinancingOption } from "../../components/create-payment-dialog";
 
 // Types
 import type { FinancingCard } from "@/lib/financing";
@@ -378,17 +378,17 @@ export default function FinancingDetailPage() {
     : 0;
 
   // Preselected financing for payment dialog
-  const preselectedFinancing = {
+  const preselectedFinancing: FinancingOption = {
     documentId: financing.documentId,
     financingNumber: financing.financingNumber,
     vehicleName: financing.vehicleName || "Sin vehículo",
-    vehiclePlate: financing.vehiclePlate,
+    vehiclePlaca: financing.vehiclePlaca,
     clientName: financing.clientName || "Sin cliente",
     quotaAmount: financing.quotaAmount,
     paidQuotas: financing.paidQuotas,
     totalQuotas: financing.totalQuotas,
     currentBalance: financing.currentBalance,
-    nextDueDate: financing.nextDueDate,
+    nextDueDate: financing.nextDueDate || "",
     partialPaymentCredit: financing.partialPaymentCredit || 0,
     lateFeePercentage: financing.lateFeePercentage || 10,
     status: financing.status,
@@ -465,9 +465,9 @@ export default function FinancingDetailPage() {
               <div>
                 <p className="text-xs text-muted-foreground">Vehículo</p>
                 <p className={typography.body.large}>{financing.vehicleName || "Sin vehículo"}</p>
-                {financing.vehiclePlate && (
+                {financing.vehiclePlaca && (
                   <Badge variant="outline" className="text-xs mt-1">
-                    {financing.vehiclePlate}
+                    {financing.vehiclePlaca}
                   </Badge>
                 )}
               </div>
@@ -720,9 +720,13 @@ export default function FinancingDetailPage() {
             advanceCredit: p.advanceCredit,
             remainingQuotaBalance: p.remainingQuotaBalance,
             advanceForQuota,
-            remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
             // Monto total de la cuota (para calcular saldo en pendientes)
             quotaTotalAmount: financing?.quotaAmount || p.amount,
+            // Info del vehículo para exportación
+            vehicleName: financing?.vehicleName,
+            vehiclePlate: financing?.vehiclePlaca,
+            // Info adicional del cliente para exportación
+            clientPhone: financing?.clientPhone,
           };
         })}
         partialPaymentCredit={financing?.partialPaymentCredit || 0}
@@ -730,6 +734,8 @@ export default function FinancingDetailPage() {
         paymentFrequency={financing?.paymentFrequency || "semanal"}
         paidQuotas={financing?.paidQuotas || 0}
         totalQuotas={financing?.totalQuotas || 0}
+        totalAmount={financing?.totalAmount}
+        currentBalance={financing?.currentBalance}
         title="Historial de Pagos"
         isLoading={isLoadingPayments}
         isTestModeEnabled={isTestModeEnabled}
@@ -855,26 +861,40 @@ export default function FinancingDetailPage() {
             console.log(`[DeletePayment] Eliminación en servidor exitosa`);
             toast.success("Cuota eliminada correctamente");
             
-            // NO hacer refetch de payments porque Strapi tiene cascade delete
-            // Solo actualizar el financing para los totales (sin esperar)
-            // Usar el financing actual y ajustar los totales localmente
-            if (financing) {
-              const quotasCovered = 1; // Asumimos 1 cuota por simplicidad
-              const newPaidQuotas = Math.max(0, financing.paidQuotas - quotasCovered);
-              const newTotalPaid = Math.max(0, financing.totalPaid - payment.amount);
-              const newCurrentBalance = financing.totalAmount - newTotalPaid;
-              
-              setFinancing({
-                ...financing,
-                paidQuotas: newPaidQuotas,
-                totalPaid: newTotalPaid,
-                currentBalance: newCurrentBalance,
-              });
-            }
+            // IMPORTANTE: Refetch del financing para obtener valores actualizados del servidor
+            // El servidor recalcula partialPaymentCredit, paidQuotas, etc. correctamente
+            await fetchFinancing();
             
           } catch (err) {
             console.error(`[DeletePayment] Error:`, err);
             toast.error(err instanceof Error ? err.message : "Error al eliminar");
+          }
+        }}
+        onPayPending={async (payment, paymentData) => {
+          try {
+            const response = await fetch(`/api/billing/${payment.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                data: {
+                  status: "pagado",
+                  paymentDate: paymentData.paymentDate,
+                  confirmationNumber: paymentData.confirmationNumber || undefined,
+                  comments: paymentData.notes || undefined,
+                },
+              }),
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || "Error al registrar el pago");
+            }
+            
+            toast.success(`Pago ${payment.invoiceNumber} registrado correctamente`);
+            await fetchFinancing(); // Refrescar financiamiento (saldo actualizado)
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Error al registrar el pago");
+            throw err;
           }
         }}
       />

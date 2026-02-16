@@ -331,8 +331,9 @@ export function CreateFinancingDialog({
           totalQuotas: formData.financingPeriods, // Enviar el número exacto de cuotas
           paymentFrequency: formData.paymentFrequency,
           startDate: formData.startDate,
-          vehicle: formData.vehicleDocumentId,
-          client: formData.clientDocumentId,
+          // Strapi 5: usar formato connect para relaciones
+          vehicle: { connect: [formData.vehicleDocumentId] },
+          client: { connect: [formData.clientDocumentId] },
           notes: formData.notes || undefined,
         },
       };
